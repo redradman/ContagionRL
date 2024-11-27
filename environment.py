@@ -11,9 +11,3 @@ class Environment:
         self.replay_buffer = ReplayBuffer(max_size=10000, batch_size=32)
         self.humans = []
 
-        for _ in range(n_sick_humans):
-            self.humans.append(Human(np.random.randint(-grid_size, grid_size), np.random.randint(-grid_size, grid_size), is_infected=True))
-        
-        for _ in range(n_healthy_humans):
-            self.humans.append(Human(np.random.randint(-grid_size, grid_size), np.random.randint(-grid_size, grid_size)))
-
