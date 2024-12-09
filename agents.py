@@ -59,17 +59,22 @@ class Human:
     def should_update_npi(self):
         return self.steps_since_npi_update >= self.npi_update_frequency
         
-    def take_action(self, movement_action, npi_action=None):
-        # Handle movement every timestep
-        self._handle_movement(movement_action)
+    def take_action(self, action):
+        """
+        Takes a tuple of (movement_action, npi_action) as input
+        movement_action: int (0-4) representing Up, Down, Left, Right, Stay
+        npi_action: int (0-10) representing NPI adherence levels from 0.0 to 1.0
+        """
+        movement_action, npi_action = action
         
-        # Handle NPI updates on schedule
-        if self.should_update_npi() and npi_action is not None:
+        # Handle movement
+        if movement_action in range(5):  # 0-4
+            self._handle_movement(movement_action)
+        
+        # Handle NPI adjustment
+        if npi_action in range(11):  # 0-10
             self._handle_npi_adjustment(npi_action)
-            self.steps_since_npi_update = 0
-        else:
-            self.steps_since_npi_update += 1
-            
+
     def _handle_movement(self, action):
         if not self.alive:
             return
@@ -119,18 +124,32 @@ class Human:
                 other.times_infected += 1
 
     def get_action_space(self):
+        """
+        Returns tuple of (movement_actions, npi_actions)
+        movement_actions: list of valid movement actions
+        npi_actions: list of valid NPI actions (always all of them)
+        """
         half_grid = self.grid_size // 2
-        # Create boolean mask for valid actions
-        valid_actions = np.array([
+        # Create boolean mask for valid movement actions
+        valid_movements = np.array([
             self.position[1] < half_grid,     # Up
             self.position[1] > -half_grid,    # Down
             self.position[0] > -half_grid,    # Left
             self.position[0] < half_grid,     # Right
             True                              # Stay always valid
         ])
-        return np.where(valid_actions)[0].tolist()
+        movement_actions = np.where(valid_movements)[0].tolist()
+        npi_actions = list(range(11))  # 0-10 representing 0.0-1.0
+        
+        return (movement_actions, npi_actions)
     
     def _handle_npi_adjustment(self, action):
-        # Convert action (0-10) to NPI value (0-1.0)
+        """
+        Convert action (0-10) to NPI value (0.0-1.0)
+        action 0 -> 0.0
+        action 1 -> 0.1
+        ...
+        action 10 -> 1.0
+        """
         self.npi_adherence = action * 0.1
     

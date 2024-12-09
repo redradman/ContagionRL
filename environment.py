@@ -63,15 +63,26 @@ class Environment:
 
     def step(self, actions):
         """
-        :param actions: dict mapping human id to action
+        :param actions: dict mapping human id to tuple of (movement_action, npi_action)
         """
         # Agents take actions
         for human in self.humans:
             if human.alive:
                 available_actions = human.get_action_space()
-                action = actions.get(human.id, random.choice(available_actions))
-                if action in available_actions:
-                    human.take_action(action)
+                if human.id in actions:
+                    movement_action, npi_action = actions[human.id]
+                    # Validate movement action
+                    if movement_action not in available_actions[0]:
+                        movement_action = random.choice(available_actions[0])
+                    # Validate NPI action
+                    if npi_action not in available_actions[1]:
+                        npi_action = random.choice(available_actions[1])
+                    action = (movement_action, npi_action)
+                else:
+                    # Random valid action if no action provided
+                    action = (random.choice(available_actions[0]), 
+                             random.choice(available_actions[1]))
+                human.take_action(action)
         # Handle infections
         for human in self.humans:
             if human.alive and human.state == 'I':
