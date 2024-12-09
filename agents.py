@@ -131,6 +131,6 @@ class Human:
         return np.where(valid_actions)[0].tolist()
     
     def _handle_npi_adjustment(self, action):
-        # Convert action (0-9) to NPI value (0.1-1.0)
-        self.npi_adherence = (action + 1) * 0.1
+        # Convert action (0-10) to NPI value (0-1.0)
+        self.npi_adherence = action * 0.1
     
