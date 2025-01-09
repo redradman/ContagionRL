@@ -46,7 +46,7 @@ class Human:
         neighbors = []
         for human in humans:
             if self.id != human.id and human.alive:
-                distance = np.abs(self.position - human.position).sum()
+                distance = np.abs(self.position - human.position).sum() # using L1 / Manhattan distance
                 if distance <= self.observation_radius:
                     neighbors.append({
                         'id': human.id,
@@ -63,7 +63,10 @@ class Human:
         """
         Takes a tuple of (movement_action, npi_action) as input
         movement_action: int (0-4) representing Up, Down, Left, Right, Stay
-        npi_action: int (0-10) representing NPI adherence levels from 0.0 to 1.0
+        npi_action: int (0-2) representing NPI adherence adjustments:
+            0: No change
+            1: Increase by 0.25
+            2: Decrease by 0.25
         """
         movement_action, npi_action = action
         
@@ -72,7 +75,7 @@ class Human:
             self._handle_movement(movement_action)
         
         # Handle NPI adjustment
-        if npi_action in range(11):  # 0-10
+        if npi_action in range(3):  # 0-2
             self._handle_npi_adjustment(npi_action)
 
     def _handle_movement(self, action):
@@ -80,11 +83,11 @@ class Human:
             return
         # Movement vectors for [Up, Down, Left, Right, Stay]
         movement_vectors = np.array([
+            [0, 0],   # Stay
             [0, 1],   # Up
             [0, -1],  # Down
             [-1, 0],  # Left
-            [1, 0],   # Right
-            [0, 0]    # Stay
+            [1, 0]   # Right
         ], dtype=np.float32)
         
         # Apply movement
@@ -116,7 +119,7 @@ class Human:
                 self.state = 'S'
 
     def infect(self, other):
-        if self.state == 'I' and other.state == 'S' and other.alive:
+        if self.state == 'S' and other.state == 'I' and other.alive:
             distance = np.abs(self.position - other.position).sum()
             infection_prob = max(0, (1 - distance / self.observation_radius)) * (1 - other.npi_adherence)
             if random.random() < infection_prob:
@@ -127,7 +130,7 @@ class Human:
         """
         Returns tuple of (movement_actions, npi_actions)
         movement_actions: list of valid movement actions
-        npi_actions: list of valid NPI actions (always all of them)
+        npi_actions: list of valid NPI actions (0: no change, 1: increase, 2: decrease)
         """
         half_grid = self.grid_size // 2
         # Create boolean mask for valid movement actions
@@ -139,17 +142,20 @@ class Human:
             True                              # Stay always valid
         ])
         movement_actions = np.where(valid_movements)[0].tolist()
-        npi_actions = list(range(11))  # 0-10 representing 0.0-1.0
+        npi_actions = [0, 1, 2]  # No change, Increase, Decrease
         
         return (movement_actions, npi_actions)
     
     def _handle_npi_adjustment(self, action):
         """
-        Convert action (0-10) to NPI value (0.0-1.0)
-        action 0 -> 0.0
-        action 1 -> 0.1
-        ...
-        action 10 -> 1.0
+        Adjust NPI adherence by 0.25 increments
+        action 0: No change
+        action 1: Increase by 0.25
+        action 2: Decrease by 0.25
         """
-        self.npi_adherence = action * 0.1
+        if action == 1:  # Increase
+            self.npi_adherence = min(1.0, self.npi_adherence + 0.25)
+        elif action == 2:  # Decrease
+            self.npi_adherence = max(0.0, self.npi_adherence - 0.25)
+        # action 0 means no change
     
