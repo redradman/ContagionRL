@@ -11,6 +11,75 @@ STATE_DICT = {
     'D': 3   # Dead
 }
 
+######## Movement handler for humans in the environment ########
+class MovementHandler:
+    def __init__(self, grid_size: int, movement_type: str = "stationary"):
+        """
+        Initialize movement handler
+        
+        Args:
+            grid_size: Size of the environment grid
+            movement_type: One of ["stationary", "discrete_random", "continuous_random"]
+        """
+        self.grid_size = grid_size
+        self.movement_type = movement_type
+        
+        # Validate movement type
+        valid_types = ["stationary", "discrete_random", "continuous_random"]
+        if movement_type not in valid_types:
+            raise ValueError(f"Movement type must be one of {valid_types}")
+
+    def get_new_position(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
+        """
+        Get new position based on current position and movement type
+        
+        Args:
+            x: Current x position
+            y: Current y position
+            rng: Random number generator for reproducibility
+            
+        Returns:
+            Tuple of (new_x, new_y)
+        """
+        if self.movement_type == "stationary":
+            return self._stationary_move(x, y)
+        elif self.movement_type == "discrete_random":
+            return self._discrete_random_move(x, y, rng)
+        else:  # continuous_random
+            return self._continuous_random_move(x, y, rng)
+
+    def _stationary_move(self, x: int, y: int) -> Tuple[int, int]:
+        """Humans don't move"""
+        return x, y
+
+    def _discrete_random_move(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
+        """
+        Random movement in discrete steps (-1, 0, 1) for both x and y
+        """
+        dx = rng.integers(-1, 2)  # Random integer from [-1, 0, 1]
+        dy = rng.integers(-1, 2)  # Random integer from [-1, 0, 1]
+        
+        # Ensure we stay within bounds
+        new_x = max(0, min(x + dx, self.grid_size - 1))
+        new_y = max(0, min(y + dy, self.grid_size - 1))
+        
+        return new_x, new_y
+
+    def _continuous_random_move(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
+        """
+        Random movement in continuous steps [-1, 1] for both x and y
+        """
+        dx = rng.uniform(-1, 1)
+        dy = rng.uniform(-1, 1)
+        
+        # Ensure we stay within bounds
+        new_x = max(0, min(round(x + dx), self.grid_size - 1))
+        new_y = max(0, min(round(y + dy), self.grid_size - 1))
+        
+        return new_x, new_y
+
+
+######## Human class ########
 class Human:
     def __init__(self, x: int, y: int, state: int = STATE_DICT['S']):
         """
@@ -33,6 +102,9 @@ class Human:
         self.state = new_state
         self.time_in_state = 0
 
+
+
+######## SIRS Environment class ########
 class SIRSEnvironment(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
@@ -48,6 +120,7 @@ class SIRSEnvironment(gym.Env):
         immunity_decay: float = 0.1,
         recovery_rate: float = 0.1,
         max_immunity_loss_prob: float = 0.2,
+        movement_type: str = "stationary",
         render_mode: Optional[str] = None,
     ):
         super().__init__()
@@ -130,3 +203,35 @@ class SIRSEnvironment(gym.Env):
             human.update_state(STATE_DICT['I'])
 
         return self._get_observation(), {}
+
+    def step(self, action: int) -> Tuple[dict, float, bool, bool, dict]:
+        # Update all humans
+        for human in self.humans:
+            human.time_in_state += 1
+
+            if human.state == STATE_DICT['S']:
+                # Calculate probability of infection
+                infected_list = self._get_infected_list()
+                p_infection = self._calculate_infection_probability(human, infected_list)
+                if self.np_random.random() < p_infection:
+                    human.update_state(STATE_DICT['I'])
+
+            elif human.state == STATE_DICT['I']:
+                # Check for death
+                if self.np_random.random() < self.lethality:
+                    human.update_state(STATE_DICT['D'])
+                    continue
+
+                # Check for recovery
+                p_recovery = 1 - math.exp(-self.recovery_rate * human.time_in_state)
+                if self.np_random.random() < p_recovery:
+                    human.update_state(STATE_DICT['R'])
+
+            elif human.state == STATE_DICT['R']:
+                # Check for immunity loss
+                p_immunity_loss = self.max_immunity_loss_prob * (1 - math.exp(-self.immunity_decay * human.time_in_state))
+                if self.np_random.random() < p_immunity_loss:
+                    human.update_state(STATE_DICT['S'])
+
+        # For now, return placeholder values
+        return self._get_observation(), 0, False, False, {}
