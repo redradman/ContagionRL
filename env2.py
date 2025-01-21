@@ -70,3 +70,34 @@ class SIRSEnvironment(gym.Env):
         })
 
         self.humans: List[Human] = []
+
+    def _calculate_infection_probability(self, susceptible: Human, infected_list: List[Human]) -> float:
+        """Calculate probability of infection based on the given formula: Transition from S to I"""
+        total_exposure = 0
+        for infected in infected_list:
+            assert infected.state == STATE_DICT['I'], "infected human is not in the infected state"
+            distance = math.sqrt((susceptible.x - infected.x)**2 + (susceptible.y - infected.y)**2)
+            total_exposure += math.exp(-self.distance_decay * distance)
+        
+        return min(1,(self.beta / (1 + self.adherence)) * total_exposure)
+
+    def _get_infected_list(self) -> List[Human]:
+        """Return list of infected humans"""
+        return [h for h in self.humans if h.state == STATE_DICT['I']]
+
+    def _calculate_recovery_and_death_probabilities(self, human: Human) -> List[float, float]:
+        """Calculate recovery and death probabilities for a human: Transition from I to R and from I to D"""
+        if human.state != STATE_DICT['I']:
+            raise ValueError("incorrect call to function: probability of recovery and death is only applicable to humans in the infected state")
+        else:
+            recovery_prob = 1 - math.exp(-self.recovery_rate * human.time_in_state)
+            death_prob = self.lethality
+            return recovery_prob, death_prob
+    
+    def _calculate_immunity_loss_probability(self, human: Human) -> float:
+        """Calculate immunity loss probability for a human: Transition from R to S"""
+        if human.state != STATE_DICT['R']:
+            raise ValueError("incorrect call to function: probability of immunity loss is only applicable to humans in the recovered state")
+        else:
+            return self.max_immunity_loss_prob * (1 - math.exp(-self.immunity_decay * human.time_in_state))
+
