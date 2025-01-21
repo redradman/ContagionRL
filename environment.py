@@ -1,129 +1,201 @@
-# import numpy as np
-import random
-import matplotlib.pyplot as plt
-from agents import Human
-from utils import ReplayBuffer
+import gymnasium as gym
+import numpy as np
+from typing import Optional, List, Tuple
+import math
+from utils import STATE_DICT, ReplayBuffer, MovementHandler, Human
 
-class Environment:
+######## SIRS Environment class ########
+class SIRSEnvironment(gym.Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+
     def __init__(
         self,
-        grid_size: int,
-        n_sick_humans: int,
-        n_healthy_humans: int,
-        n_viruses: int, # not used yet
-        max_timesteps: int = 1000,
+        grid_size: int = 20,
+        n_humans: int = 100,
+        n_infected: int = 5,
+        beta: float = 0.3,
+        adherence: float = 0.5,
+        distance_decay: float = 0.2,
         lethality: float = 0.1,
-        transition_probs=None,
+        immunity_decay: float = 0.1,
+        recovery_rate: float = 0.1,
+        max_immunity_loss_prob: float = 0.2,
+        movement_type: str = "stationary",
+        visibility_radius: float = -1,
+        render_mode: Optional[str] = None,
     ):
+        super().__init__()
+
+        # Store parameters
         self.grid_size = grid_size
-        self.n_sick_humans = n_sick_humans
-        self.n_healthy_humans = n_healthy_humans
-        self.n_viruses = n_viruses
-        self.max_timesteps = max_timesteps
-        self.lethality = lethality
-        self.transition_probs = transition_probs or {
-            'I_to_R': 0.1,
-            'R_to_S': 0.05
-        }
+        self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
+        self.npi_level = 0 # initial NPI level
 
-        self.replay_buffer = ReplayBuffer(max_size=10000, batch_size=32)
-        self.humans = []
-        self.timestep = 0
+        # SIRS parameters
+        self.n_humans = n_humans
+        self.n_infected = n_infected
+        self.beta = beta # infection rate
+        self.adherence = adherence # NPI adherence
+        self.distance_decay = distance_decay # distance decay rate
+        self.lethality = lethality # lethality rate
+        self.immunity_decay = immunity_decay # immunity decay rate
+        self.recovery_rate = recovery_rate # recovery rate
+        self.max_immunity_loss_prob = max_immunity_loss_prob # maximum immunity loss probability
+        self.visibility_radius = visibility_radius # visibility radius
 
-    def reset(self):
-        self.humans = []
-        half_grid = self.grid_size // 2
-        # Initialize sick humans
-        for _ in range(self.n_sick_humans):
-            x = random.randint(-half_grid, half_grid)
-            y = random.randint(-half_grid, half_grid)
-            human = Human(
-                x=x,
-                y=y,
-                is_infected=True,
-                grid_size=self.grid_size,
-                lethality=self.lethality,
-                transition_probs=self.transition_probs
-            )
-            self.humans.append(human)
-        # Initialize healthy humans
-        for _ in range(self.n_healthy_humans):
-            x = random.randint(-half_grid, half_grid)
-            y = random.randint(-half_grid, half_grid)
-            human = Human(
-                x=x,
-                y=y,
-                is_infected=False,
-                grid_size=self.grid_size,
-                lethality=self.lethality,
-                transition_probs=self.transition_probs
-            )
-            self.humans.append(human)
-        self.timestep = 0
+        # Define observation space (will be used by the RL agent later)
+        self.observation_space = gym.spaces.Dict({
+            "agent_position": gym.spaces.Box(low=0, high=self.grid_size, shape=(2,), dtype=np.int32),
+            "npi_level": gym.spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+            "visible_humans": gym.spaces.Box(low=0, high=self.grid_size, shape=(self.n_humans, 4), dtype=np.float32) # x, y, state, time_in_state (full details of all of the visible humans)
+        })
 
-    def step(self, actions):
+        self.action_space = gym.spaces.Box(
+            low=np.array([-1, -1, 0], dtype=np.float32),
+            high=np.array([1, 1, 1], dtype=np.float32),
+            dtype=np.float32
+        )
+
+        self.humans: List[Human] = []
+        self.movement_handler = MovementHandler(grid_size, movement_type)
+    ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
+
+    def _calculate_infection_probability(self, susceptible: Human, infected_list: List[Human]) -> float:
         """
-        :param actions: dict mapping human id to tuple of (movement_action, npi_action)
+        Calculate probability of infection based on nearby infected individuals
+        If visibility_radius is -1, consider all infected individuals
         """
-        # Agents take actions
-        for human in self.humans:
-            if human.alive:
-                available_actions = human.get_action_space()
-                if human.id in actions:
-                    movement_action, npi_action = actions[human.id]
-                    # Validate movement action
-                    if movement_action not in available_actions[0]:
-                        movement_action = random.choice(available_actions[0])
-                    # Validate NPI action
-                    if npi_action not in available_actions[1]:
-                        npi_action = random.choice(available_actions[1])
-                    action = (movement_action, npi_action)
-                else:
-                    # Random valid action if no action provided
-                    action = (random.choice(available_actions[0]), 
-                             random.choice(available_actions[1]))
-                human.take_action(action)
-        # Handle infections
-        for human in self.humans:
-            if human.alive and human.state == 'I':
-                for other in self.humans:
-                    if other.id != human.id and other.alive:
-                        human.infect(other)
-        # Update agent states and reward
-        for human in self.humans:
-            previous_state = human.state
-            human.update_state()
-            if not human.alive:
-                human.cumulative_reward -= 1  # Penalty already applied in update_state
-            elif previous_state != 'I' and human.state == 'I':
-                human.times_infected +=1
+        total_exposure = 0
+        for infected in infected_list:
+            if infected.state != STATE_DICT['I']:
+                assert infected.state == STATE_DICT['I'], "infected human is not in the infected state"
             else:
-                human.cumulative_reward += 1  # Reward for surviving this timestep
-        self.timestep += 1
-        done = self.timestep >= self.max_timesteps or all(not h.alive for h in self.humans)
-        # Collect observations and rewards
-        observations = {human.id: human.observe(self.humans) for human in self.humans if human.alive}
-        rewards = {human.id: human.cumulative_reward for human in self.humans}
-        return observations, rewards, done
+                distance = math.sqrt((susceptible.x - infected.x)**2 + (susceptible.y - infected.y)**2)
+                
+                # Skip if infected is outside the visibility radius (unless radius is -1)
+                if self.visibility_radius != -1 and distance > self.visibility_radius:
+                    continue
+                    
+                total_exposure += math.exp(-self.distance_decay * distance)
+        
+        return min(1,(self.beta / (1 + self.adherence)) * total_exposure)
 
-    def render(self, filename=None):
-        plt.figure(figsize=(6,6))
-        half_grid = self.grid_size // 2
-        plt.xlim(-half_grid - 1, half_grid + 1)
-        plt.ylim(-half_grid - 1, half_grid + 1)
+    def _get_infected_list(self, center_x: Optional[int] = None, center_y: Optional[int] = None) -> List[Human]:
+        """
+        Return list of infected humans
+        If center coordinates are provided, only return infected humans within visibility radius
+        """
+        if center_x is None or center_y is None or self.visibility_radius == -1:
+            return [h for h in self.humans if h.state == STATE_DICT['I']]
+            
+        infected_list = []
         for human in self.humans:
-            if human.alive:
-                if human.state == 'S':
-                    color = 'blue'
-                elif human.state == 'I':
-                    color = 'red'
-                elif human.state == 'R':
-                    color = 'green'
-                plt.scatter(human.x, human.y, c=color, s=100)
-        plt.grid(True)
-        if filename:
-            plt.savefig(filename)
-        else:
-            plt.show()
-        plt.close()
+            if human.state == STATE_DICT['I']:
+                distance = math.sqrt((center_x - human.x)**2 + (center_y - human.y)**2)
+                if distance <= self.visibility_radius:
+                    infected_list.append(human)
+                    
+        return infected_list
 
+    def _get_visible_humans(self, center_x: int, center_y: int) -> List[Human]:
+        """
+        Get list of humans within visibility radius of given position
+        If visibility_radius is -1, return all humans
+        """
+        if self.visibility_radius == -1:
+            return self.humans
+            
+        visible_humans = []
+        for human in self.humans:
+            distance = math.sqrt((center_x - human.x)**2 + (center_y - human.y)**2)
+            if distance <= self.visibility_radius:
+                visible_humans.append(human)
+                
+        return visible_humans
+
+    def _calculate_recovery_probabilities(self, human: Human) -> float:
+        """Calculate recovery probabilities for a human: Transition from I to R"""
+        if human.state != STATE_DICT['I']:
+            raise ValueError("incorrect call to function: probability of recovery is only applicable to humans in the infected state")
+        else:
+            recovery_prob = 1 - math.exp(-self.recovery_rate * human.time_in_state)
+            return recovery_prob
+    
+    def _calculate_immunity_loss_probability(self, human: Human) -> float:
+        """Calculate immunity loss probability for a human: Transition from R to S"""
+        if human.state != STATE_DICT['R']:
+            raise ValueError("incorrect call to function: probability of immunity loss is only applicable to humans in the recovered state")
+        else:
+            return self.max_immunity_loss_prob * (1 - math.exp(-self.immunity_decay * human.time_in_state))
+
+    ##### 
+
+    def reset(self, seed: Optional[int] = None) -> Tuple[dict, dict]:
+        """Reset the environment to the initial state"""
+        super().reset(seed=seed)
+        self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
+        self.npi_level = 0
+        
+        # Initialize humans
+        self.humans = []
+        positions = set()
+        
+        # Place humans randomly
+        for _ in range(self.n_humans):
+            while True:
+                x = self.np_random.integers(0, self.grid_size)
+                y = self.np_random.integers(0, self.grid_size)
+                if (x, y) not in positions: # to ensure the uniqueness of the position
+                    positions.add((x, y))
+                    break
+            
+            self.humans.append(Human(x, y, STATE_DICT['S']))
+
+        # Select random humans to be infected
+        initial_infected = self.np_random.choice(self.humans, self.n_infected, replace=False)
+        for human in initial_infected:
+            human.update_state(STATE_DICT['I'])
+
+        return self._get_observation(), {}
+
+    def _apply_action(self, action: np.array[np.float32]):
+        """Apply the action to the environment"""
+        self.agent_position = action[:2] # update position of the agent
+        self.npi_level = action[2] # update NPI level
+    
+    def _handle_human_stepping(self):
+        """Handle the stepping of a human"""
+        for human in self.humans:
+            human.time_in_state += 1
+            if human.state == STATE_DICT['D']:
+                continue
+
+            if human.state == STATE_DICT['S']:
+                # Calculate probability of infection
+                infected_list = self._get_infected_list()
+                p_infection = self._calculate_infection_probability(human, infected_list)
+                if self.np_random.random() < p_infection:
+                    human.update_state(STATE_DICT['I'])
+
+            elif human.state == STATE_DICT['I']:
+                # Check for death
+                if self.np_random.random() < self.lethality:
+                    human.update_state(STATE_DICT['D'])
+                    continue
+
+                # Check for recovery
+                if self.np_random.random() < self._calculate_recovery_probabilities(human):
+                    human.update_state(STATE_DICT['R'])
+
+            elif human.state == STATE_DICT['R']:
+                # Check for immunity loss
+                p_immunity_loss = self.max_immunity_loss_prob * (1 - math.exp(-self.immunity_decay * human.time_in_state))
+                if self.np_random.random() < p_immunity_loss:
+                    human.update_state(STATE_DICT['S'])
+
+    def step(self, action: np.array[np.float32]) -> Tuple[dict, float, bool, bool, dict]:
+        # Update all humans
+        self._apply_action(action)
+        self._handle_human_stepping()
+        # For now, return placeholder values
+        return self._get_observation(), 0, False, False, {}
