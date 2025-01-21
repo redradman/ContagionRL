@@ -52,6 +52,12 @@ class SIRSEnvironment(gym.Env):
         )
         })
 
+        self.action_space = gym.spaces.Box(
+            low=np.array([-1, -1, 0], dtype=np.float32),
+            high=np.array([1, 1, 1], dtype=np.float32),
+            dtype=np.float32
+        )
+
         self.humans: List[Human] = []
         self.movement_handler = MovementHandler(grid_size, movement_type)
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
