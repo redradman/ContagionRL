@@ -2,7 +2,7 @@
 import random
 import matplotlib.pyplot as plt
 from agents import Human
-from replay_buffer import ReplayBuffer
+from utils import ReplayBuffer
 
 class Environment:
     def __init__(
