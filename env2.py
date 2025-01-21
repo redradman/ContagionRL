@@ -2,107 +2,7 @@ import gymnasium as gym
 import numpy as np
 from typing import Optional, List, Tuple
 import math
-
-# State definitions
-STATE_DICT = {
-    'S': 0,  # Susceptible
-    'I': 1,  # Infected
-    'R': 2,  # Recovered
-    'D': 3   # Dead
-}
-
-######## Movement handler for humans in the environment ########
-class MovementHandler:
-    def __init__(self, grid_size: int, movement_type: str = "stationary"):
-        """
-        Initialize movement handler
-        
-        Args:
-            grid_size: Size of the environment grid
-            movement_type: One of ["stationary", "discrete_random", "continuous_random"]
-        """
-        self.grid_size = grid_size
-        self.movement_type = movement_type
-        
-        # Validate movement type
-        valid_types = ["stationary", "discrete_random", "continuous_random"]
-        if movement_type not in valid_types:
-            raise ValueError(f"Movement type must be one of {valid_types}")
-
-    def get_new_position(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
-        """
-        Get new position based on current position and movement type
-        
-        Args:
-            x: Current x position
-            y: Current y position
-            rng: Random number generator for reproducibility
-            
-        Returns:
-            Tuple of (new_x, new_y)
-        """
-        if self.movement_type == "stationary":
-            return self._stationary_move(x, y)
-        elif self.movement_type == "discrete_random":
-            return self._discrete_random_move(x, y, rng)
-        else:  # continuous_random
-            return self._continuous_random_move(x, y, rng)
-
-    def _stationary_move(self, x: int, y: int) -> Tuple[int, int]:
-        """Humans don't move"""
-        return x, y
-
-    def _discrete_random_move(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
-        """
-        Random movement in discrete steps (-1, 0, 1) for both x and y
-        """
-        dx = rng.integers(-1, 2)  # Random integer from [-1, 0, 1]
-        dy = rng.integers(-1, 2)  # Random integer from [-1, 0, 1]
-        
-        # Ensure we stay within bounds
-        new_x = max(0, min(x + dx, self.grid_size - 1))
-        new_y = max(0, min(y + dy, self.grid_size - 1))
-        
-        return new_x, new_y
-
-    def _continuous_random_move(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
-        """
-        Random movement in continuous steps [-1, 1] for both x and y
-        """
-        dx = rng.uniform(-1, 1)
-        dy = rng.uniform(-1, 1)
-        
-        # Ensure we stay within bounds
-        new_x = max(0, min(round(x + dx), self.grid_size - 1))
-        new_y = max(0, min(round(y + dy), self.grid_size - 1))
-        
-        return new_x, new_y
-
-
-######## Human class ########
-class Human:
-    def __init__(self, x: int, y: int, state: int = STATE_DICT['S']):
-        """
-        Initialize a human in the SIRS model
-        state: integer representing state (0: Susceptible, 1: Infected, 2: Recovered, 3: Dead)
-        """
-        self.x = x
-        self.y = y
-        self.state = state
-        self.time_in_state = 0
-        assert self.state in STATE_DICT.values() # make sure no invalid state is passed in
-
-    def move(self, new_x: int, new_y: int, grid_size: int):
-        """Move human to new position within grid bounds"""
-        self.x = max(0, min(new_x, grid_size - 1))
-        self.y = max(0, min(new_y, grid_size - 1))
-
-    def update_state(self, new_state: int):
-        """Update state and reset time counter"""
-        self.state = new_state
-        self.time_in_state = 0
-
-
+from utils import STATE_DICT, ReplayBuffer, MovementHandler, Human
 
 ######## SIRS Environment class ########
 class SIRSEnvironment(gym.Env):
@@ -121,12 +21,17 @@ class SIRSEnvironment(gym.Env):
         recovery_rate: float = 0.1,
         max_immunity_loss_prob: float = 0.2,
         movement_type: str = "stationary",
+        visibility_radius: float = -1,
         render_mode: Optional[str] = None,
     ):
         super().__init__()
 
         # Store parameters
         self.grid_size = grid_size
+        self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
+        self.npi_level = 0 # initial NPI level
+
+        # SIRS parameters
         self.n_humans = n_humans
         self.n_infected = n_infected
         self.beta = beta # infection rate
@@ -136,38 +41,81 @@ class SIRSEnvironment(gym.Env):
         self.immunity_decay = immunity_decay # immunity decay rate
         self.recovery_rate = recovery_rate # recovery rate
         self.max_immunity_loss_prob = max_immunity_loss_prob # maximum immunity loss probability
+        self.visibility_radius = visibility_radius # visibility radius
 
         # Define observation space (will be used by the RL agent later)
         self.observation_space = gym.spaces.Dict({
-            "grid": gym.spaces.Box(low=0, high=3, shape=(grid_size, grid_size), dtype=np.int32)
+            "grid": gym.spaces.Box(
+            low=np.array([0.0]),
+            high=np.array([float('inf')]),
+            dtype=np.float32
+        )
         })
 
         self.humans: List[Human] = []
-
+        self.movement_handler = MovementHandler(grid_size, movement_type)
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
 
     def _calculate_infection_probability(self, susceptible: Human, infected_list: List[Human]) -> float:
-        """Calculate probability of infection based on the given formula: Transition from S to I"""
+        """
+        Calculate probability of infection based on nearby infected individuals
+        If visibility_radius is -1, consider all infected individuals
+        """
         total_exposure = 0
         for infected in infected_list:
-            assert infected.state == STATE_DICT['I'], "infected human is not in the infected state"
-            distance = math.sqrt((susceptible.x - infected.x)**2 + (susceptible.y - infected.y)**2)
-            total_exposure += math.exp(-self.distance_decay * distance)
+            if infected.state != STATE_DICT['I']:
+                assert infected.state == STATE_DICT['I'], "infected human is not in the infected state"
+            else:
+                distance = math.sqrt((susceptible.x - infected.x)**2 + (susceptible.y - infected.y)**2)
+                
+                # Skip if infected is outside the visibility radius (unless radius is -1)
+                if self.visibility_radius != -1 and distance > self.visibility_radius:
+                    continue
+                    
+                total_exposure += math.exp(-self.distance_decay * distance)
         
         return min(1,(self.beta / (1 + self.adherence)) * total_exposure)
 
-    def _get_infected_list(self) -> List[Human]:
-        """Return list of infected humans"""
-        return [h for h in self.humans if h.state == STATE_DICT['I']]
+    def _get_infected_list(self, center_x: Optional[int] = None, center_y: Optional[int] = None) -> List[Human]:
+        """
+        Return list of infected humans
+        If center coordinates are provided, only return infected humans within visibility radius
+        """
+        if center_x is None or center_y is None or self.visibility_radius == -1:
+            return [h for h in self.humans if h.state == STATE_DICT['I']]
+            
+        infected_list = []
+        for human in self.humans:
+            if human.state == STATE_DICT['I']:
+                distance = math.sqrt((center_x - human.x)**2 + (center_y - human.y)**2)
+                if distance <= self.visibility_radius:
+                    infected_list.append(human)
+                    
+        return infected_list
 
-    def _calculate_recovery_and_death_probabilities(self, human: Human) -> Tuple[float, float]:
-        """Calculate recovery and death probabilities for a human: Transition from I to R and from I to D"""
+    def _get_visible_humans(self, center_x: int, center_y: int) -> List[Human]:
+        """
+        Get list of humans within visibility radius of given position
+        If visibility_radius is -1, return all humans
+        """
+        if self.visibility_radius == -1:
+            return self.humans
+            
+        visible_humans = []
+        for human in self.humans:
+            distance = math.sqrt((center_x - human.x)**2 + (center_y - human.y)**2)
+            if distance <= self.visibility_radius:
+                visible_humans.append(human)
+                
+        return visible_humans
+
+    def _calculate_recovery_probabilities(self, human: Human) -> float:
+        """Calculate recovery probabilities for a human: Transition from I to R"""
         if human.state != STATE_DICT['I']:
-            raise ValueError("incorrect call to function: probability of recovery and death is only applicable to humans in the infected state")
+            raise ValueError("incorrect call to function: probability of recovery is only applicable to humans in the infected state")
         else:
             recovery_prob = 1 - math.exp(-self.recovery_rate * human.time_in_state)
-            death_prob = self.lethality
-            return recovery_prob, death_prob
+            return recovery_prob
     
     def _calculate_immunity_loss_probability(self, human: Human) -> float:
         """Calculate immunity loss probability for a human: Transition from R to S"""
@@ -181,6 +129,8 @@ class SIRSEnvironment(gym.Env):
     def reset(self, seed: Optional[int] = None) -> Tuple[dict, dict]:
         """Reset the environment to the initial state"""
         super().reset(seed=seed)
+        self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
+        self.npi_level = 0
         
         # Initialize humans
         self.humans = []
@@ -204,8 +154,16 @@ class SIRSEnvironment(gym.Env):
 
         return self._get_observation(), {}
 
-    def step(self, action: int) -> Tuple[dict, float, bool, bool, dict]:
+    def _apply_action(self, action: np.array[np.float32]):
+        """Apply the action to the environment"""
+        self.agent_position = action[:2] # update position of the agent
+        self.npi_level = action[2] # update NPI level
+
+    def step(self, action: np.array[np.float32]) -> Tuple[dict, float, bool, bool, dict]:
         # Update all humans
+        self._apply_action(action)
+
+
         for human in self.humans:
             human.time_in_state += 1
 
@@ -223,8 +181,7 @@ class SIRSEnvironment(gym.Env):
                     continue
 
                 # Check for recovery
-                p_recovery = 1 - math.exp(-self.recovery_rate * human.time_in_state)
-                if self.np_random.random() < p_recovery:
+                if self.np_random.random() < self._calculate_recovery_probabilities(human):
                     human.update_state(STATE_DICT['R'])
 
             elif human.state == STATE_DICT['R']:
