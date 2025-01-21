@@ -45,11 +45,9 @@ class SIRSEnvironment(gym.Env):
 
         # Define observation space (will be used by the RL agent later)
         self.observation_space = gym.spaces.Dict({
-            "grid": gym.spaces.Box(
-            low=np.array([0.0]),
-            high=np.array([float('inf')]),
-            dtype=np.float32
-        )
+            "agent_position": gym.spaces.Box(low=0, high=self.grid_size, shape=(2,), dtype=np.int32),
+            "npi_level": gym.spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+            "visible_humans": gym.spaces.Box(low=0, high=self.grid_size, shape=(self.n_humans, 4), dtype=np.float32) # x, y, state, time_in_state (full details of all of the visible humans)
         })
 
         self.action_space = gym.spaces.Box(
