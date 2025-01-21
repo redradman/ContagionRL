@@ -164,14 +164,13 @@ class SIRSEnvironment(gym.Env):
         """Apply the action to the environment"""
         self.agent_position = action[:2] # update position of the agent
         self.npi_level = action[2] # update NPI level
-
-    def step(self, action: np.array[np.float32]) -> Tuple[dict, float, bool, bool, dict]:
-        # Update all humans
-        self._apply_action(action)
-
-
+    
+    def _handle_human_stepping(self):
+        """Handle the stepping of a human"""
         for human in self.humans:
             human.time_in_state += 1
+            if human.state == STATE_DICT['D']:
+                continue
 
             if human.state == STATE_DICT['S']:
                 # Calculate probability of infection
@@ -195,6 +194,12 @@ class SIRSEnvironment(gym.Env):
                 p_immunity_loss = self.max_immunity_loss_prob * (1 - math.exp(-self.immunity_decay * human.time_in_state))
                 if self.np_random.random() < p_immunity_loss:
                     human.update_state(STATE_DICT['S'])
+        
 
+
+    def step(self, action: np.array[np.float32]) -> Tuple[dict, float, bool, bool, dict]:
+        # Update all humans
+        self._apply_action(action)
+        self._handle_human_stepping()
         # For now, return placeholder values
         return self._get_observation(), 0, False, False, {}
