@@ -1,6 +1,6 @@
 import gymnasium as gym
 import numpy as np
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import math
 
 # State definitions
@@ -55,7 +55,7 @@ class SIRSEnvironment(gym.Env):
         # Store parameters
         self.grid_size = grid_size
         self.n_humans = n_humans
-        self.n_infected_init = n_infected
+        self.n_infected = n_infected
         self.beta = beta # infection rate
         self.adherence = adherence # NPI adherence
         self.distance_decay = distance_decay # distance decay rate
@@ -71,6 +71,8 @@ class SIRSEnvironment(gym.Env):
 
         self.humans: List[Human] = []
 
+    ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
+
     def _calculate_infection_probability(self, susceptible: Human, infected_list: List[Human]) -> float:
         """Calculate probability of infection based on the given formula: Transition from S to I"""
         total_exposure = 0
@@ -85,7 +87,7 @@ class SIRSEnvironment(gym.Env):
         """Return list of infected humans"""
         return [h for h in self.humans if h.state == STATE_DICT['I']]
 
-    def _calculate_recovery_and_death_probabilities(self, human: Human) -> List[float, float]:
+    def _calculate_recovery_and_death_probabilities(self, human: Human) -> Tuple[float, float]:
         """Calculate recovery and death probabilities for a human: Transition from I to R and from I to D"""
         if human.state != STATE_DICT['I']:
             raise ValueError("incorrect call to function: probability of recovery and death is only applicable to humans in the infected state")
@@ -101,3 +103,30 @@ class SIRSEnvironment(gym.Env):
         else:
             return self.max_immunity_loss_prob * (1 - math.exp(-self.immunity_decay * human.time_in_state))
 
+    ##### 
+
+    def reset(self, seed: Optional[int] = None) -> Tuple[dict, dict]:
+        """Reset the environment to the initial state"""
+        super().reset(seed=seed)
+        
+        # Initialize humans
+        self.humans = []
+        positions = set()
+        
+        # Place humans randomly
+        for _ in range(self.n_humans):
+            while True:
+                x = self.np_random.integers(0, self.grid_size)
+                y = self.np_random.integers(0, self.grid_size)
+                if (x, y) not in positions: # to ensure the uniqueness of the position
+                    positions.add((x, y))
+                    break
+            
+            self.humans.append(Human(x, y, STATE_DICT['S']))
+
+        # Select random humans to be infected
+        initial_infected = self.np_random.choice(self.humans, self.n_infected, replace=False)
+        for human in initial_infected:
+            human.update_state(STATE_DICT['I'])
+
+        return self._get_observation(), {}
