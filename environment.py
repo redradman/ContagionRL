@@ -23,16 +23,16 @@ class SIRSEnvironment(gym.Env):
         max_immunity_loss_prob: float = 0.2,
         movement_type: str = "stationary",
         visibility_radius: float = -1,
-        render_mode: Optional[str] = None,
+        render_mode: Optional[str] = None, # TODO: add rendering
     ):
         super().__init__()
 
-        # Store parameters
+        # General parameters
         self.simulation_time = simulation_time
         self.counter = 0 # counter for the simulation time
         self.grid_size = grid_size # from o to grid_size exclusive for both of the x and y axis
 
-        # agent params
+        # Agent parameters that are handled by the env
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
         self.initial_agent_adherence = initial_agent_adherence # NPI adherence
         self.agent_adherence = initial_agent_adherence # NPI adherence
@@ -49,6 +49,7 @@ class SIRSEnvironment(gym.Env):
         self.max_immunity_loss_prob = max_immunity_loss_prob # maximum immunity loss probability
         self.visibility_radius = visibility_radius # visibility radius
 
+        # Observation and Action spaces
         # not defined yet as it requires careful design
         # Define observation space (will be used by the RL agent later)
         # self.observation_space = gym.spaces.Dict({
@@ -56,6 +57,7 @@ class SIRSEnvironment(gym.Env):
         #     "npi_level": gym.spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
         #     "visible_humans": gym.spaces.Box(low=0, high=self.grid_size, shape=(self.n_humans, 4), dtype=np.float32) # x, y, state, time_in_state (full details of all of the visible humans)
         # })
+
 
         self.action_space = gym.spaces.Box(
             low=np.array([-1, -1, 0], dtype=np.float32),
@@ -67,7 +69,7 @@ class SIRSEnvironment(gym.Env):
         self.movement_handler = MovementHandler(grid_size, movement_type)
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
 
-    def _calculate_infection_probability(self, susceptible: Human, infected_list: List[Human]) -> float:
+    def _calculate_infection_probability(self, susceptible: Human, infected_list: List[Human], is_agent: bool = False) -> float:
         """
         Calculate probability of infection based on nearby infected individuals
         If visibility_radius is -1, consider all infected individuals
@@ -84,8 +86,11 @@ class SIRSEnvironment(gym.Env):
                     continue
                     
                 total_exposure += math.exp(-self.distance_decay * distance)
-        
-        return min(1,(self.beta / (1 + self.agent_adherence)) * total_exposure)
+
+        if is_agent:
+            return min(1,(self.beta / (1 + self.agent_adherence)) * total_exposure)
+        else:
+            return min(1,(self.beta) * total_exposure)
 
     def _get_infected_list(self, center_x: Optional[int] = None, center_y: Optional[int] = None) -> List[Human]:
         """
@@ -165,8 +170,8 @@ class SIRSEnvironment(gym.Env):
 
         return self._get_observation(), {}
 
-    def _apply_action(self, action: np.array[np.float32]):
-        """Apply the action to the environment"""
+    def _update_agent(self, action: np.array[np.float32]):
+        """Update the agent status in the environment"""
         self.agent_position = action[:2] # update position of the agent
         self.agent_adherence = action[2] # update NPI level
     
@@ -218,10 +223,13 @@ class SIRSEnvironment(gym.Env):
         return 0
 
     def step(self, action: np.array[np.float32]) -> Tuple[dict, float, bool, bool, dict]:
-        # Update all humans
-        self._apply_action(action)
-        self._handle_human_stepping()
+        """Take a step in the environment. For more regarding the structure refer to the gymnasium documentation"""
+
         self.counter += 1
+        # Update agent and humans
+
+        self._update_agent(action) 
+        self._handle_human_stepping()
         # For now, return placeholder values
 
         # handle observation logic
