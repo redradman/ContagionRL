@@ -207,20 +207,44 @@ class SIRSEnvironment(gym.Env):
                 if self.np_random.random() < p_immunity_loss:
                     human.update_state(STATE_DICT['S'])
 
+    def _get_observation(self):
+        """Get the observation for the agent"""
+        # TODO: implement observation logic, make sure to specify the observation space in the fields part of the class
+        return {}
+
+    def _calculate_reward(self):    
+        """Calculate the reward for the agent"""
+        # TODO: implement reward logic
+        return 0
+
     def step(self, action: np.array[np.float32]) -> Tuple[dict, float, bool, bool, dict]:
         # Update all humans
         self._apply_action(action)
         self._handle_human_stepping()
+        self.counter += 1
         # For now, return placeholder values
 
-        # handle truncation logic
+        # handle observation logic
+        observation = self._get_observation()
 
-
-
-
+        # handle reward logic
+        reward = self._calculate_reward()
+     
         # handle termination logic
+        terminated = False
+        if self.counter >= self.simulation_time: # terminate if the simulation time is reached
+            terminated = True
+        # can add the check here to check if all the humans are dead or not. or if any infected human exists
+
+        # handle truncation logic
+        truncated = False
+        if self.agent_state == STATE_DICT['D']: # truncate if the agent is dead
+            truncated = True
 
 
+        # handle info logic 
+        info = {}
 
 
-        return self._get_observation(), 0, False, False, {}
+        # return the observation, reward, truncation, termination, info
+        return observation, reward, terminated, truncated, info
