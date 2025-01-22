@@ -166,6 +166,13 @@ class SIRSEnvironment(gym.Env):
     def _handle_human_stepping(self):
         """Handle the stepping of a human"""
         for human in self.humans:
+            new_x, new_y = self.movement_handler.get_new_position(
+            human.x, 
+            human.y, 
+            self.np_random
+        )
+            human.move(new_x, new_y, self.grid_size)
+
             human.time_in_state += 1
             if human.state == STATE_DICT['D']:
                 continue
