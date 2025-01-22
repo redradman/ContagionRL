@@ -147,7 +147,7 @@ class SIRSEnvironment(gym.Env):
         super().reset(seed=seed)
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
         self.agent_adherence = self.initial_agent_adherence
-        
+        self.agent_state = STATE_DICT['S']
         # Initialize humans
         self.humans = []
         positions = set()
