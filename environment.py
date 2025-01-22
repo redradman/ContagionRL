@@ -2,7 +2,7 @@ import gymnasium as gym
 import numpy as np
 from typing import Optional, List, Tuple
 import math
-from utils import STATE_DICT, ReplayBuffer, MovementHandler, Human
+from utils import STATE_DICT, MovementHandler, Human
 
 ######## SIRS Environment class ########
 class SIRSEnvironment(gym.Env):
@@ -10,11 +10,12 @@ class SIRSEnvironment(gym.Env):
 
     def __init__(
         self,
+        simulation_time: int = 1000,
         grid_size: int = 20,
         n_humans: int = 100,
         n_infected: int = 5,
         beta: float = 0.3,
-        adherence: float = 0.5,
+        initial_agent_adherence: float = 0.5,
         distance_decay: float = 0.2,
         lethality: float = 0.1,
         immunity_decay: float = 0.1,
@@ -27,15 +28,20 @@ class SIRSEnvironment(gym.Env):
         super().__init__()
 
         # Store parameters
-        self.grid_size = grid_size
+        self.simulation_time = simulation_time
+        self.counter = 0 # counter for the simulation time
+        self.grid_size = grid_size # from o to grid_size exclusive for both of the x and y axis
+
+        # agent params
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
-        self.npi_level = 0 # initial NPI level
+        self.initial_agent_adherence = initial_agent_adherence # NPI adherence
+        self.agent_adherence = initial_agent_adherence # NPI adherence
+        self.agent_state = STATE_DICT['S'] # initial state of the agent
 
         # SIRS parameters
         self.n_humans = n_humans
         self.n_infected = n_infected
         self.beta = beta # infection rate
-        self.adherence = adherence # NPI adherence
         self.distance_decay = distance_decay # distance decay rate
         self.lethality = lethality # lethality rate
         self.immunity_decay = immunity_decay # immunity decay rate
@@ -43,12 +49,13 @@ class SIRSEnvironment(gym.Env):
         self.max_immunity_loss_prob = max_immunity_loss_prob # maximum immunity loss probability
         self.visibility_radius = visibility_radius # visibility radius
 
+        # not defined yet as it requires careful design
         # Define observation space (will be used by the RL agent later)
-        self.observation_space = gym.spaces.Dict({
-            "agent_position": gym.spaces.Box(low=0, high=self.grid_size, shape=(2,), dtype=np.int32),
-            "npi_level": gym.spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
-            "visible_humans": gym.spaces.Box(low=0, high=self.grid_size, shape=(self.n_humans, 4), dtype=np.float32) # x, y, state, time_in_state (full details of all of the visible humans)
-        })
+        # self.observation_space = gym.spaces.Dict({
+        #     "agent_position": gym.spaces.Box(low=0, high=self.grid_size, shape=(2,), dtype=np.int32),
+        #     "npi_level": gym.spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
+        #     "visible_humans": gym.spaces.Box(low=0, high=self.grid_size, shape=(self.n_humans, 4), dtype=np.float32) # x, y, state, time_in_state (full details of all of the visible humans)
+        # })
 
         self.action_space = gym.spaces.Box(
             low=np.array([-1, -1, 0], dtype=np.float32),
@@ -78,7 +85,7 @@ class SIRSEnvironment(gym.Env):
                     
                 total_exposure += math.exp(-self.distance_decay * distance)
         
-        return min(1,(self.beta / (1 + self.adherence)) * total_exposure)
+        return min(1,(self.beta / (1 + self.agent_adherence)) * total_exposure)
 
     def _get_infected_list(self, center_x: Optional[int] = None, center_y: Optional[int] = None) -> List[Human]:
         """
@@ -134,7 +141,7 @@ class SIRSEnvironment(gym.Env):
         """Reset the environment to the initial state"""
         super().reset(seed=seed)
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
-        self.npi_level = 0
+        self.agent_adherence = self.initial_agent_adherence
         
         # Initialize humans
         self.humans = []
@@ -161,7 +168,7 @@ class SIRSEnvironment(gym.Env):
     def _apply_action(self, action: np.array[np.float32]):
         """Apply the action to the environment"""
         self.agent_position = action[:2] # update position of the agent
-        self.npi_level = action[2] # update NPI level
+        self.agent_adherence = action[2] # update NPI level
     
     def _handle_human_stepping(self):
         """Handle the stepping of a human"""
@@ -205,4 +212,15 @@ class SIRSEnvironment(gym.Env):
         self._apply_action(action)
         self._handle_human_stepping()
         # For now, return placeholder values
+
+        # handle truncation logic
+
+
+
+
+        # handle termination logic
+
+
+
+
         return self._get_observation(), 0, False, False, {}
