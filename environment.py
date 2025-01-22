@@ -227,10 +227,8 @@ class SIRSEnvironment(gym.Env):
 
         self.counter += 1
         # Update agent and humans
-
         self._update_agent(action) 
         self._handle_human_stepping()
-        # For now, return placeholder values
 
         # handle observation logic
         observation = self._get_observation()
