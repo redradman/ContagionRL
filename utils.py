@@ -109,8 +109,10 @@ class Human:
 
     def move(self, new_x: int, new_y: int, grid_size: int):
         """Move human to new position within grid bounds"""
-        self.x = max(0, min(new_x, grid_size))
-        self.y = max(0, min(new_y, grid_size))
+        assert new_x >= 0 and new_x <= grid_size, "new_x is out of bounds"
+        assert new_y >= 0 and new_y <= grid_size, "new_y is out of bounds"
+        self.x = new_x
+        self.y = new_y
 
     def update_state(self, new_state: int):
         """Update state and reset time counter"""
