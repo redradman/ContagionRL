@@ -178,9 +178,20 @@ class SIRSEnvironment(gym.Env):
         return self._get_observation(), {}
 
     def _update_agent(self, action: np.ndarray) -> None:
-        """Update the agent status in the environment"""
-        self.agent_position = action[:2] # update position of the agent
-        self.agent_adherence = action[2] # update NPI level
+        """
+        Update the agent status in the environment.
+        Ensures agent position stays within grid bounds using periodic boundary conditions.
+        """
+        # Update position while handling periodic boundaries
+        dx, dy = action[:2]
+        new_position = self.agent_position + np.array([dx, dy])
+        self.agent_position = np.array([
+            new_position[0] % self.grid_size,  # wrap x-coordinate
+            new_position[1] % self.grid_size   # wrap y-coordinate
+        ])
+        
+        # Update NPI level
+        self.agent_adherence = action[2]
     
     def _handle_human_stepping(self):
         """Handle the stepping of a human"""
