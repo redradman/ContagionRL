@@ -27,7 +27,7 @@ class ReplayBuffer:
 
 ######## Movement handler for humans in the environment ########
 class MovementHandler:
-    def __init__(self, grid_size: int, movement_type: str = "stationary"):
+    def __init__(self, grid_size: int, movement_type: str = "stationary", rounding_digits: int = 2):
         """
         Initialize movement handler
         
@@ -87,8 +87,8 @@ class MovementHandler:
         dy = rng.uniform(-1, 1)
         
         # Ensure we stay within bounds
-        new_x = max(0, min(round(x + dx), self.grid_size - 1))
-        new_y = max(0, min(round(y + dy), self.grid_size - 1))
+        new_x = max(0, min(round(x + dx, self.rounding_digits), self.grid_size))
+        new_y = max(0, min(round(y + dy, self.rounding_digits), self.grid_size))
         
         return new_x, new_y
 

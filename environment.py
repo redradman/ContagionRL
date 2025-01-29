@@ -23,6 +23,7 @@ class SIRSEnvironment(gym.Env):
         max_immunity_loss_prob: float = 0.2,
         movement_type: str = "stationary",
         visibility_radius: float = -1,
+        rounding_digits: int = 2,
         render_mode: Optional[str] = None, # TODO: add rendering
     ):
         super().__init__()
@@ -68,7 +69,7 @@ class SIRSEnvironment(gym.Env):
         # initialize humans list
         self.humans: List[Human] = [] 
         # Movement handler  
-        self.movement_handler = MovementHandler(grid_size, movement_type)
+        self.movement_handler = MovementHandler(grid_size, movement_type, rounding_digits=self.rounding_digits)
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
 
     def _calculate_distance(self, human1: Human, human2: Human) -> float:
