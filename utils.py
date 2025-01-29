@@ -95,11 +95,12 @@ class MovementHandler:
 
 ######## Human class ########
 class Human:
-    def __init__(self, x: int, y: int, state: int = STATE_DICT['S']):
+    def __init__(self, id: int, x: int, y: int, state: int = STATE_DICT['S']):
         """
         Initialize a human in the SIRS model
         state: integer representing state (0: Susceptible, 1: Infected, 2: Recovered, 3: Dead)
         """
+        self.id = id
         self.x = x
         self.y = y
         self.state = state
@@ -108,8 +109,8 @@ class Human:
 
     def move(self, new_x: int, new_y: int, grid_size: int):
         """Move human to new position within grid bounds"""
-        self.x = max(0, min(new_x, grid_size - 1))
-        self.y = max(0, min(new_y, grid_size - 1))
+        self.x = max(0, min(new_x, grid_size))
+        self.y = max(0, min(new_y, grid_size))
 
     def update_state(self, new_state: int):
         """Update state and reset time counter"""

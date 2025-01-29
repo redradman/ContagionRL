@@ -30,7 +30,7 @@ class SIRSEnvironment(gym.Env):
         # General parameters
         self.simulation_time = simulation_time
         self.counter = 0 # counter for the simulation time
-        self.grid_size = grid_size # from o to grid_size exclusive for both of the x and y axis
+        self.grid_size = grid_size # from 0 to grid_size exclusive for both of the x and y axis
 
         # Agent parameters that are handled by the env
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
@@ -65,65 +65,72 @@ class SIRSEnvironment(gym.Env):
             dtype=np.float32
         )
 
-        self.humans: List[Human] = []
+        # initialize humans list
+        self.humans: List[Human] = [] 
+        # Movement handler  
         self.movement_handler = MovementHandler(grid_size, movement_type)
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
 
-    def _calculate_infection_probability(self, susceptible: Human, infected_list: List[Human], is_agent: bool = False) -> float:
+    def _calculate_distance(self, human1: Human, human2: Human) -> float:
         """
-        Calculate probability of infection based on nearby infected individuals
-        If visibility_radius is -1, consider all infected individuals
+        Calculate the minimum distance between two humans in a periodic grid:
+            - Take two humans as input
+            - Return the min distance considering grid wrapping
         """
-        total_exposure = 0
-        for infected in infected_list:
-            if infected.state != STATE_DICT['I']:
-                assert infected.state == STATE_DICT['I'], "infected human is not in the infected state"
-            else:
-                distance = math.sqrt((susceptible.x - infected.x)**2 + (susceptible.y - infected.y)**2)
-                
-                # Skip if infected is outside the visibility radius (unless radius is -1)
-                if self.visibility_radius != -1 and distance > self.visibility_radius:
-                    continue
-                    
-                total_exposure += math.exp(-self.distance_decay * distance)
+        # Calculate direct differences
+        dx = abs(human1.x - human2.x)
+        dy = abs(human1.y - human2.y)
+        
+        # Consider wrapping around the grid
+        dx = min(dx, self.grid_size - dx)
+        dy = min(dy, self.grid_size - dy)
+        
+        return math.sqrt(dx**2 + dy**2) 
 
-        if is_agent:
-            return min(1,(self.beta / (1 + self.agent_adherence)) * total_exposure)
-        else:
-            return min(1,(self.beta) * total_exposure)
-
-    def _get_infected_list(self, center_x: Optional[int] = None, center_y: Optional[int] = None) -> List[Human]:
-        """
-        Return list of infected humans
-        If center coordinates are provided, only return infected humans within visibility radius
-        """
-        if center_x is None or center_y is None or self.visibility_radius == -1:
-            return [h for h in self.humans if h.state == STATE_DICT['I']]
-            
-        infected_list = []
-        for human in self.humans:
-            if human.state == STATE_DICT['I']:
-                distance = math.sqrt((center_x - human.x)**2 + (center_y - human.y)**2)
-                if distance <= self.visibility_radius:
-                    infected_list.append(human)
-                    
-        return infected_list
-
-    def _get_visible_humans(self, center_x: int, center_y: int) -> List[Human]:
+    def _get_neighbors_list(self, current_human: Human) -> List[Human]:
         """
         Get list of humans within visibility radius of given position
         If visibility_radius is -1, return all humans
         """
         if self.visibility_radius == -1:
-            return self.humans
+            return [h for h in self.humans if h.id != current_human.id] # return all humans except the one that is being checked
+        else: 
+            visible_humans = []
+            for human in self.humans:
+                if human.id == current_human.id:
+                    continue # skip the current human
+
+                distance = self._calculate_distance(current_human, human)
+                if distance <= self.visibility_radius:
+                    visible_humans.append(human)
             
-        visible_humans = []
-        for human in self.humans:
-            distance = math.sqrt((center_x - human.x)**2 + (center_y - human.y)**2)
-            if distance <= self.visibility_radius:
-                visible_humans.append(human)
-                
-        return visible_humans
+            return visible_humans
+
+
+    def _get_infected_list(self, current_human: Human) -> List[Human]:
+        """
+        Return list of infected humans
+        If center coordinates are provided, only return infected humans within visibility radius
+        """
+        neighbors = self._get_neighbors_list(current_human)
+        return [h for h in neighbors if h.state == STATE_DICT['I']]
+
+    def _calculate_infection_probability(self, susceptible: Human, is_agent: bool = False) -> float:
+        """
+        Calculate probability of infection based on nearby infected individuals
+        If visibility_radius is -1, consider all infected individuals
+        """
+        infected_list = self._get_infected_list(susceptible)
+
+        total_exposure = 0
+        for infected in infected_list:
+            distance = self._calculate_distance(susceptible, infected)
+            total_exposure += math.exp(-self.distance_decay * distance)
+
+        if is_agent:
+            return min(1,(self.beta / (1 + self.agent_adherence)) * total_exposure)
+        else:
+            return min(1,(self.beta) * total_exposure)
 
     def _calculate_recovery_probabilities(self, human: Human) -> float:
         """Calculate recovery probabilities for a human: Transition from I to R"""
@@ -153,7 +160,7 @@ class SIRSEnvironment(gym.Env):
         positions = set()
         
         # Place humans randomly
-        for _ in range(self.n_humans):
+        for i in range(self.n_humans):
             while True:
                 x = self.np_random.integers(0, self.grid_size)
                 y = self.np_random.integers(0, self.grid_size)
@@ -161,7 +168,7 @@ class SIRSEnvironment(gym.Env):
                     positions.add((x, y))
                     break
             
-            self.humans.append(Human(x, y, STATE_DICT['S']))
+            self.humans.append(Human(i, x, y, STATE_DICT['S'])) # i would be the id, x and y are positions, init state is S
 
         # Select random humans to be infected
         initial_infected = self.np_random.choice(self.humans, self.n_infected, replace=False)
@@ -191,8 +198,7 @@ class SIRSEnvironment(gym.Env):
 
             if human.state == STATE_DICT['S']:
                 # Calculate probability of infection
-                infected_list = self._get_infected_list()
-                p_infection = self._calculate_infection_probability(human, infected_list)
+                p_infection = self._calculate_infection_probability(human, is_agent=False)
                 if self.np_random.random() < p_infection:
                     human.update_state(STATE_DICT['I'])
 
