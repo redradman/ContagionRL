@@ -170,7 +170,7 @@ class SIRSEnvironment(gym.Env):
 
         return self._get_observation(), {}
 
-    def _update_agent(self, action: np.array[np.float32]):
+    def _update_agent(self, action: np.ndarray) -> None:
         """Update the agent status in the environment"""
         self.agent_position = action[:2] # update position of the agent
         self.agent_adherence = action[2] # update NPI level
@@ -222,7 +222,7 @@ class SIRSEnvironment(gym.Env):
         # TODO: implement reward logic
         return 0
 
-    def step(self, action: np.array[np.float32]) -> Tuple[dict, float, bool, bool, dict]:
+    def step(self, action: np.ndarray) -> Tuple[dict, float, bool, bool, dict]:
         """Take a step in the environment. For more regarding the structure refer to the gymnasium documentation"""
 
         self.counter += 1
