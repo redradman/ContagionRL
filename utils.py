@@ -37,6 +37,7 @@ class MovementHandler:
         """
         self.grid_size = grid_size
         self.movement_type = movement_type
+        self.rounding_digits = rounding_digits
         
         # Validate movement type
         valid_types = ["stationary", "discrete_random", "continuous_random"]
