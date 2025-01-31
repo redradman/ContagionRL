@@ -95,12 +95,15 @@ class MovementHandler:
 
 ######## Human class ########
 class Human:
-    def __init__(self, id: int, x: int, y: int, state: int = STATE_DICT['S']):
+    _next_id = 1  # Class variable to keep track of the next available ID
+    ## id 0 or negative is reserved for the agent
+    def __init__(self, x: int, y: int, state: int = STATE_DICT['S']):
         """
         Initialize a human in the SIRS model
         state: integer representing state (0: Susceptible, 1: Infected, 2: Recovered, 3: Dead)
         """
-        self.id = id
+        self.id = Human._next_id
+        Human._next_id += 1
         self.x = x
         self.y = y
         self.state = state

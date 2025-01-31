@@ -161,7 +161,7 @@ class SIRSEnvironment(gym.Env):
         positions = set()
         
         # Place humans randomly
-        for i in range(self.n_humans):
+        for _ in range(self.n_humans):
             while True:
                 x = self.np_random.integers(0, self.grid_size)
                 y = self.np_random.integers(0, self.grid_size)
@@ -169,7 +169,7 @@ class SIRSEnvironment(gym.Env):
                     positions.add((x, y))
                     break
             
-            self.humans.append(Human(i, x, y, STATE_DICT['S'])) # i would be the id, x and y are positions, init state is S
+            self.humans.append(Human(x, y, STATE_DICT['S'])) # x and y are positions, init state is S
 
         # Select random humans to be infected
         initial_infected = self.np_random.choice(self.humans, self.n_infected, replace=False)
