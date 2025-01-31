@@ -74,8 +74,8 @@ class MovementHandler:
         dy = rng.integers(-1, 2)  # Random integer from [-1, 0, 1]
         
         # Ensure we stay within bounds
-        new_x = max(0, min(x + dx, self.grid_size - 1))
-        new_y = max(0, min(y + dy, self.grid_size - 1))
+        new_x = (x + dx) % self.grid_size
+        new_y = (y + dy) % self.grid_size
         
         return new_x, new_y
 
@@ -87,8 +87,8 @@ class MovementHandler:
         dy = rng.uniform(-1, 1)
         
         # Ensure we stay within bounds
-        new_x = max(0, min(round(x + dx, self.rounding_digits), self.grid_size))
-        new_y = max(0, min(round(y + dy, self.rounding_digits), self.grid_size))
+        new_x = round((x + dx) % self.grid_size, self.rounding_digits)
+        new_y = round((y + dy) % self.grid_size, self.rounding_digits)
         
         return new_x, new_y
 
