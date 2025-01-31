@@ -87,10 +87,10 @@ class MovementHandler:
         dy = rng.uniform(-1, 1)
         
         # Ensure we stay within bounds
-        new_x = round((x + dx) % self.grid_size, self.rounding_digits)
-        new_y = round((y + dy) % self.grid_size, self.rounding_digits)
+        new_x = (x + dx) % self.grid_size
+        new_y = (y + dy) % self.grid_size
         
-        return new_x, new_y
+        return round(new_x, self.rounding_digits), round(new_y, self.rounding_digits)
 
 
 ######## Human class ########
