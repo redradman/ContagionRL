@@ -33,6 +33,7 @@ class SIRSEnvironment(gym.Env):
         self.counter = 0 # counter for the simulation time
         self.grid_size = grid_size # from 0 to grid_size exclusive for both of the x and y axis
         self.rounding_digits = rounding_digits
+
         # Agent parameters that are handled by the env
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
         self.initial_agent_adherence = initial_agent_adherence # NPI adherence
@@ -295,12 +296,90 @@ class SIRSEnvironment(gym.Env):
                     human.update_state(STATE_DICT['S'])
 
     def _get_observation(self):
-        """Get the observation for the agent"""
-        # TODO: implement observation logic, make sure to specify the observation space in the fields part of the class
+        """
+        Build and return the observation dict for the agent.
+
+        Observation space structure (as defined in __init__):
+        {
+            "agent_position": Box(shape=(2,)),           # (x, y)
+            "agent_adherence": Box(shape=(1,)),          # [adherence in 0..1]
+            "humans": Tuple(                             # length = n_humans
+                Dict({
+                    "continuous": Box(shape=(4,)),       # [visibility_flag, x, y, distance]
+                    "state": Discrete(4)                 # in {0=S,1=I,2=R,3=D}
+                })
+            )
+        }
+        """
+        agent_position = np.array(self.agent_position, dtype=np.float32)  # shape=(2,)
+        agent_adherence = np.array([self.agent_adherence], dtype=np.float32)  # shape=(1,)
+
+        # We'll create a temporary "human" for the agent to reuse your existing _get_neighbors_list logic.
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1  # distinct ID so we don't filter this out in _get_neighbors_list
+        )
         
-        # normalize the observation
+        # "visible_humans" is a list of Human objects within radius, or all if radius=-1
+        visible_humans = self._get_neighbors_list(agent_human)
+        visible_ids = set(h.id for h in visible_humans)
+
+        # 3) BUILD THE "humans" TUPLE
+        # ---------------------------
+        # For each of self.humans, compute:
+        #   - visibility_flag in {0,1}
+        #   - x, y normalized
+        #   - distance: distance from the agent normalized to [0,1]
+        #   - state: integer in {0,1,2,3}
+        # if the visibility_flag is 0, then we mask the values with 0
+
+        humans_obs_list = []
+        for current_human in self.humans:
+            visibility_flag = 1.0 if (current_human.id in visible_ids) else 0.0
+            
+            if visibility_flag == 0: 
+                x, y, dist, state_int = 0, 0, 0, 0
+                human_obs = {
+                    "continuous": np.array([visibility_flag, x, y, dist], dtype=np.float32),
+                    "state": state_int
+                }
+                humans_obs_list.append(human_obs)
+
+            else:
+
+                # normalized positions
+                x_norm = current_human.x / self.grid_size
+                y_norm = current_human.y / self.grid_size
+
+                # distance from the agent, e.g. normalized to [0,1] by dividing by max possible (~√(2) * grid_size)
+                dist = self._calculate_distance(agent_human, self.agent_position)
+                dist_norm = dist / (float(self.grid_size * math.sqrt(2)))
+
+                # state in {0,1,2,3} (S,I,R,D)
+                state_int = current_human.state
+
+                # 3E) Build the sub-dict for this human
+                human_obs = {
+                    "continuous": np.array([visibility_flag, x_norm, y_norm, dist_norm], dtype=np.float32),
+                    "state": state_int
+                }
+                humans_obs_list.append(human_obs)
+
+        # convert the list -> tuple to match the Tuple(...) definition
+        humans_obs = tuple(humans_obs_list)
+
+        # 4) COMPOSE FINAL OBSERVATION DICT
+        # ---------------------------------
+        obs = {
+            "agent_position": agent_position,
+            "agent_adherence": agent_adherence,
+            "humans": humans_obs
+        }
+
+        return obs
         
-        return {}
 
     def _calculate_reward(self):    
         """Calculate the reward for the agent"""
