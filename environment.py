@@ -32,7 +32,7 @@ class SIRSEnvironment(gym.Env):
         self.simulation_time = simulation_time
         self.counter = 0 # counter for the simulation time
         self.grid_size = grid_size # from 0 to grid_size exclusive for both of the x and y axis
-
+        self.rounding_digits = rounding_digits
         # Agent parameters that are handled by the env
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
         self.initial_agent_adherence = initial_agent_adherence # NPI adherence
@@ -339,7 +339,3 @@ class SIRSEnvironment(gym.Env):
 
         # return the observation, reward, truncation, termination, info
         return observation, reward, terminated, truncated, info
-
-
-
-
