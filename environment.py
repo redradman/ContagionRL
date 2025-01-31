@@ -51,29 +51,81 @@ class SIRSEnvironment(gym.Env):
         self.visibility_radius = visibility_radius # visibility radius
 
         # Observation and Action spaces
+        # self.observation_space = gym.spaces.Dict({
+        #     "agent_position": gym.spaces.Box(
+        #         low=0, 
+        #         high=self.grid_size, 
+        #         shape=(2,),  # x, y
+        #         dtype=np.float32
+        #     ),
+        #     "agent_adherence": gym.spaces.Box(
+        #         low=0, 
+        #         high=1, 
+        #         shape=(1,),  # agent adherence
+        #         dtype=np.float32
+        #     ),
+        #     "humans": gym.spaces.Box(
+        #         low=np.array([0, 0, 0, 0, 0] * self.n_humans),  # visibility_flag, x, y, distance, state
+        #         high=np.array([1, 1, 1, 1, 4] * self.n_humans),  # state goes from 0 to 4 (S=0, I=1, R=2, D=3)
+        #         shape=(self.n_humans, 5),  # visibility_flag, x, y, distance, state
+        #         dtype=np.float32
+        #     )
+        # })
+
+
+        # 1) Each human has 4 continuous features + 1 discrete state
+        #    store the continuous features in a Box( shape=(4,) ) 
+        #    and the discrete state in a Discrete(4).
+        
+        # Continuous: visibility_flag, x, y, distance
+        #    - visibility_flag in [0,1]
+        #    - x, y in [0, 1], normalized
+        #    - distance in [0,1] (normalized distance)
+        
+        human_continuous_space = gym.spaces.Box(
+            low=np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32),     # [flag, x, y, dist]
+            high=np.array([1.0, self.grid_size, self.grid_size, 1.0], dtype=np.float32),
+            shape=(4,),
+            dtype=np.float32
+        )
+        
+        # Discrete state with 4 categories: S=0, I=1, R=2, D=3
+        human_state_space = gym.spaces.Discrete(4)
+        
+        # Each human in the environment is a Dict of:
+        #   { "continuous": Box(...), "state": Discrete(4) }
+        human_space = gym.spaces.Dict({
+            "continuous": human_continuous_space,
+            "state": human_state_space
+        })
+        
+        # replicate that 'human_space' for n humans using a Tuple.
+        # So "humans" is a tuple of length n_humans, each a Dict with the above structure.
+        humans_tuple_space = gym.spaces.Tuple([human_space] * self.n_humans)
+        
+        # Finally, combine everything into a top-level Dict,
+        # including agent_position, agent_adherence, and the tuple of humans.
         self.observation_space = gym.spaces.Dict({
             "agent_position": gym.spaces.Box(
                 low=0, 
-                high=self.grid_size, 
-                shape=(2,),  # x, y
+                high=self.grid_size,
+                shape=(2,),
                 dtype=np.float32
             ),
             "agent_adherence": gym.spaces.Box(
-                low=0, 
-                high=1, 
-                shape=(1,),  # agent adherence
+                low=0,
+                high=1,
+                shape=(1,),
                 dtype=np.float32
             ),
-            "humans": gym.spaces.Box(
-                low=np.array([0, 0, 0, 0, 0, 0, 0, 0] * self.n_humans),  # visibility_flag, x, y, distance, state_S, state_I, state_R, state_D
-                high=np.array([1, 1, 1, 1, 1, 1, 1, 1] * self.n_humans),
-                shape=(self.n_humans, 8),  # visibility_flag, x, y, distance, one-hot state (4 dimensions)
-                dtype=np.float32
-            )
+            "humans": humans_tuple_space
         })
 
+        # Define the action space
+        # 1) agent_position: 2 continuous features (x, y)
+        # 2) agent_adherence: 1 continuous feature (adherence)
         self.action_space = gym.spaces.Box(
-            low=np.array([-1, -1, 0], dtype=np.float32),
+            low=np.array([-1, -1, 0], dtype=np.float32), 
             high=np.array([1, 1, 1], dtype=np.float32),
             dtype=np.float32
         )
@@ -287,3 +339,7 @@ class SIRSEnvironment(gym.Env):
 
         # return the observation, reward, truncation, termination, info
         return observation, reward, terminated, truncated, info
+
+
+
+
