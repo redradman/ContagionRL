@@ -40,7 +40,9 @@ class SIRSEnvironment(gym.Env):
         self.agent_adherence = initial_agent_adherence # NPI adherence
         self.agent_state = STATE_DICT['S'] # initial state of the agent
 
-        # SIRS parameters
+        ##############################
+        ####### SIRS parameters 
+        ##############################
         self.n_humans = n_humans
         self.n_infected = n_infected
         self.beta = beta # infection rate
@@ -51,29 +53,9 @@ class SIRSEnvironment(gym.Env):
         self.max_immunity_loss_prob = max_immunity_loss_prob # maximum immunity loss probability
         self.visibility_radius = visibility_radius # visibility radius
 
-        # Observation and Action spaces
-        # self.observation_space = gym.spaces.Dict({
-        #     "agent_position": gym.spaces.Box(
-        #         low=0, 
-        #         high=self.grid_size, 
-        #         shape=(2,),  # x, y
-        #         dtype=np.float32
-        #     ),
-        #     "agent_adherence": gym.spaces.Box(
-        #         low=0, 
-        #         high=1, 
-        #         shape=(1,),  # agent adherence
-        #         dtype=np.float32
-        #     ),
-        #     "humans": gym.spaces.Box(
-        #         low=np.array([0, 0, 0, 0, 0] * self.n_humans),  # visibility_flag, x, y, distance, state
-        #         high=np.array([1, 1, 1, 1, 4] * self.n_humans),  # state goes from 0 to 4 (S=0, I=1, R=2, D=3)
-        #         shape=(self.n_humans, 5),  # visibility_flag, x, y, distance, state
-        #         dtype=np.float32
-        #     )
-        # })
-
-
+        ##############################
+        ####### Observation and Action spaces
+        ##############################
         # 1) Each human has 4 continuous features + 1 discrete state
         #    store the continuous features in a Box( shape=(4,) ) 
         #    and the discrete state in a Discrete(4).
@@ -85,7 +67,7 @@ class SIRSEnvironment(gym.Env):
         
         human_continuous_space = gym.spaces.Box(
             low=np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32),     # [flag, x, y, dist]
-            high=np.array([1.0, self.grid_size, self.grid_size, 1.0], dtype=np.float32),
+            high=np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32), # values are in [0,1] normalized.
             shape=(4,),
             dtype=np.float32
         )
@@ -109,7 +91,7 @@ class SIRSEnvironment(gym.Env):
         self.observation_space = gym.spaces.Dict({
             "agent_position": gym.spaces.Box(
                 low=0, 
-                high=self.grid_size,
+                high=1,
                 shape=(2,),
                 dtype=np.float32
             ),
@@ -418,3 +400,34 @@ class SIRSEnvironment(gym.Env):
 
         # return the observation, reward, truncation, termination, info
         return observation, reward, terminated, truncated, info
+
+
+
+
+
+
+#############################
+########## ARCHIVE ##########
+#############################
+
+        # Observation and Action spaces
+        # self.observation_space = gym.spaces.Dict({
+        #     "agent_position": gym.spaces.Box(
+        #         low=0, 
+        #         high=self.grid_size, 
+        #         shape=(2,),  # x, y
+        #         dtype=np.float32
+        #     ),
+        #     "agent_adherence": gym.spaces.Box(
+        #         low=0, 
+        #         high=1, 
+        #         shape=(1,),  # agent adherence
+        #         dtype=np.float32
+        #     ),
+        #     "humans": gym.spaces.Box(
+        #         low=np.array([0, 0, 0, 0, 0] * self.n_humans),  # visibility_flag, x, y, distance, state
+        #         high=np.array([1, 1, 1, 1, 4] * self.n_humans),  # state goes from 0 to 4 (S=0, I=1, R=2, D=3)
+        #         shape=(self.n_humans, 5),  # visibility_flag, x, y, distance, state
+        #         dtype=np.float32
+        #     )
+        # })
