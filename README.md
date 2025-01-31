@@ -1,2 +1,2 @@
 # ContagionRL
-SIRS model and learning agent via SIRS
+SIRS model and RL agent research
