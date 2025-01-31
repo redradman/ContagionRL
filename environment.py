@@ -51,14 +51,26 @@ class SIRSEnvironment(gym.Env):
         self.visibility_radius = visibility_radius # visibility radius
 
         # Observation and Action spaces
-        # not defined yet as it requires careful design
-        # Define observation space (will be used by the RL agent later)
-        # self.observation_space = gym.spaces.Dict({
-        #     "agent_position": gym.spaces.Box(low=0, high=self.grid_size, shape=(2,), dtype=np.int32),
-        #     "npi_level": gym.spaces.Box(low=0, high=1, shape=(), dtype=np.float32),
-        #     "visible_humans": gym.spaces.Box(low=0, high=self.grid_size, shape=(self.n_humans, 4), dtype=np.float32) # x, y, state, time_in_state (full details of all of the visible humans)
-        # })
-
+        self.observation_space = gym.spaces.Dict({
+            "agent_position": gym.spaces.Box(
+                low=0, 
+                high=self.grid_size, 
+                shape=(2,),  # x, y
+                dtype=np.float32
+            ),
+            "agent_adherence": gym.spaces.Box(
+                low=0, 
+                high=1, 
+                shape=(1,),  # agent adherence
+                dtype=np.float32
+            ),
+            "humans": gym.spaces.Box(
+                low=np.array([0, 0, 0, 0, 0, 0, 0, 0] * self.n_humans),  # visibility_flag, x, y, distance, state_S, state_I, state_R, state_D
+                high=np.array([1, 1, 1, 1, 1, 1, 1, 1] * self.n_humans),
+                shape=(self.n_humans, 8),  # visibility_flag, x, y, distance, one-hot state (4 dimensions)
+                dtype=np.float32
+            )
+        })
 
         self.action_space = gym.spaces.Box(
             low=np.array([-1, -1, 0], dtype=np.float32),
@@ -233,6 +245,9 @@ class SIRSEnvironment(gym.Env):
     def _get_observation(self):
         """Get the observation for the agent"""
         # TODO: implement observation logic, make sure to specify the observation space in the fields part of the class
+        
+        # normalize the observation
+        
         return {}
 
     def _calculate_reward(self):    
