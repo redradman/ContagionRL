@@ -24,6 +24,7 @@ class SIRSEnvironment(gym.Env):
         movement_type: str = "stationary",
         visibility_radius: float = -1,
         rounding_digits: int = 2,
+        reinfection_count: int = 3,  # Number of humans to reinfect when no infected exist
         render_mode: Optional[str] = None, # TODO: add rendering
     ):
         super().__init__()
@@ -33,6 +34,7 @@ class SIRSEnvironment(gym.Env):
         self.counter = 0 # counter for the simulation time
         self.grid_size = grid_size # from 0 to grid_size exclusive for both of the x and y axis
         self.rounding_digits = rounding_digits
+        self.reinfection_count = reinfection_count
 
         # Agent parameters that are handled by the env
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
@@ -242,13 +244,44 @@ class SIRSEnvironment(gym.Env):
         self.agent_adherence = action[2]
     
     def _handle_human_stepping(self):
-        """Handle the stepping of a human"""
+        """Handle the stepping of humans and agent state transitions"""
+        # First handle agent state transitions if agent is not dead
+        if self.agent_state != STATE_DICT['D']:
+            # Create a temporary Human object for the agent to use existing transition functions
+            agent_human = Human(
+                x=self.agent_position[0],
+                y=self.agent_position[1],
+                state=self.agent_state,
+                id=-1
+            )
+
+            if self.agent_state == STATE_DICT['S']:
+                # Calculate probability of infection
+                p_infection = self._calculate_infection_probability(agent_human, is_agent=True)
+                if self.np_random.random() < p_infection:
+                    self.agent_state = STATE_DICT['I']
+            
+            elif self.agent_state == STATE_DICT['I']:
+                # Check for death
+                if self.np_random.random() < self.lethality:
+                    self.agent_state = STATE_DICT['D']
+                # Check for recovery if not dead
+                elif self.np_random.random() < self._calculate_recovery_probabilities(agent_human):
+                    self.agent_state = STATE_DICT['R']
+            
+            elif self.agent_state == STATE_DICT['R']:
+                # Check for immunity loss
+                p_immunity_loss = self._calculate_immunity_loss_probability(agent_human)
+                if self.np_random.random() < p_immunity_loss:
+                    self.agent_state = STATE_DICT['S']
+
+        # Now handle human stepping and state transitions
         for human in self.humans:
             new_x, new_y = self.movement_handler.get_new_position(
-            human.x, 
-            human.y, 
-            self.np_random
-        )
+                human.x, 
+                human.y, 
+                self.np_random
+            )
             human.move(new_x, new_y, self.grid_size)
 
             human.time_in_state += 1
@@ -273,9 +306,23 @@ class SIRSEnvironment(gym.Env):
 
             elif human.state == STATE_DICT['R']:
                 # Check for immunity loss
-                p_immunity_loss = self.max_immunity_loss_prob * (1 - math.exp(-self.immunity_decay * human.time_in_state))
+                p_immunity_loss = self._calculate_immunity_loss_probability(human)
                 if self.np_random.random() < p_immunity_loss:
                     human.update_state(STATE_DICT['S'])
+
+        # Check if there are any infected humans
+        infected_count = sum(1 for human in self.humans if human.state == STATE_DICT['I'])
+        if infected_count == 0:
+            # Get list of dead humans
+            dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
+            if dead_humans:
+                # Randomly select humans to reinfect
+                n_to_reinfect = min(self.reinfection_count, len(dead_humans))
+                if n_to_reinfect > 0:
+                    reinfected_humans = self.np_random.choice(dead_humans, n_to_reinfect, replace=False)
+                    for human in reinfected_humans:
+                        human.update_state(STATE_DICT['I'])
+                        human.time_in_state = 0  # Reset time in state for newly infected
 
     def _get_observation(self):
         """
