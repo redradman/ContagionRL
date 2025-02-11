@@ -3,10 +3,30 @@ import numpy as np
 from typing import Optional, List, Tuple
 import math
 from utils import STATE_DICT, MovementHandler, Human
+import pygame
+import pygame.gfxdraw
+from pygame import Surface
 
 ######## SIRS Environment class ########
 class SIRSEnvironment(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+    metadata = {
+        "render_modes": ["human", "rgb_array"],
+        "render_fps": 4,
+        "render_resolution": (800, 800),  # Window size for rendering
+    }
+
+    # Color definitions for rendering
+    COLORS = {
+        'background': (255, 255, 255),  # White
+        'grid_lines': (200, 200, 200),  # Light gray
+        'agent': (255, 165, 0),         # Orange
+        'S': (30, 144, 255),           # Dodger Blue
+        'I': (220, 20, 60),            # Crimson
+        'R': (50, 205, 50),            # Lime Green
+        'D': (128, 128, 128),          # Gray
+        'text': (0, 0, 0),             # Black
+        'panel_bg': (240, 240, 240)    # Light gray for info panel
+    }
 
     def __init__(
         self,
@@ -25,7 +45,7 @@ class SIRSEnvironment(gym.Env):
         visibility_radius: float = -1,
         rounding_digits: int = 2,
         reinfection_count: int = 3,  # Number of humans to reinfect when no infected exist
-        render_mode: Optional[str] = None, # TODO: add rendering
+        render_mode: Optional[str] = None,
     ):
         super().__init__()
 
@@ -34,6 +54,27 @@ class SIRSEnvironment(gym.Env):
             raise ValueError("visibility_radius must be -1 (full visibility) or a positive number")
         if initial_agent_adherence < 0 or initial_agent_adherence > 1:
             raise ValueError("initial_agent_adherence must be in [0,1]")
+        
+        # Store render mode and initialize rendering variables
+        self.render_mode = render_mode
+        self.window = None
+        self.clock = None
+        self.window_size = self.metadata["render_resolution"]
+        self.last_action = None  # Store last action for rendering
+
+        # Calculate cell size for rendering
+        self.cell_size = min(
+            self.window_size[0] // grid_size,
+            self.window_size[1] // grid_size
+        )
+        # Recalculate window size to make it exact
+        self.window_size = (
+            self.cell_size * grid_size,
+            self.cell_size * grid_size
+        )
+        
+        # Font size for rendering
+        self.font_size = max(10, self.cell_size // 2)
         
         # General parameters
         self.simulation_time = simulation_time
@@ -448,6 +489,9 @@ class SIRSEnvironment(gym.Env):
         """Take a step in the environment. For more regarding the structure refer to the gymnasium documentation"""
 
         self.counter += 1
+        # Store last action for rendering
+        self.last_action = action.copy()
+        
         # Update agent and humans
         self._update_agent(action) 
         self._handle_human_stepping()
@@ -462,25 +506,182 @@ class SIRSEnvironment(gym.Env):
         terminated = False
         if self.counter >= self.simulation_time: # terminate if the simulation time is reached
             terminated = True
-        # can add the check here to check if all the humans are dead or not. or if any infected human exists
 
         # handle truncation logic
         truncated = False
         if self.agent_state == STATE_DICT['D']: # truncate if the agent is dead
             truncated = True
 
-
         # handle info logic 
         info = {}
 
+        # Render if needed
+        if self.render_mode is not None:
+            self._render_frame()
 
         # return the observation, reward, truncation, termination, info
         return observation, reward, terminated, truncated, info
 
+    def _render_frame(self) -> Optional[np.ndarray]:
+        """
+        Render the current state of the environment.
+        Returns:
+            np.ndarray: RGB array if mode is 'rgb_array', None if mode is 'human'
+        """
+        if self.render_mode is None:
+            return None
 
+        # Initialize pygame if not done yet
+        if self.window is None and self.render_mode == "human":
+            pygame.init()
+            pygame.display.init()
+            self.window = pygame.display.set_mode(self.window_size)
+            pygame.display.set_caption("SIRS Environment")
+            # Initialize font
+            pygame.font.init()
+            self.font = pygame.font.SysFont('Arial', self.font_size)
 
+        if self.clock is None and self.render_mode == "human":
+            self.clock = pygame.time.Clock()
 
+        # Create the canvas
+        canvas = pygame.Surface(self.window_size)
+        canvas.fill(self.COLORS['background'])
 
+        # Draw grid lines
+        for x in range(self.grid_size + 1):
+            pygame.draw.line(
+                canvas,
+                self.COLORS['grid_lines'],
+                (x * self.cell_size, 0),
+                (x * self.cell_size, self.window_size[1])
+            )
+        for y in range(self.grid_size + 1):
+            pygame.draw.line(
+                canvas,
+                self.COLORS['grid_lines'],
+                (0, y * self.cell_size),
+                (self.window_size[0], y * self.cell_size)
+            )
+
+        # Draw humans
+        for human in self.humans:
+            x = int(human.x * self.cell_size + self.cell_size/2)
+            y = int(human.y * self.cell_size + self.cell_size/2)
+            radius = self.cell_size // 4
+
+            # Get color based on state
+            state_str = [k for k, v in STATE_DICT.items() if v == human.state][0]
+            color = self.COLORS[state_str]
+
+            pygame.draw.circle(canvas, color, (x, y), radius)
+
+        # Draw agent
+        agent_x = int(self.agent_position[0] * self.cell_size + self.cell_size/2)
+        agent_y = int(self.agent_position[1] * self.cell_size + self.cell_size/2)
+        agent_radius = self.cell_size // 3
+
+        # Draw agent with state-colored border
+        agent_state_str = [k for k, v in STATE_DICT.items() if v == self.agent_state][0]
+        pygame.draw.circle(canvas, self.COLORS[agent_state_str], (agent_x, agent_y), agent_radius)
+        pygame.draw.circle(canvas, self.COLORS['agent'], (agent_x, agent_y), agent_radius - 2)
+
+        # Draw movement vector if last action exists
+        if self.last_action is not None:
+            dx, dy = self.last_action[:2]
+            # Scale the movement vector for visibility
+            arrow_scale = self.cell_size
+            end_x = agent_x + dx * arrow_scale
+            end_y = agent_y + dy * arrow_scale
+            # Draw arrow
+            pygame.draw.line(canvas, self.COLORS['text'], 
+                           (agent_x, agent_y), (end_x, end_y), 2)
+            # Draw arrowhead
+            arrow_size = self.cell_size // 8
+            pygame.draw.polygon(canvas, self.COLORS['text'], [
+                (end_x, end_y),
+                (end_x - arrow_size * np.sign(dx), end_y - arrow_size),
+                (end_x - arrow_size * np.sign(dx), end_y + arrow_size)
+            ])
+
+        # Draw info panel
+        info_surface = self._create_info_panel()
+        canvas.blit(info_surface, (10, 10))
+
+        if self.render_mode == "human":
+            # Copy canvas to window
+            self.window.blit(canvas, canvas.get_rect())
+            pygame.event.pump()
+            pygame.display.flip()
+            self.clock.tick(self.metadata["render_fps"])
+            return None
+        else:  # rgb_array
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
+            )
+
+    def _create_info_panel(self) -> Surface:
+        """Create an information panel surface"""
+        # Count humans in each state
+        state_counts = {
+            'S': sum(1 for h in self.humans if h.state == STATE_DICT['S']),
+            'I': sum(1 for h in self.humans if h.state == STATE_DICT['I']),
+            'R': sum(1 for h in self.humans if h.state == STATE_DICT['R']),
+            'D': sum(1 for h in self.humans if h.state == STATE_DICT['D'])
+        }
+
+        # Create info text
+        info_lines = [
+            f"Time: {self.counter}/{self.simulation_time}",
+            f"Agent State: {[k for k,v in STATE_DICT.items() if v == self.agent_state][0]}",
+            f"Time in State: {self.agent_time_in_state}",
+            f"Position: ({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})",
+            f"Adherence: {self.agent_adherence:.2f}",
+            "Population:",
+            f"  S: {state_counts['S']}",
+            f"  I: {state_counts['I']}",
+            f"  R: {state_counts['R']}",
+            f"  D: {state_counts['D']}"
+        ]
+
+        # Add last action if available
+        if self.last_action is not None:
+            info_lines.extend([
+                "Last Action:",
+                f"  Move: ({self.last_action[0]:.2f}, {self.last_action[1]:.2f})",
+                f"  Adherence: {self.last_action[2]:.2f}"
+            ])
+
+        # Create surface for info panel
+        line_height = self.font_size + 2
+        panel_height = line_height * len(info_lines) + 20
+        panel_width = 250
+        info_surface = pygame.Surface((panel_width, panel_height))
+        info_surface.fill(self.COLORS['panel_bg'])
+        info_surface.set_alpha(230)  # Semi-transparent
+
+        # Draw text
+        for i, line in enumerate(info_lines):
+            text_surface = self.font.render(line, True, self.COLORS['text'])
+            info_surface.blit(text_surface, (10, 10 + i * line_height))
+
+        return info_surface
+
+    def render(self):
+        """
+        Render the environment.
+        Returns:
+            None if mode is 'human', numpy array if mode is 'rgb_array'
+        """
+        return self._render_frame()
+
+    def close(self):
+        """Close the environment and cleanup pygame resources."""
+        if self.window is not None:
+            pygame.display.quit()
+            pygame.quit()
+            self.window = None
+            self.clock = None
 
 #############################
 ########## ARCHIVE ##########
