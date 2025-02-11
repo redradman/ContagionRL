@@ -29,6 +29,12 @@ class SIRSEnvironment(gym.Env):
     ):
         super().__init__()
 
+        # Validate parameters
+        if visibility_radius < -1:
+            raise ValueError("visibility_radius must be -1 (full visibility) or a positive number")
+        if initial_agent_adherence < 0 or initial_agent_adherence > 1:
+            raise ValueError("initial_agent_adherence must be in [0,1]")
+        
         # General parameters
         self.simulation_time = simulation_time
         self.counter = 0 # counter for the simulation time
@@ -45,6 +51,7 @@ class SIRSEnvironment(gym.Env):
         self.initial_agent_adherence = initial_agent_adherence # NPI adherence
         self.agent_adherence = initial_agent_adherence # NPI adherence
         self.agent_state = STATE_DICT['S'] # initial state of the agent
+        self.agent_time_in_state = 0  # Track time in state for agent
 
         ##############################
         ####### SIRS parameters 
@@ -210,6 +217,7 @@ class SIRSEnvironment(gym.Env):
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
         self.agent_adherence = self.initial_agent_adherence
         self.agent_state = STATE_DICT['S']
+        self.agent_time_in_state = 0  # Reset agent time in state
         # Initialize humans
         self.humans = []
         positions = set()
@@ -238,10 +246,14 @@ class SIRSEnvironment(gym.Env):
         Action space is normalized to [-1, 1] for movement and [0, 1] for adherence.
         Ensures agent position stays within grid bounds using periodic boundary conditions.
         """
+        # Clip actions to ensure they stay within bounds
+        dx = np.clip(action[0], -1, 1)
+        dy = np.clip(action[1], -1, 1)
+        adherence = np.clip(action[2], 0, 1)
+        
         # Scale movement from [-1,1] to actual grid movement
-        dx, dy = action[:2]
-        scaled_dx = dx * self.max_movement  # Already in [-1,1] range
-        scaled_dy = dy * self.max_movement  # Already in [-1,1] range
+        scaled_dx = dx * self.max_movement
+        scaled_dy = dy * self.max_movement
         
         new_position = self.agent_position + np.array([scaled_dx, scaled_dy])
         self.agent_position = np.array([
@@ -249,8 +261,8 @@ class SIRSEnvironment(gym.Env):
             new_position[1] % self.grid_size   # wrap y-coordinate
         ])
         
-        # Update NPI level (already in [0,1] range)
-        self.agent_adherence = action[2]
+        # Update NPI level (clipped to [0,1] range)
+        self.agent_adherence = adherence
     
     def _handle_human_stepping(self):
         """Handle the stepping of humans and agent state transitions"""
@@ -261,28 +273,36 @@ class SIRSEnvironment(gym.Env):
                 x=self.agent_position[0],
                 y=self.agent_position[1],
                 state=self.agent_state,
-                id=-1
+                id=-1,
+                time_in_state=self.agent_time_in_state  # Pass the agent's time in state
             )
+
+            # Increment agent time in state
+            self.agent_time_in_state += 1
 
             if self.agent_state == STATE_DICT['S']:
                 # Calculate probability of infection
                 p_infection = self._calculate_infection_probability(agent_human, is_agent=True)
                 if self.np_random.random() < p_infection:
                     self.agent_state = STATE_DICT['I']
+                    self.agent_time_in_state = 0  # Reset time in state on transition
             
             elif self.agent_state == STATE_DICT['I']:
                 # Check for death
                 if self.np_random.random() < self.lethality:
                     self.agent_state = STATE_DICT['D']
+                    self.agent_time_in_state = 0  # Reset time in state on transition
                 # Check for recovery if not dead
                 elif self.np_random.random() < self._calculate_recovery_probabilities(agent_human):
                     self.agent_state = STATE_DICT['R']
+                    self.agent_time_in_state = 0  # Reset time in state on transition
             
             elif self.agent_state == STATE_DICT['R']:
                 # Check for immunity loss
                 p_immunity_loss = self._calculate_immunity_loss_probability(agent_human)
                 if self.np_random.random() < p_immunity_loss:
                     self.agent_state = STATE_DICT['S']
+                    self.agent_time_in_state = 0  # Reset time in state on transition
 
         # Now handle human stepping and state transitions
         for human in self.humans:
