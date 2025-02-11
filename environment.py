@@ -36,6 +36,10 @@ class SIRSEnvironment(gym.Env):
         self.rounding_digits = rounding_digits
         self.reinfection_count = reinfection_count
 
+        # Normalization constants
+        self.max_distance = math.sqrt(2) * self.grid_size  # Maximum possible distance in the grid
+        self.max_movement = 1.0  # Maximum movement in any direction (-1 to 1)
+        
         # Agent parameters that are handled by the env
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
         self.initial_agent_adherence = initial_agent_adherence # NPI adherence
@@ -125,7 +129,8 @@ class SIRSEnvironment(gym.Env):
         """
         Calculate the minimum distance between two humans in a periodic grid:
             - Take two humans as input
-            - Return the min distance considering grid wrapping
+            - Return the raw distance considering grid wrapping
+            - Note: This returns the raw distance, normalization should be done by the caller if needed
         """
         # Calculate direct differences
         dx = abs(human1.x - human2.x)
@@ -135,7 +140,7 @@ class SIRSEnvironment(gym.Env):
         dx = min(dx, self.grid_size - dx)
         dy = min(dy, self.grid_size - dy)
         
-        return math.sqrt(dx**2 + dy**2) 
+        return math.sqrt(dx**2 + dy**2)
 
     def _get_neighbors_list(self, current_human: Human) -> List[Human]:
         """
@@ -230,17 +235,21 @@ class SIRSEnvironment(gym.Env):
     def _update_agent(self, action: np.ndarray) -> None:
         """
         Update the agent status in the environment.
+        Action space is normalized to [-1, 1] for movement and [0, 1] for adherence.
         Ensures agent position stays within grid bounds using periodic boundary conditions.
         """
-        # Update position while handling periodic boundaries
+        # Scale movement from [-1,1] to actual grid movement
         dx, dy = action[:2]
-        new_position = self.agent_position + np.array([dx, dy])
+        scaled_dx = dx * self.max_movement  # Already in [-1,1] range
+        scaled_dy = dy * self.max_movement  # Already in [-1,1] range
+        
+        new_position = self.agent_position + np.array([scaled_dx, scaled_dy])
         self.agent_position = np.array([
             new_position[0] % self.grid_size,  # wrap x-coordinate
             new_position[1] % self.grid_size   # wrap y-coordinate
         ])
         
-        # Update NPI level
+        # Update NPI level (already in [0,1] range)
         self.agent_adherence = action[2]
     
     def _handle_human_stepping(self):
@@ -330,7 +339,7 @@ class SIRSEnvironment(gym.Env):
 
         Observation space structure (as defined in __init__):
         {
-            "agent_position": Box(shape=(2,)),           # (x, y)
+            "agent_position": Box(shape=(2,)),           # (x, y) normalized to [0,1]
             "agent_adherence": Box(shape=(1,)),          # [adherence in 0..1]
             "humans": Tuple(                             # length = n_humans
                 Dict({
@@ -340,8 +349,9 @@ class SIRSEnvironment(gym.Env):
             )
         }
         """
-        agent_position = np.array(self.agent_position, dtype=np.float32)  # shape=(2,)
-        agent_adherence = np.array([self.agent_adherence], dtype=np.float32)  # shape=(1,)
+        # Normalize agent position to [0,1] range
+        agent_position = np.array(self.agent_position, dtype=np.float32) / self.grid_size  # shape=(2,)
+        agent_adherence = np.array([self.agent_adherence], dtype=np.float32)  # already in [0,1]
 
         # We'll create a temporary "human" for the agent to reuse your existing _get_neighbors_list logic.
         agent_human = Human(
@@ -359,7 +369,7 @@ class SIRSEnvironment(gym.Env):
         # ---------------------------
         # For each of self.humans, compute:
         #   - visibility_flag in {0,1}
-        #   - x, y normalized
+        #   - x, y normalized to [0,1]
         #   - distance: distance from the agent normalized to [0,1]
         #   - state: integer in {0,1,2,3}
         # if the visibility_flag is 0, then we mask the values with 0
@@ -377,19 +387,18 @@ class SIRSEnvironment(gym.Env):
                 humans_obs_list.append(human_obs)
 
             else:
-
-                # normalized positions
+                # Normalize positions to [0,1]
                 x_norm = current_human.x / self.grid_size
                 y_norm = current_human.y / self.grid_size
 
-                # distance from the agent, e.g. normalized to [0,1] by dividing by max possible (~√(2) * grid_size)
-                dist = self._calculate_distance(agent_human, self.agent_position)
-                dist_norm = dist / (float(self.grid_size * math.sqrt(2)))
+                # Calculate and normalize distance to [0,1]
+                dist = self._calculate_distance(agent_human, current_human)
+                dist_norm = dist / self.max_distance  # Normalize using max possible distance
 
                 # state in {0,1,2,3} (S,I,R,D)
                 state_int = current_human.state
 
-                # 3E) Build the sub-dict for this human
+                # Build the sub-dict for this human
                 human_obs = {
                     "continuous": np.array([visibility_flag, x_norm, y_norm, dist_norm], dtype=np.float32),
                     "state": state_int
