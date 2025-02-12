@@ -60,8 +60,10 @@ class MovementHandler:
             return self._stationary_move(x, y)
         elif self.movement_type == "discrete_random":
             return self._discrete_random_move(x, y, rng)
-        else:  # continuous_random
+        elif self.movement_type == "continuous_random":  # continuous_random
             return self._continuous_random_move(x, y, rng)
+        else:
+            raise ValueError(f"Invalid movement type: {self.movement_type}")
 
     def _stationary_move(self, x: int, y: int) -> Tuple[int, int]:
         """Humans don't move"""
