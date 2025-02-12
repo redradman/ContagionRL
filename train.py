@@ -26,8 +26,6 @@ class VideoRecorderCallback(BaseCallback):
             # print("Starting evaluation episode...")
             # Reset the environment and get initial observation
             reset_result = self.eval_env.reset()
-            # print("Reset result:", reset_result)
-            # Handle both old and new gym API
             if isinstance(reset_result, tuple):
                 obs = reset_result[0]
             else:
@@ -37,36 +35,32 @@ class VideoRecorderCallback(BaseCallback):
             env = self.eval_env.envs[0]
             frames = []
             
-            # Render initial state
+            # Run episode and collect frames
+            done = False
+            step_count = 0
+            
+            # Collect initial frame
             frame = env.render()
             if frame is not None:
                 frames.append(frame)
-                # print("Added initial frame")
             
-            # Run episode until done
-            done = False
-            step_count = 0
             while not done:
                 # Get action from the agent
                 action, _ = self.model.predict(obs, deterministic=True)
-                # print(f"\nStep {step_count + 1}:")
-                # print("Action:", action)
+                
                 # Step the environment
                 obs, reward, terminated, info = self.eval_env.step(action)
-                # print("Step result:")
-                # print("- Reward:", reward)
-                # print("- Terminated:", terminated)
-                # print("- Info:", info)
+                
                 # In vectorized env, terminated is a boolean array and info is a list of dicts
                 terminated = terminated[0]
                 truncated = info[0].get('TimeLimit.truncated', False)
                 done = terminated or truncated
                 
-                # Render each step
-                frame = env.render()
-                if frame is not None:
-                    frames.append(frame)
-                    # print("Added frame")
+                # Only add frame if we're not done (to avoid capturing next episode's first frame)
+                if not done:
+                    frame = env.render()
+                    if frame is not None:
+                        frames.append(frame)
                 step_count += 1
             
             # print(f"Episode finished after {step_count} steps")
