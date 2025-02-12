@@ -493,11 +493,16 @@ class SIRSEnvironment(gym.Env):
         # Create figure with a modern style
         plt.style.use('seaborn-v0_8-whitegrid')
         fig = plt.figure(figsize=figsize, dpi=dpi, facecolor=self.COLORS['background'])
-        # Update grid spec to include space for legend
-        gs = plt.GridSpec(1, 3, width_ratios=[0.65, 0.1, 0.25], figure=fig)
+        # Update grid spec with legend on left, plot in middle, info on right
+        gs = plt.GridSpec(1, 3, width_ratios=[0.15, 0.6, 0.25], figure=fig)
+        gs.update(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2)
         
-        # Grid subplot with modern styling
-        ax_grid = fig.add_subplot(gs[0])
+        # Create legend axis first (on the left)
+        ax_legend = fig.add_subplot(gs[0])
+        ax_legend.axis('off')
+        
+        # Grid subplot in the middle
+        ax_grid = fig.add_subplot(gs[1])
         ax_grid.set_facecolor(self.COLORS['background'])
         
         # Draw grid with subtle lines
@@ -530,7 +535,8 @@ class SIRSEnvironment(gym.Env):
         agent_state_str = [k for k, v in STATE_DICT.items() if v == self.agent_state][0]
         ax_grid.scatter([self.agent_position[0]], [self.agent_position[1]], 
                        c=self.COLORS['agent'], 
-                       s=250,  # Larger agent marker
+                       s=250,  # Larger marker size
+                       marker='.',  
                        edgecolors=self.COLORS['agent_border'], 
                        linewidth=2,
                        label='Agent',
@@ -575,9 +581,6 @@ class SIRSEnvironment(gym.Env):
         ax_grid.grid(True, which='major', linestyle='-', alpha=0.3, color=self.COLORS['grid_lines'])
         ax_grid.grid(True, which='minor', linestyle=':', alpha=0.2, color=self.COLORS['grid_lines'])
         
-        # Create legend axis
-        ax_legend = fig.add_subplot(gs[1])
-        ax_legend.axis('off')
         # Move legend outside the plot
         legend = ax_grid.get_legend()
         if legend is not None:
@@ -588,11 +591,12 @@ class SIRSEnvironment(gym.Env):
                         framealpha=0.95,
                         facecolor='white',
                         edgecolor='none',
-                        fontsize=10)
+                        fontsize=10,
+                        borderpad=2)
         
         ax_grid.set_aspect('equal')
 
-        # Info table subplot with modern styling
+        # Info table subplot on the right
         ax_info = fig.add_subplot(gs[2])
         ax_info.set_facecolor(self.COLORS['background'])
         ax_info.axis('off')
@@ -610,6 +614,8 @@ class SIRSEnvironment(gym.Env):
             ['Time', f'{self.counter}/{self.simulation_time}'],
             ['Agent State', state_labels[agent_state_str]],
             ['Position', f'({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})'],
+            ['Movement dx', f'{self.last_action[0]:.2f}' if self.last_action is not None else '0.00'],
+            ['Movement dy', f'{self.last_action[1]:.2f}' if self.last_action is not None else '0.00'],
             ['Adherence', f'{self.agent_adherence:.2f}'],
             ['Susceptible', f'{state_counts["S"]} ({state_counts["S"]/self.n_humans:.1%})'],
             ['Infectious', f'{state_counts["I"]} ({state_counts["I"]/self.n_humans:.1%})'],
@@ -639,9 +645,6 @@ class SIRSEnvironment(gym.Env):
             # Add subtle padding
             cell.PAD = 0.05
 
-        # Adjust layout
-        plt.tight_layout()
-        
         # Convert figure to RGB array
         fig.canvas.draw()
         
