@@ -3,7 +3,7 @@ env_config = {
     "simulation_time": 500,        # Steps per episode
     "grid_size": 50,
     "n_humans": 50,
-    "n_infected": 10,
+    "n_infected": 50,
     "beta": 0.2,
     "initial_agent_adherence": 0.5,
     "distance_decay": 0.2,
@@ -11,7 +11,7 @@ env_config = {
     "immunity_decay": 0.1,
     "recovery_rate": 0.1,
     "max_immunity_loss_prob": 0.2,
-    "movement_type": "discrete_random",
+    "movement_type": "continuous_random",
     "visibility_radius": -1,
     "reinfection_count": 3,
     "render_mode": None,  # No rendering during training
