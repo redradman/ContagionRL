@@ -98,17 +98,27 @@ class MovementHandler:
 class Human:
     _next_id = 1  # Class variable to keep track of the next available ID
     ## id 0 or negative is reserved for the agent
-    def __init__(self, x: int, y: int, state: int = STATE_DICT['S']):
+    def __init__(self, x: int, y: int, state: int = STATE_DICT['S'], id: int = None, time_in_state: int = 0):
         """
         Initialize a human in the SIRS model
-        state: integer representing state (0: Susceptible, 1: Infected, 2: Recovered, 3: Dead)
+        Args:
+            x: x position
+            y: y position
+            state: integer representing state (0: Susceptible, 1: Infected, 2: Recovered, 3: Dead)
+            id: optional manual ID assignment. If None, auto-assigns next available positive ID.
+                Negative IDs are reserved for special cases (e.g., agent)
+            time_in_state: time spent in current state
         """
-        self.id = Human._next_id
-        Human._next_id += 1
+        if id is None:
+            self.id = Human._next_id
+            Human._next_id += 1
+        else:
+            self.id = id  # Manual ID assignment (used for agent)
+            
         self.x = x
         self.y = y
         self.state = state
-        self.time_in_state = 0
+        self.time_in_state = time_in_state
         assert self.state in STATE_DICT.values() # make sure no invalid state is passed in
 
     def move(self, new_x: int, new_y: int, grid_size: int):
