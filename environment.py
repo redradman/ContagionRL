@@ -506,6 +506,13 @@ class SIRSEnvironment(gym.Env):
             ax_grid.axvline(x=i, color=self.COLORS['grid_lines'], linewidth=0.5, alpha=0.5)
 
         # Plot humans by state with enhanced styling
+        state_labels = {
+            'S': 'Susceptible',
+            'I': 'Infectious',
+            'R': 'Recovered',
+            'D': 'Dead'
+        }
+        
         for state in ['S', 'I', 'R', 'D']:
             humans_in_state = [h for h in self.humans if h.state == STATE_DICT[state]]
             if humans_in_state:
@@ -515,7 +522,7 @@ class SIRSEnvironment(gym.Env):
                               c=self.COLORS[state], 
                               s=120,  # Slightly larger markers
                               alpha=0.8, 
-                              label=state,
+                              label=state_labels[state],
                               edgecolors='white',  # White edge for contrast
                               linewidth=1)
 
@@ -601,11 +608,11 @@ class SIRSEnvironment(gym.Env):
         # Create info table with modern styling
         table_data = [
             ['Time', f'{self.counter}/{self.simulation_time}'],
-            ['Agent State', agent_state_str],
+            ['Agent State', state_labels[agent_state_str]],
             ['Position', f'({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})'],
             ['Adherence', f'{self.agent_adherence:.2f}'],
             ['Susceptible', f'{state_counts["S"]} ({state_counts["S"]/self.n_humans:.1%})'],
-            ['Infected', f'{state_counts["I"]} ({state_counts["I"]/self.n_humans:.1%})'],
+            ['Infectious', f'{state_counts["I"]} ({state_counts["I"]/self.n_humans:.1%})'],
             ['Recovered', f'{state_counts["R"]} ({state_counts["R"]/self.n_humans:.1%})'],
             ['Dead', f'{state_counts["D"]} ({state_counts["D"]/self.n_humans:.1%})']
         ]
