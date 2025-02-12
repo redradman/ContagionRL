@@ -49,6 +49,9 @@ class SIRSEnvironment(gym.Env):
     ):
         super().__init__()
 
+        # Initialize frames list for video recording
+        self.frames = []
+
         # Validate parameters
         if visibility_radius < -1:
             raise ValueError("visibility_radius must be -1 (full visibility) or a positive number")
@@ -61,6 +64,7 @@ class SIRSEnvironment(gym.Env):
         self.clock = None
         self.window_size = self.metadata["render_resolution"]
         self.last_action = None  # Store last action for rendering
+        self.font = None
 
         # Calculate cell size for rendering
         self.cell_size = min(
@@ -75,7 +79,12 @@ class SIRSEnvironment(gym.Env):
         
         # Font size for rendering
         self.font_size = max(10, self.cell_size // 2)
-        
+
+        # Initialize font if rendering is enabled
+        if self.render_mode is not None:
+            pygame.font.init()
+            self.font = pygame.font.SysFont('Arial', self.font_size)
+
         # General parameters
         self.simulation_time = simulation_time
         self.counter = 0 # counter for the simulation time
@@ -110,38 +119,13 @@ class SIRSEnvironment(gym.Env):
         ##############################
         ####### Observation and Action spaces
         ##############################
-        # 1) Each human has 4 continuous features + 1 discrete state
-        #    store the continuous features in a Box( shape=(4,) ) 
-        #    and the discrete state in a Discrete(4).
+        # Flatten the observation space to avoid nested structures
+        # Structure:
+        # - agent_position (2): [x, y]
+        # - agent_adherence (1): [adherence]
+        # - humans_continuous (n_humans * 4): [visibility, x, y, distance] for each human
+        # - humans_discrete (n_humans): [state] for each human
         
-        # Continuous: visibility_flag, x, y, distance
-        #    - visibility_flag in [0,1]
-        #    - x, y in [0, 1], normalized
-        #    - distance in [0,1] (normalized distance)
-        
-        human_continuous_space = gym.spaces.Box(
-            low=np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32),     # [flag, x, y, dist]
-            high=np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32), # values are in [0,1] normalized.
-            shape=(4,),
-            dtype=np.float32
-        )
-        
-        # Discrete state with 4 categories: S=0, I=1, R=2, D=3
-        human_state_space = gym.spaces.Discrete(4)
-        
-        # Each human in the environment is a Dict of:
-        #   { "continuous": Box(...), "state": Discrete(4) }
-        human_space = gym.spaces.Dict({
-            "continuous": human_continuous_space,
-            "state": human_state_space
-        })
-        
-        # replicate that 'human_space' for n humans using a Tuple.
-        # So "humans" is a tuple of length n_humans, each a Dict with the above structure.
-        humans_tuple_space = gym.spaces.Tuple([human_space] * self.n_humans)
-        
-        # Finally, combine everything into a top-level Dict,
-        # including agent_position, agent_adherence, and the tuple of humans.
         self.observation_space = gym.spaces.Dict({
             "agent_position": gym.spaces.Box(
                 low=0, 
@@ -155,7 +139,18 @@ class SIRSEnvironment(gym.Env):
                 shape=(1,),
                 dtype=np.float32
             ),
-            "humans": humans_tuple_space
+            "humans_continuous": gym.spaces.Box(
+                low=0,
+                high=1,
+                shape=(self.n_humans * 4,),  # [visibility, x, y, distance] for each human
+                dtype=np.float32
+            ),
+            "humans_discrete": gym.spaces.Box(
+                low=0,
+                high=3,  # S=0, I=1, R=2, D=3
+                shape=(self.n_humans,),
+                dtype=np.int32
+            )
         })
 
         # Define the action space
@@ -255,7 +250,14 @@ class SIRSEnvironment(gym.Env):
     def reset(self, seed: Optional[int] = None) -> Tuple[dict, dict]:
         """Reset the environment to the initial state"""
         super().reset(seed=seed)
-        self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
+        
+        # Clear frames list
+        self.frames = []
+        
+        # Reset counter
+        self.counter = 0
+        
+        self.agent_position = np.array([self.grid_size//2, self.grid_size//2])
         self.agent_adherence = self.initial_agent_adherence
         self.agent_state = STATE_DICT['S']
         self.agent_time_in_state = 0  # Reset agent time in state
@@ -398,23 +400,19 @@ class SIRSEnvironment(gym.Env):
         """
         Build and return the observation dict for the agent.
 
-        Observation space structure (as defined in __init__):
+        Observation space structure:
         {
             "agent_position": Box(shape=(2,)),           # (x, y) normalized to [0,1]
             "agent_adherence": Box(shape=(1,)),          # [adherence in 0..1]
-            "humans": Tuple(                             # length = n_humans
-                Dict({
-                    "continuous": Box(shape=(4,)),       # [visibility_flag, x, y, distance]
-                    "state": Discrete(4)                 # in {0=S,1=I,2=R,3=D}
-                })
-            )
+            "humans_continuous": Box(shape=(n_humans * 4,)),  # [visibility, x, y, distance] for each human
+            "humans_discrete": Box(shape=(n_humans,)),   # [state] for each human
         }
         """
         # Normalize agent position to [0,1] range
         agent_position = np.array(self.agent_position, dtype=np.float32) / self.grid_size  # shape=(2,)
         agent_adherence = np.array([self.agent_adherence], dtype=np.float32)  # already in [0,1]
 
-        # We'll create a temporary "human" for the agent to reuse your existing _get_neighbors_list logic.
+        # Create a temporary human for the agent to reuse existing _get_neighbors_list logic
         agent_human = Human(
             x=self.agent_position[0],
             y=self.agent_position[1],
@@ -422,59 +420,41 @@ class SIRSEnvironment(gym.Env):
             id=-1  # distinct ID so we don't filter this out in _get_neighbors_list
         )
         
-        # "visible_humans" is a list of Human objects within radius, or all if radius=-1
+        # Get visible humans
         visible_humans = self._get_neighbors_list(agent_human)
         visible_ids = set(h.id for h in visible_humans)
 
-        # 3) BUILD THE "humans" TUPLE
-        # ---------------------------
-        # For each of self.humans, compute:
-        #   - visibility_flag in {0,1}
-        #   - x, y normalized to [0,1]
-        #   - distance: distance from the agent normalized to [0,1]
-        #   - state: integer in {0,1,2,3}
-        # if the visibility_flag is 0, then we mask the values with 0
+        # Initialize arrays for human observations
+        humans_continuous = np.zeros((self.n_humans * 4,), dtype=np.float32)
+        humans_discrete = np.zeros((self.n_humans,), dtype=np.int32)
 
-        humans_obs_list = []
-        for current_human in self.humans:
-            visibility_flag = 1.0 if (current_human.id in visible_ids) else 0.0
+        # Fill in human observations
+        for i, human in enumerate(self.humans):
+            base_idx = i * 4  # Index for continuous features
+            visibility_flag = 1.0 if human.id in visible_ids else 0.0
             
-            if visibility_flag == 0: 
-                x, y, dist, state_int = 0, 0, 0, 0
-                human_obs = {
-                    "continuous": np.array([visibility_flag, x, y, dist], dtype=np.float32),
-                    "state": state_int
-                }
-                humans_obs_list.append(human_obs)
-
+            if visibility_flag == 0:
+                # All values remain 0 for invisible humans
+                humans_continuous[base_idx:base_idx + 4] = 0
+                humans_discrete[i] = 0
             else:
-                # Normalize positions to [0,1]
-                x_norm = current_human.x / self.grid_size
-                y_norm = current_human.y / self.grid_size
+                # Normalize positions and calculate distance
+                x_norm = human.x / self.grid_size
+                y_norm = human.y / self.grid_size
+                dist = self._calculate_distance(agent_human, human)
+                dist_norm = dist / self.max_distance
 
-                # Calculate and normalize distance to [0,1]
-                dist = self._calculate_distance(agent_human, current_human)
-                dist_norm = dist / self.max_distance  # Normalize using max possible distance
+                # Set continuous features [visibility, x, y, distance]
+                humans_continuous[base_idx:base_idx + 4] = [visibility_flag, x_norm, y_norm, dist_norm]
+                # Set discrete state
+                humans_discrete[i] = human.state
 
-                # state in {0,1,2,3} (S,I,R,D)
-                state_int = current_human.state
-
-                # Build the sub-dict for this human
-                human_obs = {
-                    "continuous": np.array([visibility_flag, x_norm, y_norm, dist_norm], dtype=np.float32),
-                    "state": state_int
-                }
-                humans_obs_list.append(human_obs)
-
-        # convert the list -> tuple to match the Tuple(...) definition
-        humans_obs = tuple(humans_obs_list)
-
-        # 4) COMPOSE FINAL OBSERVATION DICT
-        # ---------------------------------
+        # Compose final observation dict
         obs = {
             "agent_position": agent_position,
             "agent_adherence": agent_adherence,
-            "humans": humans_obs
+            "humans_continuous": humans_continuous,
+            "humans_discrete": humans_discrete
         }
 
         return obs
@@ -486,40 +466,30 @@ class SIRSEnvironment(gym.Env):
         return 0
 
     def step(self, action: np.ndarray) -> Tuple[dict, float, bool, bool, dict]:
-        """Take a step in the environment. For more regarding the structure refer to the gymnasium documentation"""
-
+        """Take a step in the environment"""
         self.counter += 1
-        # Store last action for rendering
         self.last_action = action.copy()
         
-        # Update agent and humans
-        self._update_agent(action) 
+        self._update_agent(action)
         self._handle_human_stepping()
-
-        # handle observation logic
+        
         observation = self._get_observation()
-
-        # handle reward logic
         reward = self._calculate_reward()
-     
-        # handle termination logic
+        
         terminated = False
-        if self.counter >= self.simulation_time: # terminate if the simulation time is reached
+        if self.counter >= self.simulation_time:
             terminated = True
-
-        # handle truncation logic
+            
         truncated = False
-        if self.agent_state == STATE_DICT['D']: # truncate if the agent is dead
+        if self.agent_state == STATE_DICT['D']:
             truncated = True
-
-        # handle info logic 
-        info = {}
-
-        # Render if needed
+            
+        # Store frame if rendering is enabled
         if self.render_mode is not None:
-            self._render_frame()
-
-        # return the observation, reward, truncation, termination, info
+            frame = self._render_frame()
+            if frame is not None:
+                self.frames.append(frame)
+        info = {} 
         return observation, reward, terminated, truncated, info
 
     def _render_frame(self) -> Optional[np.ndarray]:
@@ -537,9 +507,6 @@ class SIRSEnvironment(gym.Env):
             pygame.display.init()
             self.window = pygame.display.set_mode(self.window_size)
             pygame.display.set_caption("SIRS Environment")
-            # Initialize font
-            pygame.font.init()
-            self.font = pygame.font.SysFont('Arial', self.font_size)
 
         if self.clock is None and self.render_mode == "human":
             self.clock = pygame.time.Clock()
@@ -591,18 +558,32 @@ class SIRSEnvironment(gym.Env):
             dx, dy = self.last_action[:2]
             # Scale the movement vector for visibility
             arrow_scale = self.cell_size
-            end_x = agent_x + dx * arrow_scale
-            end_y = agent_y + dy * arrow_scale
-            # Draw arrow
-            pygame.draw.line(canvas, self.COLORS['text'], 
-                           (agent_x, agent_y), (end_x, end_y), 2)
-            # Draw arrowhead
-            arrow_size = self.cell_size // 8
-            pygame.draw.polygon(canvas, self.COLORS['text'], [
+            end_x = int(agent_x + dx * arrow_scale)
+            end_y = int(agent_y + dy * arrow_scale)
+            
+            # Ensure coordinates are valid integers for pygame
+            pygame.draw.line(
+                canvas, 
+                self.COLORS['text'],
+                (int(agent_x), int(agent_y)),
                 (end_x, end_y),
-                (end_x - arrow_size * np.sign(dx), end_y - arrow_size),
-                (end_x - arrow_size * np.sign(dx), end_y + arrow_size)
-            ])
+                2
+            )
+            
+            # Draw arrowhead
+            if dx != 0 or dy != 0:  # Only draw arrowhead if there's movement
+                arrow_size = self.cell_size // 8
+                pygame.draw.polygon(
+                    canvas,
+                    self.COLORS['text'],
+                    [
+                        (end_x, end_y),
+                        (int(end_x - arrow_size * np.sign(dx) if dx != 0 else end_x), 
+                         int(end_y - arrow_size if dy == 0 else end_y - arrow_size * np.sign(dy))),
+                        (int(end_x - arrow_size * np.sign(dx) if dx != 0 else end_x), 
+                         int(end_y + arrow_size if dy == 0 else end_y + arrow_size * np.sign(dy)))
+                    ]
+                )
 
         # Draw info panel
         info_surface = self._create_info_panel()
