@@ -3,29 +3,28 @@ import numpy as np
 from typing import Optional, List, Tuple
 import math
 from utils import STATE_DICT, MovementHandler, Human
-import pygame
-import pygame.gfxdraw
-from pygame import Surface
+import matplotlib.pyplot as plt
+import cv2
 
 ######## SIRS Environment class ########
 class SIRSEnvironment(gym.Env):
     metadata = {
-        "render_modes": ["human", "rgb_array"],
+        "render_modes": ["rgb_array"],
         "render_fps": 4,
-        "render_resolution": (800, 800),  # Window size for rendering
+        "render_resolution": (800, 600),  # More reasonable figure size for rendering
     }
 
     # Color definitions for rendering
     COLORS = {
-        'background': (255, 255, 255),  # White
-        'grid_lines': (200, 200, 200),  # Light gray
-        'agent': (255, 165, 0),         # Orange
-        'S': (30, 144, 255),           # Dodger Blue
-        'I': (220, 20, 60),            # Crimson
-        'R': (50, 205, 50),            # Lime Green
-        'D': (128, 128, 128),          # Gray
-        'text': (0, 0, 0),             # Black
-        'panel_bg': (240, 240, 240)    # Light gray for info panel
+        'background': 'white',
+        'grid_lines': '#cccccc',
+        'agent': '#ffa500',         # Orange
+        'S': '#1e90ff',           # Dodger Blue
+        'I': '#dc143c',            # Crimson
+        'R': '#32cd32',            # Lime Green
+        'D': '#808080',          # Gray
+        'text': 'black',
+        'panel_bg': '#f0f0f0'    # Light gray for info panel
     }
 
     def __init__(
@@ -44,7 +43,7 @@ class SIRSEnvironment(gym.Env):
         movement_type: str = "stationary",
         visibility_radius: float = -1,
         rounding_digits: int = 2,
-        reinfection_count: int = 3,  # Number of humans to reinfect when no infected exist
+        reinfection_count: int = 3,
         render_mode: Optional[str] = None,
     ):
         super().__init__()
@@ -60,31 +59,15 @@ class SIRSEnvironment(gym.Env):
         
         # Store render mode and initialize rendering variables
         self.render_mode = render_mode
-        self.window = None
-        self.clock = None
-        self.window_size = self.metadata["render_resolution"]
-        self.last_action = None  # Store last action for rendering
-        self.font = None
+        self.fig = None
+        self.ax = None
+        self.last_action = None
 
-        # Calculate cell size for rendering
-        self.cell_size = min(
-            self.window_size[0] // grid_size,
-            self.window_size[1] // grid_size
-        )
-        # Recalculate window size to make it exact
-        self.window_size = (
-            self.cell_size * grid_size,
-            self.cell_size * grid_size
-        )
+        # Calculate figure size and DPI for rendering
+        width, height = self.metadata["render_resolution"]
+        self.dpi = 100
+        self.figure_size = (width / self.dpi, height / self.dpi)  # Convert pixels to inches
         
-        # Font size for rendering
-        self.font_size = max(10, self.cell_size // 2)
-
-        # Initialize font if rendering is enabled
-        if self.render_mode is not None:
-            pygame.font.init()
-            self.font = pygame.font.SysFont('Arial', self.font_size)
-
         # General parameters
         self.simulation_time = simulation_time
         self.counter = 0 # counter for the simulation time
@@ -494,175 +477,116 @@ class SIRSEnvironment(gym.Env):
 
     def _render_frame(self) -> Optional[np.ndarray]:
         """
-        Render the current state of the environment.
+        Render the current state of the environment directly using numpy arrays.
         Returns:
-            np.ndarray: RGB array if mode is 'rgb_array', None if mode is 'human'
+            np.ndarray: RGB array of shape (height, width, 3)
         """
         if self.render_mode is None:
             return None
 
-        # Initialize pygame if not done yet
-        if self.window is None and self.render_mode == "human":
-            pygame.init()
-            pygame.display.init()
-            self.window = pygame.display.set_mode(self.window_size)
-            pygame.display.set_caption("SIRS Environment")
+        # Get dimensions from metadata
+        width, height = self.metadata["render_resolution"]
+        
+        # Create base white image
+        image = np.ones((height, width, 3), dtype=np.uint8) * 255
+        
+        # Calculate scaling factors to convert from grid coordinates to pixel coordinates
+        scale_x = (width * 0.8) / (self.grid_size + 2)  # Leave 10% margin on each side
+        scale_y = (height * 0.8) / (self.grid_size + 2)
+        offset_x = width * 0.1   # 10% margin
+        offset_y = height * 0.1  # 10% margin
 
-        if self.clock is None and self.render_mode == "human":
-            self.clock = pygame.time.Clock()
-
-        # Create the canvas
-        canvas = pygame.Surface(self.window_size)
-        canvas.fill(self.COLORS['background'])
+        def grid_to_pixel(x, y):
+            """Convert grid coordinates to pixel coordinates"""
+            return (int(x * scale_x + offset_x), int(y * scale_y + offset_y))
 
         # Draw grid lines
-        for x in range(self.grid_size + 1):
-            pygame.draw.line(
-                canvas,
-                self.COLORS['grid_lines'],
-                (x * self.cell_size, 0),
-                (x * self.cell_size, self.window_size[1])
-            )
-        for y in range(self.grid_size + 1):
-            pygame.draw.line(
-                canvas,
-                self.COLORS['grid_lines'],
-                (0, y * self.cell_size),
-                (self.window_size[0], y * self.cell_size)
-            )
+        grid_color = np.array([204, 204, 204])  # Light gray
+        for i in range(self.grid_size + 1):
+            x = int(i * scale_x + offset_x)
+            y = int(i * scale_y + offset_y)
+            # Vertical lines
+            image[int(offset_y):int(height-offset_y), x] = grid_color
+            # Horizontal lines
+            image[y, int(offset_x):int(width-offset_x)] = grid_color
+
+        # Function to draw a circle
+        def draw_circle(center_x, center_y, color, size=5):
+            x, y = grid_to_pixel(center_x, center_y)
+            y = height - y  # Flip y-coordinate
+            
+            # Define circle bounds
+            x1, x2 = max(0, x - size), min(width, x + size)
+            y1, y2 = max(0, y - size), min(height, y + size)
+            
+            # Create circle mask
+            Y, X = np.ogrid[y1-y:y2-y, x1-x:x2-x]
+            mask = X*X + Y*Y <= size*size
+            
+            # Apply color to circle area
+            image[y1:y2, x1:x2][mask] = color
 
         # Draw humans
         for human in self.humans:
-            x = int(human.x * self.cell_size + self.cell_size/2)
-            y = int(human.y * self.cell_size + self.cell_size/2)
-            radius = self.cell_size // 4
-
-            # Get color based on state
             state_str = [k for k, v in STATE_DICT.items() if v == human.state][0]
-            color = self.COLORS[state_str]
+            color = np.array([int(self.COLORS[state_str].lstrip('#')[i:i+2], 16) for i in (0, 2, 4)])
+            draw_circle(human.x, human.y, color)
 
-            pygame.draw.circle(canvas, color, (x, y), radius)
-
-        # Draw agent
-        agent_x = int(self.agent_position[0] * self.cell_size + self.cell_size/2)
-        agent_y = int(self.agent_position[1] * self.cell_size + self.cell_size/2)
-        agent_radius = self.cell_size // 3
-
-        # Draw agent with state-colored border
+        # Draw agent (larger circle)
         agent_state_str = [k for k, v in STATE_DICT.items() if v == self.agent_state][0]
-        pygame.draw.circle(canvas, self.COLORS[agent_state_str], (agent_x, agent_y), agent_radius)
-        pygame.draw.circle(canvas, self.COLORS['agent'], (agent_x, agent_y), agent_radius - 2)
+        agent_color = np.array([int(self.COLORS['agent'].lstrip('#')[i:i+2], 16) for i in (0, 2, 4)])
+        draw_circle(self.agent_position[0], self.agent_position[1], agent_color, size=8)
 
         # Draw movement vector if last action exists
         if self.last_action is not None:
+            start_x, start_y = grid_to_pixel(self.agent_position[0], self.agent_position[1])
+            start_y = height - start_y  # Flip y-coordinate
             dx, dy = self.last_action[:2]
-            # Scale the movement vector for visibility
-            arrow_scale = self.cell_size
-            end_x = int(agent_x + dx * arrow_scale)
-            end_y = int(agent_y + dy * arrow_scale)
+            end_x = int(start_x + dx * scale_x * 0.5)
+            end_y = int(start_y - dy * scale_y * 0.5)  # Subtract because y is flipped
             
-            # Ensure coordinates are valid integers for pygame
-            pygame.draw.line(
-                canvas, 
-                self.COLORS['text'],
-                (int(agent_x), int(agent_y)),
-                (end_x, end_y),
-                2
-            )
-            
-            # Draw arrowhead
-            if dx != 0 or dy != 0:  # Only draw arrowhead if there's movement
-                arrow_size = self.cell_size // 8
-                pygame.draw.polygon(
-                    canvas,
-                    self.COLORS['text'],
-                    [
-                        (end_x, end_y),
-                        (int(end_x - arrow_size * np.sign(dx) if dx != 0 else end_x), 
-                         int(end_y - arrow_size if dy == 0 else end_y - arrow_size * np.sign(dy))),
-                        (int(end_x - arrow_size * np.sign(dx) if dx != 0 else end_x), 
-                         int(end_y + arrow_size if dy == 0 else end_y + arrow_size * np.sign(dy)))
-                    ]
-                )
+            # Draw arrow line
+            cv2.line(image, (start_x, start_y), (end_x, end_y), (0, 0, 0), 2)
 
-        # Draw info panel
-        info_surface = self._create_info_panel()
-        canvas.blit(info_surface, (10, 10))
+        # Add text information
+        info_text = [
+            f"Time: {self.counter}/{self.simulation_time}",
+            f"Agent State: {agent_state_str}",
+            f"Position: ({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})",
+            f"Adherence: {self.agent_adherence:.2f}",
+        ]
 
-        if self.render_mode == "human":
-            # Copy canvas to window
-            self.window.blit(canvas, canvas.get_rect())
-            pygame.event.pump()
-            pygame.display.flip()
-            self.clock.tick(self.metadata["render_fps"])
-            return None
-        else:  # rgb_array
-            return np.transpose(
-                np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
-            )
-
-    def _create_info_panel(self) -> Surface:
-        """Create an information panel surface"""
-        # Count humans in each state
+        # Add state counts
         state_counts = {
             'S': sum(1 for h in self.humans if h.state == STATE_DICT['S']),
             'I': sum(1 for h in self.humans if h.state == STATE_DICT['I']),
             'R': sum(1 for h in self.humans if h.state == STATE_DICT['R']),
             'D': sum(1 for h in self.humans if h.state == STATE_DICT['D'])
         }
-
-        # Create info text
-        info_lines = [
-            f"Time: {self.counter}/{self.simulation_time}",
-            f"Agent State: {[k for k,v in STATE_DICT.items() if v == self.agent_state][0]}",
-            f"Time in State: {self.agent_time_in_state}",
-            f"Position: ({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})",
-            f"Adherence: {self.agent_adherence:.2f}",
-            "Population:",
-            f"  S: {state_counts['S']}",
-            f"  I: {state_counts['I']}",
-            f"  R: {state_counts['R']}",
-            f"  D: {state_counts['D']}"
-        ]
-
-        # Add last action if available
-        if self.last_action is not None:
-            info_lines.extend([
-                "Last Action:",
-                f"  Move: ({self.last_action[0]:.2f}, {self.last_action[1]:.2f})",
-                f"  Adherence: {self.last_action[2]:.2f}"
-            ])
-
-        # Create surface for info panel
-        line_height = self.font_size + 2
-        panel_height = line_height * len(info_lines) + 20
-        panel_width = 250
-        info_surface = pygame.Surface((panel_width, panel_height))
-        info_surface.fill(self.COLORS['panel_bg'])
-        info_surface.set_alpha(230)  # Semi-transparent
+        info_text.append(f"Population: S:{state_counts['S']} I:{state_counts['I']} R:{state_counts['R']} D:{state_counts['D']}")
 
         # Draw text
-        for i, line in enumerate(info_lines):
-            text_surface = self.font.render(line, True, self.COLORS['text'])
-            info_surface.blit(text_surface, (10, 10 + i * line_height))
+        y_offset = 30
+        for i, text in enumerate(info_text):
+            cv2.putText(image, text, (10, y_offset + i * 20), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
-        return info_surface
+        return image
 
     def render(self):
         """
         Render the environment.
         Returns:
-            None if mode is 'human', numpy array if mode is 'rgb_array'
+            numpy array if mode is 'rgb_array'
         """
         return self._render_frame()
 
     def close(self):
-        """Close the environment and cleanup pygame resources."""
-        if self.window is not None:
-            pygame.display.quit()
-            pygame.quit()
-            self.window = None
-            self.clock = None
+        """Close the environment and cleanup matplotlib resources."""
+        if self.fig is not None:
+            plt.close(self.fig)
+            self.fig = None
+            self.ax = None
 
 #############################
 ########## ARCHIVE ##########

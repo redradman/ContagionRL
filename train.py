@@ -124,8 +124,10 @@ def main(args):
     log_path = os.path.join(save_config["base_log_path"], run_name)
     os.makedirs(log_path, exist_ok=True)
     
-    # Create videos directory
+    # Create subdirectories for TensorBoard and videos
+    tensorboard_path = os.path.join(log_path, "tensorboard")
     video_folder = os.path.join(log_path, "videos")
+    os.makedirs(tensorboard_path, exist_ok=True)
     os.makedirs(video_folder, exist_ok=True)
 
     # Initialize wandb if requested
@@ -139,7 +141,7 @@ def main(args):
     # Create vectorized environment
     env_fns = [make_env(env_config, seed=i) for i in range(ppo_config["n_envs"])]
     vec_env = SubprocVecEnv(env_fns)
-    vec_env = VecMonitor(vec_env, log_path)
+    vec_env = VecMonitor(vec_env, os.path.join(log_path, "monitor"))
 
     # Create evaluation environment if needed
     if args.eval_freq > 0:
@@ -193,7 +195,7 @@ def main(args):
         ppo_config["policy_type"],
         vec_env,
         verbose=save_config["verbose"],
-        tensorboard_log=log_path,
+        tensorboard_log=tensorboard_path,  # Use the dedicated tensorboard directory
         **{k: v for k, v in ppo_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
     )
 
@@ -210,6 +212,10 @@ def main(args):
         model.save(os.path.join(log_path, "final_model"))
         if args.use_wandb:
             wandb.finish()
+        # Clean up
+        vec_env.close()
+        if args.eval_freq > 0:
+            eval_env.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train a PPO agent for the SIRS environment')
