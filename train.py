@@ -71,8 +71,11 @@ class VideoRecorderCallback(BaseCallback):
                     self.video_folder, 
                     f"eval_episode_{self.n_calls}_steps.mp4"
                 )
-                # print(f"Saving video with {len(frames)} frames at {video_path}")
-                imageio.mimsave(video_path, frames, fps=30)
+                # Get FPS from environment metadata, raise error if not found
+                if "render_fps" not in self.eval_env.envs[0].metadata:
+                    raise ValueError("Environment metadata must contain 'render_fps'")
+                env_fps = self.eval_env.envs[0].metadata["render_fps"]
+                imageio.mimsave(video_path, frames, fps=env_fps)
             else:
                 # print("Warning: No frames were collected during the episode")
                 pass
