@@ -552,6 +552,10 @@ class SIRSEnvironment(gym.Env):
         ax_grid.set_yticks(tick_positions)
         ax_grid.tick_params(colors=self.COLORS['text'], labelsize=8)
         
+        # Add axis labels with modern styling
+        ax_grid.set_xlabel('X Coordinate', color=self.COLORS['text'], fontsize=10, fontweight='bold')
+        ax_grid.set_ylabel('Y Coordinate', color=self.COLORS['text'], fontsize=10, fontweight='bold')
+        
         # Add subtle grid at tick positions
         ax_grid.grid(True, linestyle='--', alpha=0.3, color=self.COLORS['grid_lines'])
         
