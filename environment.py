@@ -334,6 +334,11 @@ class SIRSEnvironment(gym.Env):
 
         # Now handle human stepping and state transitions
         for human in self.humans:
+            # First check if human is dead - dead humans don't move
+            if human.state == STATE_DICT['D']:
+                continue
+
+            # Only move humans that are not dead
             new_x, new_y = self.movement_handler.get_new_position(
                 human.x, 
                 human.y, 
@@ -342,8 +347,6 @@ class SIRSEnvironment(gym.Env):
             human.move(new_x, new_y, self.grid_size)
 
             human.time_in_state += 1
-            if human.state == STATE_DICT['D']:
-                continue
 
             if human.state == STATE_DICT['S']:
                 # Calculate probability of infection
