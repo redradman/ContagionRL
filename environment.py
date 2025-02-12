@@ -15,15 +15,18 @@ class SIRSEnvironment(gym.Env):
 
     # Color definitions for rendering
     COLORS = {
-        'background': 'white',
-        'grid_lines': '#cccccc',
-        'agent': '#ffa500',         # Orange
-        'agent_border': 'black',    # Black border for agent
-        'S': '#1e90ff',            # Dodger Blue
-        'I': '#dc143c',            # Crimson
-        'R': '#32cd32',            # Lime Green
-        'D': '#808080',            # Gray
-        'text': 'black'
+        'background': '#f8f9fa',      # Light gray background
+        'grid_lines': '#dee2e6',      # Subtle grid lines
+        'agent': '#fd7e14',           # Vibrant orange for agent
+        'agent_border': '#212529',    # Dark border for agent
+        'S': '#228be6',              # Bright blue for Susceptible
+        'I': '#fa5252',              # Vivid red for Infected
+        'R': '#40c057',              # Fresh green for Recovered
+        'D': '#868e96',              # Neutral gray for Dead
+        'text': '#212529',           # Dark text
+        'arrow': '#212529',          # Dark arrow
+        'table_bg': '#ffffff',       # White table background
+        'table_header_bg': '#e9ecef'  # Light gray table header
     }
 
     def __init__(
@@ -487,49 +490,91 @@ class SIRSEnvironment(gym.Env):
         dpi = 100
         figsize = (width / dpi, height / dpi)
 
-        # Create figure and subplots
-        fig = plt.figure(figsize=figsize, dpi=dpi)
-        gs = plt.GridSpec(1, 2, width_ratios=[0.7, 0.3])
+        # Create figure with a modern style
+        plt.style.use('seaborn-v0_8-whitegrid')
+        fig = plt.figure(figsize=figsize, dpi=dpi, facecolor=self.COLORS['background'])
+        # Update grid spec to include space for legend
+        gs = plt.GridSpec(1, 3, width_ratios=[0.65, 0.1, 0.25], figure=fig)
         
-        # Grid subplot
+        # Grid subplot with modern styling
         ax_grid = fig.add_subplot(gs[0])
         ax_grid.set_facecolor(self.COLORS['background'])
         
-        # Draw grid
+        # Draw grid with subtle lines
         for i in range(self.grid_size + 1):
-            ax_grid.axhline(y=i, color=self.COLORS['grid_lines'], alpha=0.6)
-            ax_grid.axvline(x=i, color=self.COLORS['grid_lines'], alpha=0.6)
+            ax_grid.axhline(y=i, color=self.COLORS['grid_lines'], linewidth=0.5, alpha=0.5)
+            ax_grid.axvline(x=i, color=self.COLORS['grid_lines'], linewidth=0.5, alpha=0.5)
 
-        # Plot humans by state
+        # Plot humans by state with enhanced styling
         for state in ['S', 'I', 'R', 'D']:
             humans_in_state = [h for h in self.humans if h.state == STATE_DICT[state]]
             if humans_in_state:
                 x = [h.x for h in humans_in_state]
                 y = [h.y for h in humans_in_state]
-                ax_grid.scatter(x, y, c=self.COLORS[state], s=100, alpha=0.8, label=state)
+                ax_grid.scatter(x, y, 
+                              c=self.COLORS[state], 
+                              s=120,  # Slightly larger markers
+                              alpha=0.8, 
+                              label=state,
+                              edgecolors='white',  # White edge for contrast
+                              linewidth=1)
 
-        # Plot agent with distinct appearance
+        # Plot agent with enhanced appearance
         agent_state_str = [k for k, v in STATE_DICT.items() if v == self.agent_state][0]
         ax_grid.scatter([self.agent_position[0]], [self.agent_position[1]], 
-                       c=self.COLORS['agent'], s=200, 
+                       c=self.COLORS['agent'], 
+                       s=250,  # Larger agent marker
                        edgecolors=self.COLORS['agent_border'], 
-                       linewidth=2, label='Agent')
+                       linewidth=2,
+                       label='Agent',
+                       zorder=5)  # Ensure agent is on top
 
-        # Draw movement vector if last action exists
+        # Draw movement vector with improved styling
         if self.last_action is not None:
             dx, dy = self.last_action[:2]
             ax_grid.arrow(self.agent_position[0], self.agent_position[1], 
-                         dx, dy, color=self.COLORS['agent_border'], 
-                         width=0.02, head_width=0.1)
+                         dx, dy, 
+                         color=self.COLORS['arrow'], 
+                         width=0.05,  # Thicker arrow
+                         head_width=0.2,
+                         head_length=0.3,
+                         alpha=0.8,
+                         zorder=4)
 
-        # Set grid properties
+        # Set grid properties with modern styling
         ax_grid.set_xlim(-1, self.grid_size + 1)
         ax_grid.set_ylim(-1, self.grid_size + 1)
-        ax_grid.legend(loc='upper right')
+        
+        # Add dynamic axis labels
+        n_ticks = min(10, self.grid_size + 1)  # Limit number of ticks for readability
+        tick_positions = np.linspace(0, self.grid_size, n_ticks, dtype=int)
+        ax_grid.set_xticks(tick_positions)
+        ax_grid.set_yticks(tick_positions)
+        ax_grid.tick_params(colors=self.COLORS['text'], labelsize=8)
+        
+        # Add subtle grid at tick positions
+        ax_grid.grid(True, linestyle='--', alpha=0.3, color=self.COLORS['grid_lines'])
+        
+        # Create legend axis
+        ax_legend = fig.add_subplot(gs[1])
+        ax_legend.axis('off')
+        # Move legend outside the plot
+        legend = ax_grid.get_legend()
+        if legend is not None:
+            legend.remove()  # Remove the old legend if it exists
+        lines_labels = ax_grid.get_legend_handles_labels()
+        ax_legend.legend(*lines_labels, 
+                        loc='center',
+                        framealpha=0.95,
+                        facecolor='white',
+                        edgecolor='none',
+                        fontsize=10)
+        
         ax_grid.set_aspect('equal')
 
-        # Info table subplot
-        ax_info = fig.add_subplot(gs[1])
+        # Info table subplot with modern styling
+        ax_info = fig.add_subplot(gs[2])
+        ax_info.set_facecolor(self.COLORS['background'])
         ax_info.axis('off')
 
         # Calculate state counts
@@ -540,27 +585,41 @@ class SIRSEnvironment(gym.Env):
             'D': sum(1 for h in self.humans if h.state == STATE_DICT['D'])
         }
 
-        # Create info table
+        # Create info table with modern styling
         table_data = [
             ['Time', f'{self.counter}/{self.simulation_time}'],
             ['Agent State', agent_state_str],
             ['Position', f'({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})'],
             ['Adherence', f'{self.agent_adherence:.2f}'],
-            ['Susceptible', str(state_counts['S'])],
-            ['Infected', str(state_counts['I'])],
-            ['Recovered', str(state_counts['R'])],
-            ['Dead', str(state_counts['D'])]
+            ['Susceptible', f'{state_counts["S"]} ({state_counts["S"]/self.n_humans:.1%})'],
+            ['Infected', f'{state_counts["I"]} ({state_counts["I"]/self.n_humans:.1%})'],
+            ['Recovered', f'{state_counts["R"]} ({state_counts["R"]/self.n_humans:.1%})'],
+            ['Dead', f'{state_counts["D"]} ({state_counts["D"]/self.n_humans:.1%})']
         ]
 
+        # Create modern styled table
         table = ax_info.table(cellText=table_data, 
                             loc='center',
                             cellLoc='left',
-                            colWidths=[0.3, 0.7])
+                            colWidths=[0.35, 0.65])
+        
+        # Style the table
         table.auto_set_font_size(False)
         table.set_fontsize(9)
-        table.scale(1.2, 1.5)
+        table.scale(1.2, 1.6)
+        
+        # Add custom styling to table cells
+        for (row, col), cell in table.get_celld().items():
+            cell.set_facecolor(self.COLORS['table_bg'])
+            cell.set_edgecolor(self.COLORS['grid_lines'])
+            cell.set_text_props(color=self.COLORS['text'])
+            if row == 0:  # Header row
+                cell.set_facecolor(self.COLORS['table_header_bg'])
+                cell.set_text_props(weight='bold')
+            # Add subtle padding
+            cell.PAD = 0.05
 
-        # Adjust layout and convert to RGB array
+        # Adjust layout
         plt.tight_layout()
         
         # Convert figure to RGB array
