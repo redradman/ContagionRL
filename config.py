@@ -2,8 +2,8 @@
 env_config = {
     "simulation_time": 500,        # Steps per episode
     "grid_size": 50,
-    "n_humans": 100,
-    "n_infected": 1,
+    "n_humans": 50,
+    "n_infected": 10,
     "beta": 0.2,
     "initial_agent_adherence": 0.5,
     "distance_decay": 0.2,

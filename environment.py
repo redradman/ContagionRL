@@ -545,19 +545,28 @@ class SIRSEnvironment(gym.Env):
         ax_grid.set_xlim(-1, self.grid_size + 1)
         ax_grid.set_ylim(-1, self.grid_size + 1)
         
-        # Add dynamic axis labels
-        n_ticks = min(10, self.grid_size + 1)  # Limit number of ticks for readability
-        tick_positions = np.linspace(0, self.grid_size, n_ticks, dtype=int)
-        ax_grid.set_xticks(tick_positions)
-        ax_grid.set_yticks(tick_positions)
-        ax_grid.tick_params(colors=self.COLORS['text'], labelsize=8)
+        # Calculate professional tick intervals
+        n_intervals = 5  # Use 5 intervals for clean divisions
+        major_ticks = np.linspace(0, self.grid_size, n_intervals + 1, dtype=int)
+        minor_ticks = np.arange(0, self.grid_size + 1, 1)
+        
+        # Set major and minor ticks
+        ax_grid.set_xticks(major_ticks)
+        ax_grid.set_yticks(major_ticks)
+        ax_grid.set_xticks(minor_ticks, minor=True)
+        ax_grid.set_yticks(minor_ticks, minor=True)
+        
+        # Style the ticks
+        ax_grid.tick_params(which='major', colors=self.COLORS['text'], labelsize=10, length=6)
+        ax_grid.tick_params(which='minor', colors=self.COLORS['grid_lines'], labelsize=0, length=3)
         
         # Add axis labels with modern styling
         ax_grid.set_xlabel('X Coordinate', color=self.COLORS['text'], fontsize=10, fontweight='bold')
         ax_grid.set_ylabel('Y Coordinate', color=self.COLORS['text'], fontsize=10, fontweight='bold')
         
-        # Add subtle grid at tick positions
-        ax_grid.grid(True, linestyle='--', alpha=0.3, color=self.COLORS['grid_lines'])
+        # Add subtle grid for major ticks only
+        ax_grid.grid(True, which='major', linestyle='-', alpha=0.3, color=self.COLORS['grid_lines'])
+        ax_grid.grid(True, which='minor', linestyle=':', alpha=0.2, color=self.COLORS['grid_lines'])
         
         # Create legend axis
         ax_legend = fig.add_subplot(gs[1])
