@@ -642,9 +642,28 @@ class SIRSEnvironment(gym.Env):
             cell.set_facecolor(self.COLORS['table_bg'])
             cell.set_edgecolor(self.COLORS['grid_lines'])
             cell.set_text_props(color=self.COLORS['text'])
-            if row == 0:  # Header row
+            
+            # Color the agent state text based on its current state
+            if row == 1 and col == 1:  # Agent State cell
+                cell.set_text_props(color=self.COLORS[agent_state_str])
+                cell.set_text_props(weight='bold')
+            elif row == 0:  # Header row
                 cell.set_facecolor(self.COLORS['table_header_bg'])
                 cell.set_text_props(weight='bold')
+            # Color the state count rows
+            elif row == 6:  # Susceptible row
+                cell.set_text_props(color=self.COLORS['S'])
+                cell.set_text_props(weight='bold')
+            elif row == 7:  # Infectious row
+                cell.set_text_props(color=self.COLORS['I'])
+                cell.set_text_props(weight='bold')
+            elif row == 8:  # Recovered row
+                cell.set_text_props(color=self.COLORS['R'])
+                cell.set_text_props(weight='bold')
+            elif row == 9:  # Dead row
+                cell.set_text_props(color=self.COLORS['D'])
+                cell.set_text_props(weight='bold')
+            
             # Add subtle padding
             cell.PAD = 0.05
 
