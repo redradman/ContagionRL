@@ -4,14 +4,13 @@ from typing import Optional, List, Tuple
 import math
 from utils import STATE_DICT, MovementHandler, Human
 import matplotlib.pyplot as plt
-import cv2
 
 ######## SIRS Environment class ########
 class SIRSEnvironment(gym.Env):
     metadata = {
         "render_modes": ["rgb_array"],
         "render_fps": 4,
-        "render_resolution": (800, 600),  # More reasonable figure size for rendering
+        "render_resolution": (1200, 600),  # Width increased to accommodate both panels
     }
 
     # Color definitions for rendering
@@ -19,12 +18,12 @@ class SIRSEnvironment(gym.Env):
         'background': 'white',
         'grid_lines': '#cccccc',
         'agent': '#ffa500',         # Orange
-        'S': '#1e90ff',           # Dodger Blue
+        'agent_border': 'black',    # Black border for agent
+        'S': '#1e90ff',            # Dodger Blue
         'I': '#dc143c',            # Crimson
         'R': '#32cd32',            # Lime Green
-        'D': '#808080',          # Gray
-        'text': 'black',
-        'panel_bg': '#f0f0f0'    # Light gray for info panel
+        'D': '#808080',            # Gray
+        'text': 'black'
     }
 
     def __init__(
@@ -477,101 +476,103 @@ class SIRSEnvironment(gym.Env):
 
     def _render_frame(self) -> Optional[np.ndarray]:
         """
-        Render the current state of the environment directly using numpy arrays.
+        Render the current state of the environment using Matplotlib.
         Returns:
             np.ndarray: RGB array of shape (height, width, 3)
         """
         if self.render_mode is None:
             return None
 
-        # Get dimensions from metadata
         width, height = self.metadata["render_resolution"]
-        
-        # Create base white image
-        image = np.ones((height, width, 3), dtype=np.uint8) * 255
-        
-        # Calculate scaling factors to convert from grid coordinates to pixel coordinates
-        scale_x = (width * 0.8) / (self.grid_size + 2)  # Leave 10% margin on each side
-        scale_y = (height * 0.8) / (self.grid_size + 2)
-        offset_x = width * 0.1   # 10% margin
-        offset_y = height * 0.1  # 10% margin
+        dpi = 100
+        figsize = (width / dpi, height / dpi)
 
-        def grid_to_pixel(x, y):
-            """Convert grid coordinates to pixel coordinates"""
-            return (int(x * scale_x + offset_x), int(y * scale_y + offset_y))
-
-        # Draw grid lines
-        grid_color = np.array([204, 204, 204])  # Light gray
+        # Create figure and subplots
+        fig = plt.figure(figsize=figsize, dpi=dpi)
+        gs = plt.GridSpec(1, 2, width_ratios=[0.7, 0.3])
+        
+        # Grid subplot
+        ax_grid = fig.add_subplot(gs[0])
+        ax_grid.set_facecolor(self.COLORS['background'])
+        
+        # Draw grid
         for i in range(self.grid_size + 1):
-            x = int(i * scale_x + offset_x)
-            y = int(i * scale_y + offset_y)
-            # Vertical lines
-            image[int(offset_y):int(height-offset_y), x] = grid_color
-            # Horizontal lines
-            image[y, int(offset_x):int(width-offset_x)] = grid_color
+            ax_grid.axhline(y=i, color=self.COLORS['grid_lines'], alpha=0.6)
+            ax_grid.axvline(x=i, color=self.COLORS['grid_lines'], alpha=0.6)
 
-        # Function to draw a circle
-        def draw_circle(center_x, center_y, color, size=5):
-            x, y = grid_to_pixel(center_x, center_y)
-            y = height - y  # Flip y-coordinate
-            
-            # Define circle bounds
-            x1, x2 = max(0, x - size), min(width, x + size)
-            y1, y2 = max(0, y - size), min(height, y + size)
-            
-            # Create circle mask
-            Y, X = np.ogrid[y1-y:y2-y, x1-x:x2-x]
-            mask = X*X + Y*Y <= size*size
-            
-            # Apply color to circle area
-            image[y1:y2, x1:x2][mask] = color
+        # Plot humans by state
+        for state in ['S', 'I', 'R', 'D']:
+            humans_in_state = [h for h in self.humans if h.state == STATE_DICT[state]]
+            if humans_in_state:
+                x = [h.x for h in humans_in_state]
+                y = [h.y for h in humans_in_state]
+                ax_grid.scatter(x, y, c=self.COLORS[state], s=100, alpha=0.8, label=state)
 
-        # Draw humans
-        for human in self.humans:
-            state_str = [k for k, v in STATE_DICT.items() if v == human.state][0]
-            color = np.array([int(self.COLORS[state_str].lstrip('#')[i:i+2], 16) for i in (0, 2, 4)])
-            draw_circle(human.x, human.y, color)
-
-        # Draw agent (larger circle)
+        # Plot agent with distinct appearance
         agent_state_str = [k for k, v in STATE_DICT.items() if v == self.agent_state][0]
-        agent_color = np.array([int(self.COLORS['agent'].lstrip('#')[i:i+2], 16) for i in (0, 2, 4)])
-        draw_circle(self.agent_position[0], self.agent_position[1], agent_color, size=8)
+        ax_grid.scatter([self.agent_position[0]], [self.agent_position[1]], 
+                       c=self.COLORS['agent'], s=200, 
+                       edgecolors=self.COLORS['agent_border'], 
+                       linewidth=2, label='Agent')
 
         # Draw movement vector if last action exists
         if self.last_action is not None:
-            start_x, start_y = grid_to_pixel(self.agent_position[0], self.agent_position[1])
-            start_y = height - start_y  # Flip y-coordinate
             dx, dy = self.last_action[:2]
-            end_x = int(start_x + dx * scale_x * 0.5)
-            end_y = int(start_y - dy * scale_y * 0.5)  # Subtract because y is flipped
-            
-            # Draw arrow line
-            cv2.line(image, (start_x, start_y), (end_x, end_y), (0, 0, 0), 2)
+            ax_grid.arrow(self.agent_position[0], self.agent_position[1], 
+                         dx, dy, color=self.COLORS['agent_border'], 
+                         width=0.02, head_width=0.1)
 
-        # Add text information
-        info_text = [
-            f"Time: {self.counter}/{self.simulation_time}",
-            f"Agent State: {agent_state_str}",
-            f"Position: ({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})",
-            f"Adherence: {self.agent_adherence:.2f}",
-        ]
+        # Set grid properties
+        ax_grid.set_xlim(-1, self.grid_size + 1)
+        ax_grid.set_ylim(-1, self.grid_size + 1)
+        ax_grid.legend(loc='upper right')
+        ax_grid.set_aspect('equal')
 
-        # Add state counts
+        # Info table subplot
+        ax_info = fig.add_subplot(gs[1])
+        ax_info.axis('off')
+
+        # Calculate state counts
         state_counts = {
             'S': sum(1 for h in self.humans if h.state == STATE_DICT['S']),
             'I': sum(1 for h in self.humans if h.state == STATE_DICT['I']),
             'R': sum(1 for h in self.humans if h.state == STATE_DICT['R']),
             'D': sum(1 for h in self.humans if h.state == STATE_DICT['D'])
         }
-        info_text.append(f"Population: S:{state_counts['S']} I:{state_counts['I']} R:{state_counts['R']} D:{state_counts['D']}")
 
-        # Draw text
-        y_offset = 30
-        for i, text in enumerate(info_text):
-            cv2.putText(image, text, (10, y_offset + i * 20), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        # Create info table
+        table_data = [
+            ['Time', f'{self.counter}/{self.simulation_time}'],
+            ['Agent State', agent_state_str],
+            ['Position', f'({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})'],
+            ['Adherence', f'{self.agent_adherence:.2f}'],
+            ['Susceptible', str(state_counts['S'])],
+            ['Infected', str(state_counts['I'])],
+            ['Recovered', str(state_counts['R'])],
+            ['Dead', str(state_counts['D'])]
+        ]
 
-        return image
+        table = ax_info.table(cellText=table_data, 
+                            loc='center',
+                            cellLoc='left',
+                            colWidths=[0.3, 0.7])
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1.2, 1.5)
+
+        # Adjust layout and convert to RGB array
+        plt.tight_layout()
+        
+        # Convert figure to RGB array
+        fig.canvas.draw()
+        
+        # Get the correct buffer from the figure
+        buf = np.asarray(fig.canvas.buffer_rgba())
+        # Convert RGBA to RGB
+        data = buf[:, :, :3]
+        
+        plt.close(fig)
+        return data
 
     def render(self):
         """
@@ -582,11 +583,8 @@ class SIRSEnvironment(gym.Env):
         return self._render_frame()
 
     def close(self):
-        """Close the environment and cleanup matplotlib resources."""
-        if self.fig is not None:
-            plt.close(self.fig)
-            self.fig = None
-            self.ax = None
+        """Close the environment and cleanup resources."""
+        self.fig = None
 
 #############################
 ########## ARCHIVE ##########
