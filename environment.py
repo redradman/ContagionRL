@@ -70,6 +70,8 @@ class SIRSEnvironment(gym.Env):
 
         # Training metrics
         self.cumulative_reward = 0.0
+        self.dead_count = 0
+        self.infected_count = n_infected
 
         # Calculate figure size and DPI for rendering
         width, height = self.metadata["render_resolution"]
@@ -250,9 +252,11 @@ class SIRSEnvironment(gym.Env):
         # Clear frames list
         self.frames = []
         
-        # Reset counter and reward
+        # Reset counter and metrics
         self.counter = 0
         self.cumulative_reward = 0.0
+        self.dead_count = 0
+        self.infected_count = self.n_infected
         
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2])
         self.agent_adherence = self.initial_agent_adherence
@@ -332,10 +336,13 @@ class SIRSEnvironment(gym.Env):
                 if self.np_random.random() < self.lethality:
                     self.agent_state = STATE_DICT['D']
                     self.agent_time_in_state = 0  # Reset time in state on transition
+                    self.dead_count += 1
+                    self.infected_count -= 1
                 # Check for recovery if not dead
                 elif self.np_random.random() < self._calculate_recovery_probabilities(agent_human):
                     self.agent_state = STATE_DICT['R']
                     self.agent_time_in_state = 0  # Reset time in state on transition
+                    self.infected_count -= 1
             
             elif self.agent_state == STATE_DICT['R']:
                 # Check for immunity loss
@@ -365,16 +372,20 @@ class SIRSEnvironment(gym.Env):
                 p_infection = self._calculate_infection_probability(human, is_agent=False)
                 if self.np_random.random() < p_infection:
                     human.update_state(STATE_DICT['I'])
+                    self.infected_count += 1
 
             elif human.state == STATE_DICT['I']:
                 # Check for death
                 if self.np_random.random() < self.lethality:
                     human.update_state(STATE_DICT['D'])
+                    self.dead_count += 1
+                    self.infected_count -= 1
                     continue
 
                 # Check for recovery
                 if self.np_random.random() < self._calculate_recovery_probabilities(human):
                     human.update_state(STATE_DICT['R'])
+                    self.infected_count -= 1
 
             elif human.state == STATE_DICT['R']:
                 # Check for immunity loss
@@ -383,18 +394,19 @@ class SIRSEnvironment(gym.Env):
                     human.update_state(STATE_DICT['S'])
 
         # Check if there are any infected humans
-        infected_count = sum(1 for human in self.humans if human.state == STATE_DICT['I'])
-        if infected_count == 0:
+        if self.infected_count == 0:
             # Get list of dead humans
-            dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
-            if dead_humans:
+            if self.dead_count > 0:
                 # Randomly select humans to reinfect
+                dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
                 n_to_reinfect = min(self.reinfection_count, len(dead_humans))
                 if n_to_reinfect > 0:
                     reinfected_humans = self.np_random.choice(dead_humans, n_to_reinfect, replace=False)
                     for human in reinfected_humans:
                         human.update_state(STATE_DICT['I'])
                         human.time_in_state = 0  # Reset time in state for newly infected
+                        self.infected_count += 1
+                        self.dead_count -= 1
 
     def _get_observation(self):
         """
@@ -467,6 +479,10 @@ class SIRSEnvironment(gym.Env):
         else:  # Infected or Dead or Recovered
             state_reward = 0
 
+        # # Add pandemic survival bonus
+        # if self.dead_count == 0 and self.infected_count == 0:
+        #     state_reward += 10  # Big bonus for surviving the pandemic
+
         reward = state_reward - self.agent_adherence / self.adherence_penalty_factor
         reward = max(0, reward)
         return reward
@@ -486,6 +502,7 @@ class SIRSEnvironment(gym.Env):
         avoid_infection_reward = 1 - np.exp(-probability_infection*5) # constant multiplier for the reward here (flag)
 
         reward = avoid_infection_reward - self.agent_adherence / self.adherence_penalty_factor
+        reward = max(0, reward)
         return reward
 
     def _calculate_reward(self):    
@@ -516,7 +533,7 @@ class SIRSEnvironment(gym.Env):
             terminated = True
             
         truncated = False
-        if self.agent_state == STATE_DICT['D']:
+        if self.agent_state == STATE_DICT['D'] or (self.dead_count == 0 and self.infected_count == 0):
             truncated = True
             
         # Store frame if rendering is enabled
