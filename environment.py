@@ -60,6 +60,19 @@ class SIRSEnvironment(gym.Env):
             raise ValueError("visibility_radius must be -1 (full visibility) or a positive number")
         if initial_agent_adherence < 0 or initial_agent_adherence > 1:
             raise ValueError("initial_agent_adherence must be in [0,1]")
+        if beta < 0 or beta > 1:
+            raise ValueError("beta must be in [0,1]")
+        if lethality < 0 or lethality > 1:
+            raise ValueError("lethality must be in [0,1]")
+        if immunity_decay < 0 or immunity_decay > 1:
+            raise ValueError("immunity_decay must be in [0,1]")
+        if recovery_rate < 0 or recovery_rate > 1:
+            raise ValueError("recovery_rate must be in [0,1]")
+        if initial_agent_adherence < 0 or initial_agent_adherence > 1:
+            raise ValueError("Adherence must be in [0,1]")
+        if adherence_penalty_factor < 1:
+            raise ValueError("adherence_penalty_factor must be 1 or greater")
+            
         # error checking for reward type done in the handler function
         
         # Store render mode and initialize rendering variables
