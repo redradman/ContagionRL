@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 class SIRSEnvironment(gym.Env):
     metadata = {
         "render_modes": ["rgb_array"],
-        "render_fps": 4,
+        "render_fps": 15,
         "render_resolution": (1200, 600),  # Width increased to accommodate both panels
     }
 
@@ -64,6 +64,9 @@ class SIRSEnvironment(gym.Env):
         self.fig = None
         self.ax = None
         self.last_action = None
+
+        # Training metrics
+        self.cumulative_reward = 0.0
 
         # Calculate figure size and DPI for rendering
         width, height = self.metadata["render_resolution"]
@@ -239,8 +242,9 @@ class SIRSEnvironment(gym.Env):
         # Clear frames list
         self.frames = []
         
-        # Reset counter
+        # Reset counter and reward
         self.counter = 0
+        self.cumulative_reward = 0.0
         
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2])
         self.agent_adherence = self.initial_agent_adherence
@@ -451,7 +455,24 @@ class SIRSEnvironment(gym.Env):
     def _calculate_reward(self):    
         """Calculate the reward for the agent"""
         # TODO: implement reward logic
-        return 0
+
+        # no reward for death
+        if self.agent_state == STATE_DICT['D']:
+            reward = 0 
+            return reward
+
+        state_reward = 0
+        if self.agent_state == STATE_DICT['S']:
+            state_reward = 1
+        else:
+            state_reward = 0.5
+
+        
+        # reward calculation
+        reward = state_reward
+            
+
+        return reward
 
     def step(self, action: np.ndarray) -> Tuple[dict, float, bool, bool, dict]:
         """Take a step in the environment"""
@@ -463,6 +484,7 @@ class SIRSEnvironment(gym.Env):
         
         observation = self._get_observation()
         reward = self._calculate_reward()
+        self.cumulative_reward += reward  # Update cumulative reward
         
         terminated = False
         if self.counter >= self.simulation_time:
@@ -496,17 +518,25 @@ class SIRSEnvironment(gym.Env):
         # Create figure with a modern style
         plt.style.use('seaborn-v0_8-whitegrid')
         fig = plt.figure(figsize=figsize, dpi=dpi, facecolor=self.COLORS['background'])
-        # Update grid spec with legend on left, plot in middle, info on right
-        gs = plt.GridSpec(1, 3, width_ratios=[0.15, 0.6, 0.25], figure=fig)
-        gs.update(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2)
+        # Update grid spec with legend on left, plot in middle, and two info panels on right
+        gs = plt.GridSpec(2, 4, width_ratios=[0.15, 0.6, 0.25, 0], height_ratios=[0.5, 0.5], figure=fig)
+        gs.update(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2, hspace=0.05)  # Reduced hspace
         
         # Create legend axis first (on the left)
-        ax_legend = fig.add_subplot(gs[0])
+        ax_legend = fig.add_subplot(gs[:, 0])  # Span both rows
         ax_legend.axis('off')
         
         # Grid subplot in the middle
-        ax_grid = fig.add_subplot(gs[1])
+        ax_grid = fig.add_subplot(gs[:, 1])  # Span both rows
         ax_grid.set_facecolor(self.COLORS['background'])
+        
+        # Agent info panel (top right)
+        ax_agent_info = fig.add_subplot(gs[0, 2])
+        ax_agent_info.axis('off')
+        
+        # Population stats panel (bottom right)
+        ax_stats = fig.add_subplot(gs[1, 2])
+        ax_stats.axis('off')
         
         # Draw grid with subtle lines
         for i in range(self.grid_size + 1):
@@ -544,6 +574,23 @@ class SIRSEnvironment(gym.Env):
                        linewidth=2,
                        label='Agent',
                        zorder=5)  # Ensure agent is on top
+
+        # Draw visibility radius if it's not -1 (full visibility)
+        if self.visibility_radius != -1:
+            # Draw circles for all periodic images that might be visible
+            # We need to consider the 9 possible positions (including wraparound)
+            for dx in [-self.grid_size, 0, self.grid_size]:
+                for dy in [-self.grid_size, 0, self.grid_size]:
+                    circle = plt.Circle(
+                        (self.agent_position[0] + dx, self.agent_position[1] + dy),
+                        self.visibility_radius,
+                        color=self.COLORS['agent'],
+                        fill=False,
+                        linestyle='--',
+                        alpha=0.3,
+                        zorder=4
+                    )
+                    ax_grid.add_patch(circle)
 
         # Draw movement vector with improved styling
         if self.last_action is not None:
@@ -599,11 +646,6 @@ class SIRSEnvironment(gym.Env):
         
         ax_grid.set_aspect('equal')
 
-        # Info table subplot on the right
-        ax_info = fig.add_subplot(gs[2])
-        ax_info.set_facecolor(self.COLORS['background'])
-        ax_info.axis('off')
-
         # Calculate state counts
         state_counts = {
             'S': sum(1 for h in self.humans if h.state == STATE_DICT['S']),
@@ -612,60 +654,79 @@ class SIRSEnvironment(gym.Env):
             'D': sum(1 for h in self.humans if h.state == STATE_DICT['D'])
         }
 
-        # Create info table with modern styling
-        table_data = [
+        # Create agent info table
+        agent_table_data = [
             ['Time', f'{self.counter}/{self.simulation_time}'],
             ['Agent State', state_labels[agent_state_str]],
             ['Position', f'({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})'],
             ['Movement dx', f'{self.last_action[0]:.2f}' if self.last_action is not None else '0.00'],
             ['Movement dy', f'{self.last_action[1]:.2f}' if self.last_action is not None else '0.00'],
             ['Adherence', f'{self.agent_adherence:.2f}'],
+            ['Cumulative Reward', f'{self.cumulative_reward:.2f}']
+        ]
+
+        # Create population stats table
+        stats_table_data = [
+            ['Category', 'Count (Percentage)'],
             ['Susceptible', f'{state_counts["S"]} ({state_counts["S"]/self.n_humans:.1%})'],
             ['Infectious', f'{state_counts["I"]} ({state_counts["I"]/self.n_humans:.1%})'],
             ['Recovered', f'{state_counts["R"]} ({state_counts["R"]/self.n_humans:.1%})'],
             ['Dead', f'{state_counts["D"]} ({state_counts["D"]/self.n_humans:.1%})']
         ]
 
-        # Create modern styled table
-        table = ax_info.table(cellText=table_data, 
-                            loc='center',
-                            cellLoc='left',
-                            colWidths=[0.35, 0.65])
+        # Create agent info table
+        agent_table = ax_agent_info.table(cellText=agent_table_data, 
+                                        loc='center',
+                                        cellLoc='left',
+                                        colWidths=[0.45, 0.55])  
         
-        # Style the table
-        table.auto_set_font_size(False)
-        table.set_fontsize(9)
-        table.scale(1.2, 1.6)
+        # Create population stats table
+        stats_table = ax_stats.table(cellText=stats_table_data, 
+                                   loc='center',
+                                   cellLoc='left',
+                                   colWidths=[0.45, 0.55])  
         
-        # Add custom styling to table cells
-        for (row, col), cell in table.get_celld().items():
-            cell.set_facecolor(self.COLORS['table_bg'])
-            cell.set_edgecolor(self.COLORS['grid_lines'])
-            cell.set_text_props(color=self.COLORS['text'])
+        # Style both tables
+        for table, is_agent_table in [(agent_table, True), (stats_table, False)]:
+            table.auto_set_font_size(False)
+            table.set_fontsize(9)
+            table.scale(1.2, 1.6)
             
-            # Color the agent state text based on its current state
-            if row == 1 and col == 1:  # Agent State cell
-                cell.set_text_props(color=self.COLORS[agent_state_str])
-                cell.set_text_props(weight='bold')
-            elif row == 0:  # Header row
-                cell.set_facecolor(self.COLORS['table_header_bg'])
-                cell.set_text_props(weight='bold')
-            # Color the state count rows
-            elif row == 6:  # Susceptible row
-                cell.set_text_props(color=self.COLORS['S'])
-                cell.set_text_props(weight='bold')
-            elif row == 7:  # Infectious row
-                cell.set_text_props(color=self.COLORS['I'])
-                cell.set_text_props(weight='bold')
-            elif row == 8:  # Recovered row
-                cell.set_text_props(color=self.COLORS['R'])
-                cell.set_text_props(weight='bold')
-            elif row == 9:  # Dead row
-                cell.set_text_props(color=self.COLORS['D'])
-                cell.set_text_props(weight='bold')
-            
-            # Add subtle padding
-            cell.PAD = 0.05
+            # Add custom styling to table cells
+            for (row, col), cell in table.get_celld().items():
+                cell.set_facecolor(self.COLORS['table_bg'])
+                cell.set_edgecolor(self.COLORS['grid_lines'])
+                cell.set_text_props(color=self.COLORS['text'])
+                
+                if is_agent_table:
+                    # Agent table styling
+                    if row == 0:  # Header row
+                        cell.set_facecolor(self.COLORS['table_header_bg'])
+                        cell.set_text_props(weight='bold')
+                    elif row == 1 and col == 1:  # Agent State cell
+                        cell.set_text_props(color=self.COLORS[agent_state_str])
+                        cell.set_text_props(weight='bold')
+                else:
+                    # Stats table styling
+                    if row == 0:  # Header row
+                        cell.set_facecolor(self.COLORS['table_header_bg'])
+                        cell.set_text_props(weight='bold')
+                        cell.set_text_props(color=self.COLORS['text'])
+                    elif row == 1:  # Susceptible row
+                        cell.set_text_props(color=self.COLORS['S'])
+                        cell.set_text_props(weight='bold')
+                    elif row == 2:  # Infectious row
+                        cell.set_text_props(color=self.COLORS['I'])
+                        cell.set_text_props(weight='bold')
+                    elif row == 3:  # Recovered row
+                        cell.set_text_props(color=self.COLORS['R'])
+                        cell.set_text_props(weight='bold')
+                    elif row == 4:  # Dead row
+                        cell.set_text_props(color=self.COLORS['D'])
+                        cell.set_text_props(weight='bold')
+                
+                # Add subtle padding
+                cell.PAD = 0.05
 
         # Convert figure to RGB array
         fig.canvas.draw()
