@@ -42,10 +42,12 @@ class SIRSEnvironment(gym.Env):
         immunity_decay: float = 0.1,
         recovery_rate: float = 0.1,
         max_immunity_loss_prob: float = 0.2,
+        adherence_penalty_factor: float = 2,
         movement_type: str = "stationary",
         visibility_radius: float = -1,
         rounding_digits: int = 2,
         reinfection_count: int = 3,
+        reward_type: str = "stateBased",
         render_mode: Optional[str] = None,
     ):
         super().__init__()
@@ -58,6 +60,7 @@ class SIRSEnvironment(gym.Env):
             raise ValueError("visibility_radius must be -1 (full visibility) or a positive number")
         if initial_agent_adherence < 0 or initial_agent_adherence > 1:
             raise ValueError("initial_agent_adherence must be in [0,1]")
+        # error checking for reward type done in the handler function
         
         # Store render mode and initialize rendering variables
         self.render_mode = render_mode
@@ -90,6 +93,7 @@ class SIRSEnvironment(gym.Env):
         self.agent_adherence = initial_agent_adherence # NPI adherence
         self.agent_state = STATE_DICT['S'] # initial state of the agent
         self.agent_time_in_state = 0  # Track time in state for agent
+        self.adherence_penalty_factor = adherence_penalty_factor
 
         ##############################
         ####### SIRS parameters 
@@ -154,6 +158,10 @@ class SIRSEnvironment(gym.Env):
         self.humans: List[Human] = [] 
         # Movement handler  
         self.movement_handler = MovementHandler(grid_size, movement_type, rounding_digits=self.rounding_digits)
+        
+        # Store reward type
+        self.reward_type = reward_type
+
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
 
     def _calculate_distance(self, human1: Human, human2: Human) -> float:
@@ -452,27 +460,44 @@ class SIRSEnvironment(gym.Env):
         return obs
         
 
-    def _calculate_reward(self):    
-        """Calculate the reward for the agent"""
-        # TODO: implement reward logic
-
-        # no reward for death
-        if self.agent_state == STATE_DICT['D']:
-            reward = 0 
-            return reward
-
-        state_reward = 0
+    def _calculate_stateBased_reward(self):
+        """Basic health-focused reward"""
         if self.agent_state == STATE_DICT['S']:
             state_reward = 1
-        else:
-            state_reward = 0.5
+        else:  # Infected or Dead or Recovered
+            state_reward = 0
 
-        
-        # reward calculation
-        reward = state_reward
-            
-
+        reward = state_reward - self.agent_adherence / self.adherence_penalty_factor
+        reward = max(0, reward)
         return reward
+
+    def _calculate_avoidInfection_reward(self):
+        """Basic altruistic reward focusing on population health"""
+        # make human object for the agent to use existing infection probability calculation
+        agent_human = Human(
+                x=self.agent_position[0],
+                y=self.agent_position[1],
+                state=self.agent_state,
+                id=-1,
+                time_in_state=self.agent_time_in_state  # Pass the agent's time in state
+        )
+        
+        probability_infection = self._calculate_infection_probability(agent_human, is_agent=True)
+        avoid_infection_reward = 1 - np.exp(-probability_infection*5) # constant multiplier for the reward here (flag)
+
+        reward = avoid_infection_reward - self.agent_adherence / self.adherence_penalty_factor
+        return reward
+
+    def _calculate_reward(self):    
+        """Calculate the reward based on the selected reward type"""
+        reward_functions = {
+            "stateBased": self._calculate_stateBased_reward,
+            "avoidInfection": self._calculate_avoidInfection_reward,
+        }
+        if self.reward_type not in reward_functions: # throw error if reward type is not valid
+            raise ValueError(f"Invalid reward type: {self.reward_type}")
+        
+        return reward_functions[self.reward_type]()
 
     def step(self, action: np.ndarray) -> Tuple[dict, float, bool, bool, dict]:
         """Take a step in the environment"""
