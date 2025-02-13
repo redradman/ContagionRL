@@ -1,6 +1,6 @@
 # Environment Parameters
 env_config = {
-    "simulation_time": 1000,        # Steps per episode
+    "simulation_time": 500,        # Steps per episode
     "grid_size": 50,
     "n_humans": 50,
     "n_infected": 20,
