@@ -4,7 +4,7 @@ env_config = {
     "grid_size": 50,
     "n_humans": 100,
     "n_infected": 50,
-    "beta": 0.4,
+    "beta": 0.3,
     "initial_agent_adherence": 0.5,
     "distance_decay": 0.2,
     "lethality": 0.4,
