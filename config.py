@@ -3,17 +3,17 @@ env_config = {
     "simulation_time": 500,        # Steps per episode
     "grid_size": 50,
     "n_humans": 100,
-    "n_infected": 50,
+    "n_infected": 20,
     "beta": 0.3,
     "initial_agent_adherence": 0.5,
-    "distance_decay": 0.2,
-    "lethality": 0.4,
+    "distance_decay": 0.15,
+    "lethality": 0.2,
     "immunity_decay": 0.1,
     "recovery_rate": 0.2,
     "max_immunity_loss_prob": 1,
-    "adherence_penalty_factor": 4,
+    "adherence_penalty_factor": 10,
     "movement_type": "continuous_random",
-    "visibility_radius": 6,
+    "visibility_radius": 10,
     "reinfection_count": 10,
     "reward_type": "avoidInfection",       
     "render_mode": None,  # No rendering during training
@@ -30,7 +30,7 @@ ppo_config = {
     # PPO specific parameters
     "batch_size": 64,
     "n_epochs": 10,
-    "learning_rate": 3e-4,
+    "learning_rate": 1e-4,
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_range": 0.2,
@@ -39,7 +39,7 @@ ppo_config = {
     "max_grad_norm": 0.5,
     
     # Training parameters
-    "total_timesteps": 100_000,      # Total steps across all episodes and environments
+    "total_timesteps": 1_000_000,      # Total steps across all episodes and environments
     "n_envs": 7,                  # Number of parallel environments
 }
 
@@ -52,8 +52,8 @@ ppo_config = {
 # Logging and Saving
 save_config = {
     "base_log_path": "logs",
-    "save_freq": 20000,  # Save model every n steps
+    "save_freq": 100_000,  # Save model every n steps
     "save_replay_buffer": True,
     "verbose": 1,
-    "eval_freq": 0,  # How often to run evaluation episodes
+    "eval_freq": 70000,  # How often to run evaluation episodes
 } 
