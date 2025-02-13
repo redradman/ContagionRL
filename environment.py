@@ -343,6 +343,7 @@ class SIRSEnvironment(gym.Env):
                 if self.np_random.random() < p_infection:
                     self.agent_state = STATE_DICT['I']
                     self.agent_time_in_state = 0  # Reset time in state on transition
+                    self.infected_count += 1
             
             elif self.agent_state == STATE_DICT['I']:
                 # Check for death
@@ -406,25 +407,24 @@ class SIRSEnvironment(gym.Env):
                 if self.np_random.random() < p_immunity_loss:
                     human.update_state(STATE_DICT['S'])
 
-        # Check if there are any infected humans
-        if self.infected_count == 0:
-            # Only attempt reinfection if there are dead people and susceptible people
-            susceptible_count = sum(1 for h in self.humans if h.state == STATE_DICT['S'])
-            recovered_count = sum(1 for h in self.humans if h.state == STATE_DICT['R'])
+        # Handle reinfection if needed
+        if self.infected_count == 0 and self.dead_count > 0:
+            # Only attempt reinfection if there are susceptible or recovered people
+            # susceptible_count = sum(1 for h in self.humans if h.state == STATE_DICT['S'])
+            # recovered_count = sum(1 for h in self.humans if h.state == STATE_DICT['R'])
             
-            # If there are susceptible people and dead people, but no infected or recovered,
-            # we should bring back some dead people as infected to keep the simulation going
-            if self.dead_count > 0 and (susceptible_count > 0 or recovered_count > 0):
-                # Randomly select humans to reinfect
-                dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
-                n_to_reinfect = min(self.reinfection_count, len(dead_humans))
-                if n_to_reinfect > 0:
-                    reinfected_humans = self.np_random.choice(dead_humans, n_to_reinfect, replace=False)
-                    for human in reinfected_humans:
-                        human.update_state(STATE_DICT['I'])
-                        human.time_in_state = 0  # Reset time in state for newly infected
-                        self.infected_count += 1
-                        self.dead_count -= 1
+            # if susceptible_count > 0 or recovered_count > 0:
+                # Get list of dead humans
+            dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
+            n_to_reinfect = min(self.reinfection_count, len(dead_humans))
+            
+            if n_to_reinfect > 0:
+                # Select random dead humans to reinfect
+                reinfected_humans = self.np_random.choice(dead_humans, n_to_reinfect, replace=False)
+                for human in reinfected_humans:
+                    human.update_state(STATE_DICT['I'])
+                    self.infected_count += 1
+                    self.dead_count -= 1
 
     def _get_observation(self):
         """
