@@ -395,8 +395,13 @@ class SIRSEnvironment(gym.Env):
 
         # Check if there are any infected humans
         if self.infected_count == 0:
-            # Get list of dead humans
-            if self.dead_count > 0:
+            # Only attempt reinfection if there are dead people and susceptible people
+            susceptible_count = sum(1 for h in self.humans if h.state == STATE_DICT['S'])
+            recovered_count = sum(1 for h in self.humans if h.state == STATE_DICT['R'])
+            
+            # If there are susceptible people and dead people, but no infected or recovered,
+            # we should bring back some dead people as infected to keep the simulation going
+            if self.dead_count > 0 and (susceptible_count > 0 or recovered_count > 0):
                 # Randomly select humans to reinfect
                 dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
                 n_to_reinfect = min(self.reinfection_count, len(dead_humans))
