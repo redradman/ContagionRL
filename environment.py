@@ -3,29 +3,30 @@ import numpy as np
 from typing import Optional, List, Tuple
 import math
 from utils import STATE_DICT, MovementHandler, Human
-import pygame
-import pygame.gfxdraw
-from pygame import Surface
+import matplotlib.pyplot as plt
 
 ######## SIRS Environment class ########
 class SIRSEnvironment(gym.Env):
     metadata = {
-        "render_modes": ["human", "rgb_array"],
-        "render_fps": 4,
-        "render_resolution": (800, 800),  # Window size for rendering
+        "render_modes": ["rgb_array"],
+        "render_fps": 15,
+        "render_resolution": (1200, 600),  # Width increased to accommodate both panels
     }
 
     # Color definitions for rendering
     COLORS = {
-        'background': (255, 255, 255),  # White
-        'grid_lines': (200, 200, 200),  # Light gray
-        'agent': (255, 165, 0),         # Orange
-        'S': (30, 144, 255),           # Dodger Blue
-        'I': (220, 20, 60),            # Crimson
-        'R': (50, 205, 50),            # Lime Green
-        'D': (128, 128, 128),          # Gray
-        'text': (0, 0, 0),             # Black
-        'panel_bg': (240, 240, 240)    # Light gray for info panel
+        'background': '#f8f9fa',      # Light gray background
+        'grid_lines': '#dee2e6',      # Subtle grid lines
+        'agent': '#fd7e14',           # Vibrant orange for agent
+        'agent_border': '#212529',    # Dark border for agent
+        'S': '#228be6',              # Bright blue for Susceptible
+        'I': '#fa5252',              # Vivid red for Infected
+        'R': '#40c057',              # Fresh green for Recovered
+        'D': '#868e96',              # Neutral gray for Dead
+        'text': '#212529',           # Dark text
+        'arrow': '#212529',          # Dark arrow
+        'table_bg': '#ffffff',       # White table background
+        'table_header_bg': '#e9ecef'  # Light gray table header
     }
 
     def __init__(
@@ -41,10 +42,12 @@ class SIRSEnvironment(gym.Env):
         immunity_decay: float = 0.1,
         recovery_rate: float = 0.1,
         max_immunity_loss_prob: float = 0.2,
+        adherence_penalty_factor: float = 2,
         movement_type: str = "stationary",
         visibility_radius: float = -1,
         rounding_digits: int = 2,
-        reinfection_count: int = 3,  # Number of humans to reinfect when no infected exist
+        reinfection_count: int = 3,
+        reward_type: str = "stateBased",
         render_mode: Optional[str] = None,
     ):
         super().__init__()
@@ -57,34 +60,22 @@ class SIRSEnvironment(gym.Env):
             raise ValueError("visibility_radius must be -1 (full visibility) or a positive number")
         if initial_agent_adherence < 0 or initial_agent_adherence > 1:
             raise ValueError("initial_agent_adherence must be in [0,1]")
+        # error checking for reward type done in the handler function
         
         # Store render mode and initialize rendering variables
         self.render_mode = render_mode
-        self.window = None
-        self.clock = None
-        self.window_size = self.metadata["render_resolution"]
-        self.last_action = None  # Store last action for rendering
-        self.font = None
+        self.fig = None
+        self.ax = None
+        self.last_action = None
 
-        # Calculate cell size for rendering
-        self.cell_size = min(
-            self.window_size[0] // grid_size,
-            self.window_size[1] // grid_size
-        )
-        # Recalculate window size to make it exact
-        self.window_size = (
-            self.cell_size * grid_size,
-            self.cell_size * grid_size
-        )
+        # Training metrics
+        self.cumulative_reward = 0.0
+
+        # Calculate figure size and DPI for rendering
+        width, height = self.metadata["render_resolution"]
+        self.dpi = 100
+        self.figure_size = (width / self.dpi, height / self.dpi)  # Convert pixels to inches
         
-        # Font size for rendering
-        self.font_size = max(10, self.cell_size // 2)
-
-        # Initialize font if rendering is enabled
-        if self.render_mode is not None:
-            pygame.font.init()
-            self.font = pygame.font.SysFont('Arial', self.font_size)
-
         # General parameters
         self.simulation_time = simulation_time
         self.counter = 0 # counter for the simulation time
@@ -102,6 +93,7 @@ class SIRSEnvironment(gym.Env):
         self.agent_adherence = initial_agent_adherence # NPI adherence
         self.agent_state = STATE_DICT['S'] # initial state of the agent
         self.agent_time_in_state = 0  # Track time in state for agent
+        self.adherence_penalty_factor = adherence_penalty_factor
 
         ##############################
         ####### SIRS parameters 
@@ -166,6 +158,10 @@ class SIRSEnvironment(gym.Env):
         self.humans: List[Human] = [] 
         # Movement handler  
         self.movement_handler = MovementHandler(grid_size, movement_type, rounding_digits=self.rounding_digits)
+        
+        # Store reward type
+        self.reward_type = reward_type
+
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
 
     def _calculate_distance(self, human1: Human, human2: Human) -> float:
@@ -254,8 +250,9 @@ class SIRSEnvironment(gym.Env):
         # Clear frames list
         self.frames = []
         
-        # Reset counter
+        # Reset counter and reward
         self.counter = 0
+        self.cumulative_reward = 0.0
         
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2])
         self.agent_adherence = self.initial_agent_adherence
@@ -349,6 +346,11 @@ class SIRSEnvironment(gym.Env):
 
         # Now handle human stepping and state transitions
         for human in self.humans:
+            # First check if human is dead - dead humans don't move
+            if human.state == STATE_DICT['D']:
+                continue
+
+            # Only move humans that are not dead
             new_x, new_y = self.movement_handler.get_new_position(
                 human.x, 
                 human.y, 
@@ -357,8 +359,6 @@ class SIRSEnvironment(gym.Env):
             human.move(new_x, new_y, self.grid_size)
 
             human.time_in_state += 1
-            if human.state == STATE_DICT['D']:
-                continue
 
             if human.state == STATE_DICT['S']:
                 # Calculate probability of infection
@@ -460,10 +460,44 @@ class SIRSEnvironment(gym.Env):
         return obs
         
 
+    def _calculate_stateBased_reward(self):
+        """Basic health-focused reward"""
+        if self.agent_state == STATE_DICT['S']:
+            state_reward = 1
+        else:  # Infected or Dead or Recovered
+            state_reward = 0
+
+        reward = state_reward - self.agent_adherence / self.adherence_penalty_factor
+        reward = max(0, reward)
+        return reward
+
+    def _calculate_avoidInfection_reward(self):
+        """Basic altruistic reward focusing on population health"""
+        # make human object for the agent to use existing infection probability calculation
+        agent_human = Human(
+                x=self.agent_position[0],
+                y=self.agent_position[1],
+                state=self.agent_state,
+                id=-1,
+                time_in_state=self.agent_time_in_state  # Pass the agent's time in state
+        )
+        
+        probability_infection = self._calculate_infection_probability(agent_human, is_agent=True)
+        avoid_infection_reward = 1 - np.exp(-probability_infection*5) # constant multiplier for the reward here (flag)
+
+        reward = avoid_infection_reward - self.agent_adherence / self.adherence_penalty_factor
+        return reward
+
     def _calculate_reward(self):    
-        """Calculate the reward for the agent"""
-        # TODO: implement reward logic
-        return 0
+        """Calculate the reward based on the selected reward type"""
+        reward_functions = {
+            "stateBased": self._calculate_stateBased_reward,
+            "avoidInfection": self._calculate_avoidInfection_reward,
+        }
+        if self.reward_type not in reward_functions: # throw error if reward type is not valid
+            raise ValueError(f"Invalid reward type: {self.reward_type}")
+        
+        return reward_functions[self.reward_type]()
 
     def step(self, action: np.ndarray) -> Tuple[dict, float, bool, bool, dict]:
         """Take a step in the environment"""
@@ -475,6 +509,7 @@ class SIRSEnvironment(gym.Env):
         
         observation = self._get_observation()
         reward = self._calculate_reward()
+        self.cumulative_reward += reward  # Update cumulative reward
         
         terminated = False
         if self.counter >= self.simulation_time:
@@ -494,116 +529,149 @@ class SIRSEnvironment(gym.Env):
 
     def _render_frame(self) -> Optional[np.ndarray]:
         """
-        Render the current state of the environment.
+        Render the current state of the environment using Matplotlib.
         Returns:
-            np.ndarray: RGB array if mode is 'rgb_array', None if mode is 'human'
+            np.ndarray: RGB array of shape (height, width, 3)
         """
         if self.render_mode is None:
             return None
 
-        # Initialize pygame if not done yet
-        if self.window is None and self.render_mode == "human":
-            pygame.init()
-            pygame.display.init()
-            self.window = pygame.display.set_mode(self.window_size)
-            pygame.display.set_caption("SIRS Environment")
+        width, height = self.metadata["render_resolution"]
+        dpi = 100
+        figsize = (width / dpi, height / dpi)
 
-        if self.clock is None and self.render_mode == "human":
-            self.clock = pygame.time.Clock()
+        # Create figure with a modern style
+        plt.style.use('seaborn-v0_8-whitegrid')
+        fig = plt.figure(figsize=figsize, dpi=dpi, facecolor=self.COLORS['background'])
+        # Update grid spec with legend on left, plot in middle, and two info panels on right
+        gs = plt.GridSpec(2, 4, width_ratios=[0.15, 0.6, 0.25, 0], height_ratios=[0.5, 0.5], figure=fig)
+        gs.update(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.2, hspace=0.05)  # Reduced hspace
+        
+        # Create legend axis first (on the left)
+        ax_legend = fig.add_subplot(gs[:, 0])  # Span both rows
+        ax_legend.axis('off')
+        
+        # Grid subplot in the middle
+        ax_grid = fig.add_subplot(gs[:, 1])  # Span both rows
+        ax_grid.set_facecolor(self.COLORS['background'])
+        
+        # Agent info panel (top right)
+        ax_agent_info = fig.add_subplot(gs[0, 2])
+        ax_agent_info.axis('off')
+        
+        # Population stats panel (bottom right)
+        ax_stats = fig.add_subplot(gs[1, 2])
+        ax_stats.axis('off')
+        
+        # Draw grid with subtle lines
+        for i in range(self.grid_size + 1):
+            ax_grid.axhline(y=i, color=self.COLORS['grid_lines'], linewidth=0.5, alpha=0.5)
+            ax_grid.axvline(x=i, color=self.COLORS['grid_lines'], linewidth=0.5, alpha=0.5)
 
-        # Create the canvas
-        canvas = pygame.Surface(self.window_size)
-        canvas.fill(self.COLORS['background'])
+        # Plot humans by state with enhanced styling
+        state_labels = {
+            'S': 'Susceptible',
+            'I': 'Infectious',
+            'R': 'Recovered',
+            'D': 'Dead'
+        }
+        
+        for state in ['S', 'I', 'R', 'D']:
+            humans_in_state = [h for h in self.humans if h.state == STATE_DICT[state]]
+            if humans_in_state:
+                x = [h.x for h in humans_in_state]
+                y = [h.y for h in humans_in_state]
+                ax_grid.scatter(x, y, 
+                              c=self.COLORS[state], 
+                              s=120,  # Slightly larger markers
+                              alpha=0.8, 
+                              label=state_labels[state],
+                              edgecolors='white',  # White edge for contrast
+                              linewidth=1)
 
-        # Draw grid lines
-        for x in range(self.grid_size + 1):
-            pygame.draw.line(
-                canvas,
-                self.COLORS['grid_lines'],
-                (x * self.cell_size, 0),
-                (x * self.cell_size, self.window_size[1])
-            )
-        for y in range(self.grid_size + 1):
-            pygame.draw.line(
-                canvas,
-                self.COLORS['grid_lines'],
-                (0, y * self.cell_size),
-                (self.window_size[0], y * self.cell_size)
-            )
-
-        # Draw humans
-        for human in self.humans:
-            x = int(human.x * self.cell_size + self.cell_size/2)
-            y = int(human.y * self.cell_size + self.cell_size/2)
-            radius = self.cell_size // 4
-
-            # Get color based on state
-            state_str = [k for k, v in STATE_DICT.items() if v == human.state][0]
-            color = self.COLORS[state_str]
-
-            pygame.draw.circle(canvas, color, (x, y), radius)
-
-        # Draw agent
-        agent_x = int(self.agent_position[0] * self.cell_size + self.cell_size/2)
-        agent_y = int(self.agent_position[1] * self.cell_size + self.cell_size/2)
-        agent_radius = self.cell_size // 3
-
-        # Draw agent with state-colored border
+        # Plot agent with enhanced appearance
         agent_state_str = [k for k, v in STATE_DICT.items() if v == self.agent_state][0]
-        pygame.draw.circle(canvas, self.COLORS[agent_state_str], (agent_x, agent_y), agent_radius)
-        pygame.draw.circle(canvas, self.COLORS['agent'], (agent_x, agent_y), agent_radius - 2)
+        ax_grid.scatter([self.agent_position[0]], [self.agent_position[1]], 
+                       c=self.COLORS['agent'], 
+                       s=250,  # Larger marker size
+                       marker='.',  
+                       edgecolors=self.COLORS['agent_border'], 
+                       linewidth=2,
+                       label='Agent',
+                       zorder=5)  # Ensure agent is on top
 
-        # Draw movement vector if last action exists
+        # Draw visibility radius if it's not -1 (full visibility)
+        if self.visibility_radius != -1:
+            # Draw circles for all periodic images that might be visible
+            # We need to consider the 9 possible positions (including wraparound)
+            for dx in [-self.grid_size, 0, self.grid_size]:
+                for dy in [-self.grid_size, 0, self.grid_size]:
+                    circle = plt.Circle(
+                        (self.agent_position[0] + dx, self.agent_position[1] + dy),
+                        self.visibility_radius,
+                        color=self.COLORS['agent'],
+                        fill=False,
+                        linestyle='--',
+                        alpha=0.3,
+                        zorder=4
+                    )
+                    ax_grid.add_patch(circle)
+
+        # Draw movement vector with improved styling
         if self.last_action is not None:
             dx, dy = self.last_action[:2]
-            # Scale the movement vector for visibility
-            arrow_scale = self.cell_size
-            end_x = int(agent_x + dx * arrow_scale)
-            end_y = int(agent_y + dy * arrow_scale)
-            
-            # Ensure coordinates are valid integers for pygame
-            pygame.draw.line(
-                canvas, 
-                self.COLORS['text'],
-                (int(agent_x), int(agent_y)),
-                (end_x, end_y),
-                2
-            )
-            
-            # Draw arrowhead
-            if dx != 0 or dy != 0:  # Only draw arrowhead if there's movement
-                arrow_size = self.cell_size // 8
-                pygame.draw.polygon(
-                    canvas,
-                    self.COLORS['text'],
-                    [
-                        (end_x, end_y),
-                        (int(end_x - arrow_size * np.sign(dx) if dx != 0 else end_x), 
-                         int(end_y - arrow_size if dy == 0 else end_y - arrow_size * np.sign(dy))),
-                        (int(end_x - arrow_size * np.sign(dx) if dx != 0 else end_x), 
-                         int(end_y + arrow_size if dy == 0 else end_y + arrow_size * np.sign(dy)))
-                    ]
-                )
+            ax_grid.arrow(self.agent_position[0], self.agent_position[1], 
+                         dx, dy, 
+                         color=self.COLORS['arrow'], 
+                         width=0.05,  # Thicker arrow
+                         head_width=0.2,
+                         head_length=0.3,
+                         alpha=0.8,
+                         zorder=4)
 
-        # Draw info panel
-        info_surface = self._create_info_panel()
-        canvas.blit(info_surface, (10, 10))
+        # Set grid properties with modern styling
+        ax_grid.set_xlim(-1, self.grid_size + 1)
+        ax_grid.set_ylim(-1, self.grid_size + 1)
+        
+        # Calculate professional tick intervals
+        n_intervals = 5  # Use 5 intervals for clean divisions
+        major_ticks = np.linspace(0, self.grid_size, n_intervals + 1, dtype=int)
+        minor_ticks = np.arange(0, self.grid_size + 1, 1)
+        
+        # Set major and minor ticks
+        ax_grid.set_xticks(major_ticks)
+        ax_grid.set_yticks(major_ticks)
+        ax_grid.set_xticks(minor_ticks, minor=True)
+        ax_grid.set_yticks(minor_ticks, minor=True)
+        
+        # Style the ticks
+        ax_grid.tick_params(which='major', colors=self.COLORS['text'], labelsize=10, length=6)
+        ax_grid.tick_params(which='minor', colors=self.COLORS['grid_lines'], labelsize=0, length=3)
+        
+        # Add axis labels with modern styling
+        ax_grid.set_xlabel('X Coordinate', color=self.COLORS['text'], fontsize=10, fontweight='bold')
+        ax_grid.set_ylabel('Y Coordinate', color=self.COLORS['text'], fontsize=10, fontweight='bold')
+        
+        # Add subtle grid for major ticks only
+        ax_grid.grid(True, which='major', linestyle='-', alpha=0.3, color=self.COLORS['grid_lines'])
+        ax_grid.grid(True, which='minor', linestyle=':', alpha=0.2, color=self.COLORS['grid_lines'])
+        
+        # Move legend outside the plot
+        legend = ax_grid.get_legend()
+        if legend is not None:
+            legend.remove()  # Remove the old legend if it exists
+        lines_labels = ax_grid.get_legend_handles_labels()
+        ax_legend.legend(*lines_labels, 
+                        loc='center',
+                        framealpha=0.95,
+                        facecolor='white',
+                        edgecolor='none',
+                        fontsize=10,
+                        borderpad=2)
+        
+        ax_grid.set_aspect('equal')
 
-        if self.render_mode == "human":
-            # Copy canvas to window
-            self.window.blit(canvas, canvas.get_rect())
-            pygame.event.pump()
-            pygame.display.flip()
-            self.clock.tick(self.metadata["render_fps"])
-            return None
-        else:  # rgb_array
-            return np.transpose(
-                np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
-            )
-
-    def _create_info_panel(self) -> Surface:
-        """Create an information panel surface"""
-        # Count humans in each state
+        # Calculate state counts
         state_counts = {
             'S': sum(1 for h in self.humans if h.state == STATE_DICT['S']),
             'I': sum(1 for h in self.humans if h.state == STATE_DICT['I']),
@@ -611,58 +679,102 @@ class SIRSEnvironment(gym.Env):
             'D': sum(1 for h in self.humans if h.state == STATE_DICT['D'])
         }
 
-        # Create info text
-        info_lines = [
-            f"Time: {self.counter}/{self.simulation_time}",
-            f"Agent State: {[k for k,v in STATE_DICT.items() if v == self.agent_state][0]}",
-            f"Time in State: {self.agent_time_in_state}",
-            f"Position: ({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})",
-            f"Adherence: {self.agent_adherence:.2f}",
-            "Population:",
-            f"  S: {state_counts['S']}",
-            f"  I: {state_counts['I']}",
-            f"  R: {state_counts['R']}",
-            f"  D: {state_counts['D']}"
+        # Create agent info table
+        agent_table_data = [
+            ['Time', f'{self.counter}/{self.simulation_time}'],
+            ['Agent State', state_labels[agent_state_str]],
+            ['Position', f'({self.agent_position[0]:.1f}, {self.agent_position[1]:.1f})'],
+            ['Movement dx', f'{self.last_action[0]:.2f}' if self.last_action is not None else '0.00'],
+            ['Movement dy', f'{self.last_action[1]:.2f}' if self.last_action is not None else '0.00'],
+            ['Adherence', f'{self.agent_adherence:.2f}'],
+            ['Cumulative Reward', f'{self.cumulative_reward:.2f}']
         ]
 
-        # Add last action if available
-        if self.last_action is not None:
-            info_lines.extend([
-                "Last Action:",
-                f"  Move: ({self.last_action[0]:.2f}, {self.last_action[1]:.2f})",
-                f"  Adherence: {self.last_action[2]:.2f}"
-            ])
+        # Create population stats table
+        stats_table_data = [
+            ['Category', 'Count (Percentage)'],
+            ['Susceptible', f'{state_counts["S"]} ({state_counts["S"]/self.n_humans:.1%})'],
+            ['Infectious', f'{state_counts["I"]} ({state_counts["I"]/self.n_humans:.1%})'],
+            ['Recovered', f'{state_counts["R"]} ({state_counts["R"]/self.n_humans:.1%})'],
+            ['Dead', f'{state_counts["D"]} ({state_counts["D"]/self.n_humans:.1%})']
+        ]
 
-        # Create surface for info panel
-        line_height = self.font_size + 2
-        panel_height = line_height * len(info_lines) + 20
-        panel_width = 250
-        info_surface = pygame.Surface((panel_width, panel_height))
-        info_surface.fill(self.COLORS['panel_bg'])
-        info_surface.set_alpha(230)  # Semi-transparent
+        # Create agent info table
+        agent_table = ax_agent_info.table(cellText=agent_table_data, 
+                                        loc='center',
+                                        cellLoc='left',
+                                        colWidths=[0.45, 0.55])  
+        
+        # Create population stats table
+        stats_table = ax_stats.table(cellText=stats_table_data, 
+                                   loc='center',
+                                   cellLoc='left',
+                                   colWidths=[0.45, 0.55])  
+        
+        # Style both tables
+        for table, is_agent_table in [(agent_table, True), (stats_table, False)]:
+            table.auto_set_font_size(False)
+            table.set_fontsize(9)
+            table.scale(1.2, 1.6)
+            
+            # Add custom styling to table cells
+            for (row, col), cell in table.get_celld().items():
+                cell.set_facecolor(self.COLORS['table_bg'])
+                cell.set_edgecolor(self.COLORS['grid_lines'])
+                cell.set_text_props(color=self.COLORS['text'])
+                
+                if is_agent_table:
+                    # Agent table styling
+                    if row == 0:  # Header row
+                        cell.set_facecolor(self.COLORS['table_header_bg'])
+                        cell.set_text_props(weight='bold')
+                    elif row == 1 and col == 1:  # Agent State cell
+                        cell.set_text_props(color=self.COLORS[agent_state_str])
+                        cell.set_text_props(weight='bold')
+                else:
+                    # Stats table styling
+                    if row == 0:  # Header row
+                        cell.set_facecolor(self.COLORS['table_header_bg'])
+                        cell.set_text_props(weight='bold')
+                        cell.set_text_props(color=self.COLORS['text'])
+                    elif row == 1:  # Susceptible row
+                        cell.set_text_props(color=self.COLORS['S'])
+                        cell.set_text_props(weight='bold')
+                    elif row == 2:  # Infectious row
+                        cell.set_text_props(color=self.COLORS['I'])
+                        cell.set_text_props(weight='bold')
+                    elif row == 3:  # Recovered row
+                        cell.set_text_props(color=self.COLORS['R'])
+                        cell.set_text_props(weight='bold')
+                    elif row == 4:  # Dead row
+                        cell.set_text_props(color=self.COLORS['D'])
+                        cell.set_text_props(weight='bold')
+                
+                # Add subtle padding
+                cell.PAD = 0.05
 
-        # Draw text
-        for i, line in enumerate(info_lines):
-            text_surface = self.font.render(line, True, self.COLORS['text'])
-            info_surface.blit(text_surface, (10, 10 + i * line_height))
-
-        return info_surface
+        # Convert figure to RGB array
+        fig.canvas.draw()
+        
+        # Get the correct buffer from the figure
+        buf = np.asarray(fig.canvas.buffer_rgba())
+        # Convert RGBA to RGB
+        data = buf[:, :, :3]
+        
+        plt.close(fig)
+        return data
 
     def render(self):
         """
         Render the environment.
         Returns:
-            None if mode is 'human', numpy array if mode is 'rgb_array'
+            numpy array if mode is 'rgb_array'
         """
         return self._render_frame()
 
     def close(self):
-        """Close the environment and cleanup pygame resources."""
-        if self.window is not None:
-            pygame.display.quit()
-            pygame.quit()
-            self.window = None
-            self.clock = None
+        """Close the environment and cleanup resources."""
+        self.fig = None
 
 #############################
 ########## ARCHIVE ##########
