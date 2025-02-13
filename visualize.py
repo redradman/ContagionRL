@@ -28,6 +28,7 @@ def record_episode(model, env, video_path: str, deterministic: bool = True):
     
     total_reward = 0
     step_count = 0
+    cumulative_reward = 0
     
     while not done:
         # Get action from the model
@@ -37,6 +38,7 @@ def record_episode(model, env, video_path: str, deterministic: bool = True):
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
         step_count += 1
+        cumulative_reward = info.get("cumulative_reward", total_reward)  # Use env's cumulative reward if available
         
         # Get frame
         frame = env.render()
@@ -49,7 +51,7 @@ def record_episode(model, env, video_path: str, deterministic: bool = True):
     if frames:
         imageio.mimsave(video_path, frames, fps=env.metadata["render_fps"])
         print(f"Video saved to {video_path}")
-        print(f"Episode finished after {step_count} steps with total reward: {total_reward:.2f}")
+        print(f"Episode finished after {step_count} steps with total reward: {cumulative_reward:.2f}")
     else:
         print("Warning: No frames were collected during the episode")
 
