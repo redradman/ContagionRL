@@ -147,7 +147,8 @@ def main(args):
     vec_env = VecMonitor(vec_env, os.path.join(log_path, "monitor"))
 
     # Create evaluation environment if needed
-    if args.eval_freq > 0:
+    eval_freq = save_config.get("eval_freq", 0)  # Get eval_freq from config, default to 0
+    if eval_freq > 0:
         eval_env = make_eval_env(env_config, seed=42)
         eval_env = DummyVecEnv([lambda: eval_env])
         eval_env = VecMonitor(eval_env, os.path.join(log_path, "eval"))
@@ -166,19 +167,19 @@ def main(args):
     callbacks.append(checkpoint_callback)
 
     # Evaluation and video recording callbacks if requested
-    if args.eval_freq > 0:
+    if eval_freq > 0:
         eval_callback = EvalCallback(
             eval_env,
             best_model_save_path=log_path,
             log_path=log_path,
-            eval_freq=args.eval_freq,
+            eval_freq=eval_freq,
             deterministic=True,
             render=False
         )
         video_recorder = VideoRecorderCallback(
             eval_env,
             video_folder,
-            eval_freq=args.eval_freq
+            eval_freq=eval_freq
         )
         callbacks.extend([eval_callback, video_recorder])
 
@@ -218,15 +219,13 @@ def main(args):
             wandb.finish()
         # Clean up
         vec_env.close()
-        if args.eval_freq > 0:
+        if eval_freq > 0:
             eval_env.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train a PPO agent for the SIRS environment')
     parser.add_argument('--exp-name', type=str, default='',
                         help='Optional experiment name prefix')
-    parser.add_argument('--eval-freq', type=int, default=10000,
-                        help='Evaluation frequency in timesteps. Set to 0 to disable.')
     parser.add_argument('--use-wandb', action='store_true',
                         help='Enable Weights & Biases logging')
     parser.add_argument('--config', type=str, default='config.py',
