@@ -15,7 +15,7 @@ env_config = {
     "movement_type": "continuous_random",
     "visibility_radius": 6,
     "reinfection_count": 10,
-    "reward_type": "stateBased",       
+    "reward_type": "avoidInfection",       
     "render_mode": None,  # No rendering during training
 }
 
@@ -55,5 +55,5 @@ save_config = {
     "save_freq": 20000,  # Save model every n steps
     "save_replay_buffer": True,
     "verbose": 1,
-    "eval_freq": 10000,  # How often to run evaluation episodes
+    "eval_freq": 0,  # How often to run evaluation episodes
 } 
