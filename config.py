@@ -39,7 +39,7 @@ ppo_config = {
     "max_grad_norm": 0.5,
     
     # Training parameters
-    "total_timesteps": 1000000,      # Total steps across all episodes and environments
+    "total_timesteps": 2_000_000,      # Total steps across all episodes and environments
     "n_envs": 7,                  # Number of parallel environments
 }
 
@@ -55,5 +55,5 @@ save_config = {
     "save_freq": 20000,  # Save model every n steps
     "save_replay_buffer": True,
     "verbose": 1,
-    "eval_freq": 20000,  # How often to run evaluation episodes
+    "eval_freq": 10000,  # How often to run evaluation episodes
 } 
