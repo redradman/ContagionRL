@@ -209,7 +209,8 @@ def main(args):
             progress_bar=True
         )
     except KeyboardInterrupt:
-        print("\nTraining interrupted. Saving model...")
+        # print("\nTraining interrupted. Saving model...")
+        pass
     finally:
         # Save the final model
         model.save(os.path.join(log_path, "final_model"))
