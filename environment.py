@@ -541,7 +541,10 @@ class SIRSEnvironment(gym.Env):
             frame = self._render_frame()
             if frame is not None:
                 self.frames.append(frame)
-        info = {} 
+        
+        info = {
+            "cumulative_reward": self.cumulative_reward
+        }
         return observation, reward, terminated, truncated, info
 
     def _render_frame(self) -> Optional[np.ndarray]:
