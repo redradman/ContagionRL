@@ -1,3 +1,4 @@
+trained_model_videos/
 logs/
 *.ipynb
 .DS_Store
