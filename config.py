@@ -24,7 +24,7 @@ ppo_config = {
     # Network Architecture
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
-        net_arch=dict(pi=[64, 64], vf=[64, 64])
+        net_arch=dict(pi=[256, 256], vf=[256, 256])
     ),
     
     # PPO specific parameters
