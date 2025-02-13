@@ -39,7 +39,7 @@ ppo_config = {
     "max_grad_norm": 0.5,
     
     # Training parameters
-    "total_timesteps": 2_000_000,      # Total steps across all episodes and environments
+    "total_timesteps": 100_000,      # Total steps across all episodes and environments
     "n_envs": 7,                  # Number of parallel environments
 }
 
