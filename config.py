@@ -7,7 +7,7 @@ env_config = {
     "beta": 0.3,
     "initial_agent_adherence": 0.5,
     "distance_decay": 0.15,
-    "lethality": 0.1,
+    "lethality": 0.7,
     "immunity_decay": 0.1,
     "recovery_rate": 0.2,
     "max_immunity_loss_prob": 1,
@@ -15,7 +15,7 @@ env_config = {
     "movement_type": "continuous_random",
     "visibility_radius": 10,
     "reinfection_count": 2,
-    "safe_distance": 0,
+    "safe_distance": 10,
     "reward_type": "increaseDistanceWithInfected",       
     "render_mode": None,  # No rendering during training
 }
