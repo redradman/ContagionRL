@@ -2,20 +2,20 @@
 env_config = {
     "simulation_time": 500,        # Steps per episode
     "grid_size": 50,
-    "n_humans": 100,
-    "n_infected": 20,
-    "beta": 0.3,
+    "n_humans": 30,
+    "n_infected": 5,
+    "beta": 0.2,
     "initial_agent_adherence": 0.5,
     "distance_decay": 0.15,
-    "lethality": 0.2,
+    "lethality": 0.1,
     "immunity_decay": 0.1,
     "recovery_rate": 0.2,
     "max_immunity_loss_prob": 1,
     "adherence_penalty_factor": 10,
     "movement_type": "continuous_random",
     "visibility_radius": 10,
-    "reinfection_count": 10,
-    "reward_type": "avoidInfection",       
+    "reinfection_count": 2,
+    "reward_type": "increaseDistanceWithInfected",       
     "render_mode": None,  # No rendering during training
 }
 
@@ -28,18 +28,18 @@ ppo_config = {
     ),
     
     # PPO specific parameters
-    "batch_size": 64,
-    "n_epochs": 10,
-    "learning_rate": 1e-4,
+    "batch_size": 128,            # Increased from 64 for more stable updates
+    "n_epochs": 10,               # Reduced from 10 to prevent overfitting on each batch
+    "learning_rate": 3e-5,       # Reduced from 1e-4 for more stable learning
     "gamma": 0.99,
     "gae_lambda": 0.95,
-    "clip_range": 0.2,
-    "ent_coef": 0.01,
+    "clip_range": 0.2,           
+    "ent_coef": 0.005,          # Reduced from 0.01 to prevent too much exploration
     "vf_coef": 0.5,
-    "max_grad_norm": 0.5,
+    "max_grad_norm": 0.5,        
     
     # Training parameters
-    "total_timesteps": 10_000_000,      # Total steps across all episodes and environments
+    "total_timesteps": 3_000_000,      # Total steps across all episodes and environments
     "n_envs": 7,                  # Number of parallel environments
 }
 
