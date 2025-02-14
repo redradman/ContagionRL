@@ -24,7 +24,7 @@ ppo_config = {
     # Network Architecture
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
-        net_arch=dict(pi=[256, 256], vf=[256, 256])
+        net_arch=dict(pi=[256, 128, 256], vf=[256, 128, 256])
     ),
     
     # PPO specific parameters
@@ -39,7 +39,7 @@ ppo_config = {
     "max_grad_norm": 0.5,        
     
     # Training parameters
-    "total_timesteps": 3_000_000,      # Total steps across all episodes and environments
+    "total_timesteps": 2_000_000,      # Total steps across all episodes and environments
     "n_envs": 7,                  # Number of parallel environments
 }
 
