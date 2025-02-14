@@ -523,11 +523,61 @@ class SIRSEnvironment(gym.Env):
         reward = max(0, reward)
         return reward
 
+    def _calculate_increaseDistanceWithInfected_reward(self):
+        """Reward for increasing distance from infected humans while conserving energy"""
+        # make human object for the agent to use existing infection probability calculation
+        agent_human = Human(
+                x=self.agent_position[0],
+                y=self.agent_position[1],
+                state=self.agent_state,
+                id=-1,
+                time_in_state=self.agent_time_in_state
+        )
+        
+        infected_list = self._get_infected_list(agent_human)
+        
+        # Calculate movement magnitude (normalized to [0,1])
+        if self.last_action is not None:
+            movement_magnitude = (abs(self.last_action[0]) + abs(self.last_action[1])) / 2
+        else:
+            movement_magnitude = 0.0
+            
+        if not infected_list:  # If no infected humans visible
+            # Heavily penalize movement when no infected are nearby
+            base_reward = 1.0
+            movement_cost = 0.5 * movement_magnitude
+            distance_reward = base_reward - movement_cost
+        else:
+            # Calculate average distance to infected individuals
+            total_distance = sum(self._calculate_distance(agent_human, infected) 
+                               for infected in infected_list)
+            avg_distance = total_distance / len(infected_list)
+            
+            # Normalize by max possible distance in the grid
+            normalized_distance = avg_distance / self.max_distance
+            
+            # Calculate distance reward component (higher for greater distances)
+            distance_reward = 1 - math.exp(-2 * normalized_distance)
+            
+            # Scale movement cost based on proximity to infected
+            # Movement is less penalized when near infected individuals
+            movement_cost = 0.2 * movement_magnitude * normalized_distance
+
+            # Combine distance reward and movement cost
+            distance_reward = distance_reward - movement_cost
+
+        # Apply adherence penalty while keeping reward in [0,1]
+        adherence_penalty = self.agent_adherence / self.adherence_penalty_factor
+        reward = max(0, min(1, distance_reward - adherence_penalty))
+        
+        return reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
             "stateBased": self._calculate_stateBased_reward,
             "avoidInfection": self._calculate_avoidInfection_reward,
+            "increaseDistanceWithInfected": self._calculate_increaseDistanceWithInfected_reward,
         }
         if self.reward_type not in reward_functions: # throw error if reward type is not valid
             raise ValueError(f"Invalid reward type: {self.reward_type}")
