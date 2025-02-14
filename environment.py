@@ -408,23 +408,23 @@ class SIRSEnvironment(gym.Env):
                     human.update_state(STATE_DICT['S'])
 
         # Handle reinfection if needed
-        if self.infected_count == 0 and self.dead_count > 0:
+        if self.reinfection_count > 0 and self.infected_count == 0 and self.dead_count > 0:
             # Only attempt reinfection if there are susceptible or recovered people
-            # susceptible_count = sum(1 for h in self.humans if h.state == STATE_DICT['S'])
-            # recovered_count = sum(1 for h in self.humans if h.state == STATE_DICT['R'])
+            susceptible_count = sum(1 for h in self.humans if h.state == STATE_DICT['S'])
+            recovered_count = sum(1 for h in self.humans if h.state == STATE_DICT['R'])
             
-            # if susceptible_count > 0 or recovered_count > 0:
+            if susceptible_count > 0 or recovered_count > 0:
                 # Get list of dead humans
-            dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
-            n_to_reinfect = min(self.reinfection_count, len(dead_humans))
-            
-            if n_to_reinfect > 0:
-                # Select random dead humans to reinfect
-                reinfected_humans = self.np_random.choice(dead_humans, n_to_reinfect, replace=False)
-                for human in reinfected_humans:
-                    human.update_state(STATE_DICT['I'])
-                    self.infected_count += 1
-                    self.dead_count -= 1
+                dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
+                n_to_reinfect = min(self.reinfection_count, len(dead_humans))
+                
+                if n_to_reinfect > 0:
+                    # Select random dead humans to reinfect
+                    reinfected_humans = self.np_random.choice(dead_humans, n_to_reinfect, replace=False)
+                    for human in reinfected_humans:
+                        human.update_state(STATE_DICT['I'])
+                        self.infected_count += 1
+                        self.dead_count -= 1
 
     def _get_observation(self):
         """
@@ -601,7 +601,11 @@ class SIRSEnvironment(gym.Env):
             terminated = True
             
         truncated = False
-        if self.agent_state == STATE_DICT['D'] or (self.dead_count == 0 and self.infected_count == 0):
+        # Truncate if:
+        # 1. The agent dies, or
+        # 2. There are no infected individuals and reinfection is disabled
+        if (self.agent_state == STATE_DICT['D'] or 
+            (self.reinfection_count == 0 and self.infected_count == 0)):
             truncated = True
             
         # Store frame if rendering is enabled
