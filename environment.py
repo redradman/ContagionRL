@@ -47,6 +47,7 @@ class SIRSEnvironment(gym.Env):
         visibility_radius: float = -1,
         rounding_digits: int = 2,
         reinfection_count: int = 3,
+        safe_distance: float = 0,  # New parameter for minimum safe distance for reinfection
         reward_type: str = "stateBased",
         render_mode: Optional[str] = None,
     ):
@@ -176,6 +177,8 @@ class SIRSEnvironment(gym.Env):
         
         # Store reward type
         self.reward_type = reward_type
+
+        self.safe_distance = safe_distance  # Store the safe distance for reinfection
 
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
 
@@ -414,8 +417,19 @@ class SIRSEnvironment(gym.Env):
             recovered_count = sum(1 for h in self.humans if h.state == STATE_DICT['R'])
             
             if susceptible_count > 0 or recovered_count > 0:
-                # Get list of dead humans
-                dead_humans = [h for h in self.humans if h.state == STATE_DICT['D']]
+                # Create a temporary Human object for the agent to use distance calculations
+                agent_human = Human(
+                    x=self.agent_position[0],
+                    y=self.agent_position[1],
+                    state=self.agent_state,
+                    id=-1
+                )
+                
+                # Get list of dead humans that are outside the safe distance
+                dead_humans = [h for h in self.humans 
+                             if h.state == STATE_DICT['D'] and 
+                             self._calculate_distance(agent_human, h) > self.safe_distance]
+                
                 n_to_reinfect = min(self.reinfection_count, len(dead_humans))
                 
                 if n_to_reinfect > 0:

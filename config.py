@@ -15,6 +15,7 @@ env_config = {
     "movement_type": "continuous_random",
     "visibility_radius": 10,
     "reinfection_count": 2,
+    "safe_distance": 0,
     "reward_type": "increaseDistanceWithInfected",       
     "render_mode": None,  # No rendering during training
 }
