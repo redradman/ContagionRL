@@ -617,9 +617,12 @@ class SIRSEnvironment(gym.Env):
         truncated = False
         # Truncate if:
         # 1. The agent dies, or
-        # 2. There are no infected individuals and reinfection is disabled
+        # 2. There are no infected individuals and reinfection is disabled, or
+        # 3. Everyone (including agent) is susceptible
         if (self.agent_state == STATE_DICT['D'] or 
-            (self.reinfection_count == 0 and self.infected_count == 0)):
+            (self.reinfection_count == 0 and self.infected_count == 0) or
+            (self.agent_state == STATE_DICT['S'] and 
+             all(h.state == STATE_DICT['S'] for h in self.humans))):
             truncated = True
             
         # Store frame if rendering is enabled
