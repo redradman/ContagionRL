@@ -13,7 +13,7 @@ env_config = {
     "max_immunity_loss_prob": 1,
     "adherence_penalty_factor": 10,
     "movement_type": "continuous_random",
-    "visibility_radius": 10,
+    "visibility_radius": -1,
     "reinfection_count": 2,
     "safe_distance": 10,
     "reward_type": "increaseDistanceWithInfected",       
