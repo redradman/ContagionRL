@@ -91,7 +91,7 @@ class SIRSEnvironment(gym.Env):
         width, height = self.metadata["render_resolution"]
         self.dpi = 100
         self.figure_size = (width / self.dpi, height / self.dpi)  # Convert pixels to inches
-        
+
         # General parameters
         self.simulation_time = simulation_time
         self.counter = 0 # counter for the simulation time
@@ -102,7 +102,7 @@ class SIRSEnvironment(gym.Env):
         # Normalization constants
         self.max_distance = math.sqrt(2) * self.grid_size  # Maximum possible distance in the grid
         self.max_movement = 1.0  # Maximum movement in any direction (-1 to 1)
-        
+
         # Agent parameters that are handled by the env
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
         self.initial_agent_adherence = initial_agent_adherence # NPI adherence
@@ -197,7 +197,7 @@ class SIRSEnvironment(gym.Env):
         dx = min(dx, self.grid_size - dx)
         dy = min(dy, self.grid_size - dy)
         
-        return math.sqrt(dx**2 + dy**2)
+        return math.sqrt(dx**2 + dy**2) 
 
     def _get_neighbors_list(self, current_human: Human) -> List[Human]:
         """
@@ -376,10 +376,10 @@ class SIRSEnvironment(gym.Env):
 
             # Only move humans that are not dead
             new_x, new_y = self.movement_handler.get_new_position(
-                human.x, 
-                human.y, 
-                self.np_random
-            )
+            human.x, 
+            human.y, 
+            self.np_random
+        )
             human.move(new_x, new_y, self.grid_size)
 
             human.time_in_state += 1
@@ -477,7 +477,7 @@ class SIRSEnvironment(gym.Env):
             base_idx = i * 4  # Index for continuous features
             visibility_flag = 1.0 if human.id in visible_ids else 0.0
             
-            if visibility_flag == 0:
+            if visibility_flag == 0: 
                 # All values remain 0 for invisible humans
                 humans_continuous[base_idx:base_idx + 4] = 0
                 humans_discrete[i] = 0
@@ -603,36 +603,43 @@ class SIRSEnvironment(gym.Env):
         self.counter += 1
         self.last_action = action.copy()
         
-        self._update_agent(action)
+        self._update_agent(action) 
         self._handle_human_stepping()
-        
+
         observation = self._get_observation()
         reward = self._calculate_reward()
         self.cumulative_reward += reward  # Update cumulative reward
-        
+     
         terminated = False
         if self.counter >= self.simulation_time:
             terminated = True
-            
+
         truncated = False
         # Truncate if:
         # 1. The agent dies, or
-        # 2. There are no infected individuals and reinfection is disabled, or
-        # 3. Everyone (including agent) is susceptible
+        # 2. There are no infected individuals AND either:
+        #    a) reinfection is disabled (reinfection_count == 0) or
+        #    b) there aren't enough dead people for reinfection (dead_count < reinfection_count)
         if (self.agent_state == STATE_DICT['D'] or 
-            (self.reinfection_count == 0 and self.infected_count == 0) or
-            (self.agent_state == STATE_DICT['S'] and 
-             all(h.state == STATE_DICT['S'] for h in self.humans))):
+            (self.infected_count == 0 and  # No infected individuals
+             (self.reinfection_count == 0 or self.dead_count < self.reinfection_count))):  # Can't reinfect
             truncated = True
-            
-        # Store frame if rendering is enabled
+
+        # Store frame if rendering is enabled - moved after truncation check to capture final state
         if self.render_mode is not None:
             frame = self._render_frame()
             if frame is not None:
                 self.frames.append(frame)
+                # If this is the final frame (episode is ending), add it again to ensure it's visible
+                if terminated or truncated:
+                    self.frames.append(frame)
         
         info = {
-            "cumulative_reward": self.cumulative_reward
+            "cumulative_reward": self.cumulative_reward,
+            "truncation_reason": "timeout" if terminated else (
+                "agent_death" if self.agent_state == STATE_DICT['D'] else
+                "no_infection_possible" if truncated else None
+            )
         }
         return observation, reward, terminated, truncated, info
 

@@ -1,6 +1,6 @@
 # Environment Parameters
 env_config = {
-    "simulation_time": 500,        # Steps per episode
+    "simulation_time": 100,        # Steps per episode
     "grid_size": 50,
     "n_humans": 30,
     "n_infected": 10,
@@ -31,7 +31,7 @@ ppo_config = {
     # PPO specific parameters
     "batch_size": 128,            # Increased from 64 for more stable updates
     "n_epochs": 10,               # Reduced from 10 to prevent overfitting on each batch
-    "learning_rate": 3e-5,       # Reduced from 1e-4 for more stable learning
+    "learning_rate": 1e-4,       # Reduced from 1e-4 for more stable learning
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_range": 0.2,           
