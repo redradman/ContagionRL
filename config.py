@@ -2,9 +2,9 @@
 env_config = {
     "simulation_time": 100,        # Steps per episode
     "grid_size": 50,
-    "n_humans": 30,
-    "n_infected": 10,
-    "beta": 0.3,
+    "n_humans": 20,
+    "n_infected": 5,
+    "beta": 0.2,
     "initial_agent_adherence": 0.5,
     "distance_decay": 0.15,
     "lethality": 0.4,
@@ -12,7 +12,7 @@ env_config = {
     "recovery_rate": 0.2,
     "max_immunity_loss_prob": 1,
     "adherence_penalty_factor": 10,
-    "movement_type": "continuous_random",
+    "movement_type": "circular_formation",
     "visibility_radius": 8,
     "reinfection_count": 5,
     "safe_distance": 8,

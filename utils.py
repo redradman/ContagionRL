@@ -44,6 +44,58 @@ class MovementHandler:
         if movement_type not in valid_types:
             raise ValueError(f"Movement type must be one of {valid_types}")
 
+    def initialize_positions(self, n_humans: int, rng: np.random.Generator) -> list:
+        """
+        Initialize positions for all humans based on movement type
+        
+        Args:
+            n_humans: Number of humans to place
+            rng: Random number generator for reproducibility
+            
+        Returns:
+            List of tuples (x, y) for each human's initial position
+        """
+        if self.movement_type == "circular_formation":
+            return self._initialize_circular_positions(n_humans)
+        else:
+            return self._initialize_random_positions(n_humans, rng)
+
+    def _initialize_random_positions(self, n_humans: int, rng: np.random.Generator) -> list:
+        """Initialize random positions for humans"""
+        positions = set()
+        result = []
+        
+        while len(positions) < n_humans:
+            x = rng.integers(0, self.grid_size)
+            y = rng.integers(0, self.grid_size)
+            if (x, y) not in positions:
+                positions.add((x, y))
+                result.append((x, y))
+        
+        return result
+
+    def _initialize_circular_positions(self, n_humans: int) -> list:
+        """Initialize positions in a circular formation"""
+        positions = []
+        center_x = self.grid_size // 2
+        center_y = self.grid_size // 2
+        radius = 15  # Same radius as used in movement
+        
+        # Calculate angle between each human
+        angle_step = 2 * np.pi / n_humans
+        
+        for i in range(n_humans):
+            angle = i * angle_step
+            x = center_x + radius * np.cos(angle)
+            y = center_y + radius * np.sin(angle)
+            
+            # Ensure positions stay within bounds and round them
+            x = round(x % self.grid_size, self.rounding_digits)
+            y = round(y % self.grid_size, self.rounding_digits)
+            positions.append((x, y))
+        
+        return positions
+
     def get_new_position(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
         """
         Get new position based on current position and movement type

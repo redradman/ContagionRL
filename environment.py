@@ -278,20 +278,14 @@ class SIRSEnvironment(gym.Env):
         self.agent_adherence = self.initial_agent_adherence
         self.agent_state = STATE_DICT['S']
         self.agent_time_in_state = 0  # Reset agent time in state
-        # Initialize humans
-        self.humans = []
-        positions = set()
         
-        # Place humans randomly
-        for _ in range(self.n_humans):
-            while True:
-                x = self.np_random.integers(0, self.grid_size)
-                y = self.np_random.integers(0, self.grid_size)
-                if (x, y) not in positions: # to ensure the uniqueness of the position
-                    positions.add((x, y))
-                    break
-            
-            self.humans.append(Human(x, y, STATE_DICT['S'])) # x and y are positions, init state is S
+        # Initialize humans with positions from movement handler
+        self.humans = []
+        initial_positions = self.movement_handler.initialize_positions(self.n_humans, self.np_random)
+        
+        # Create humans at the initialized positions
+        for x, y in initial_positions:
+            self.humans.append(Human(x, y, STATE_DICT['S']))
 
         # Select random humans to be infected
         initial_infected = self.np_random.choice(self.humans, self.n_infected, replace=False)
