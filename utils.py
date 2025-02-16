@@ -75,17 +75,27 @@ class MovementHandler:
         return result
 
     def _initialize_circular_positions(self, n_humans: int) -> list:
-        """Initialize positions in a circular formation"""
+        """
+        Initialize positions in a circular formation with equal dispersion.
+        Humans are placed at equal angles around the circle, with a random initial rotation
+        to avoid always starting at the same positions.
+        """
         positions = []
         center_x = self.grid_size // 2
         center_y = self.grid_size // 2
-        radius = 15  # Same radius as used in movement
+        radius = 20  # Fixed radius for consistent spacing
         
-        # Calculate angle between each human
+        # Add a random initial rotation to avoid always starting at the same point
+        initial_angle = np.random.uniform(0, 2 * np.pi)
+        
+        # Calculate angle between each human (equal spacing)
         angle_step = 2 * np.pi / n_humans
         
         for i in range(n_humans):
-            angle = i * angle_step
+            # Calculate angle for this human (with random initial offset)
+            angle = initial_angle + i * angle_step
+            
+            # Convert polar coordinates to Cartesian
             x = center_x + radius * np.cos(angle)
             y = center_y + radius * np.sin(angle)
             
@@ -153,7 +163,7 @@ class MovementHandler:
         """
         Maintain position in a circular formation around the center agent.
         The agent is assumed to be at (grid_size//2, grid_size//2).
-        Each human maintains their relative angle but stays in the formation.
+        Each human maintains their relative angle to ensure equal dispersion.
         """
         # Center point (agent's position)
         center_x = self.grid_size // 2
@@ -164,8 +174,8 @@ class MovementHandler:
         dy = y - center_y
         current_angle = np.arctan2(dy, dx)
         
-        # Fixed radius for the circle (1/4 of the grid size)
-        radius = self.grid_size / 4
+        # Fixed radius for consistent spacing
+        radius = 20
         
         # Calculate new position maintaining the same angle
         new_x = center_x + radius * np.cos(current_angle)
