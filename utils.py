@@ -33,14 +33,14 @@ class MovementHandler:
         
         Args:
             grid_size: Size of the environment grid
-            movement_type: One of ["stationary", "discrete_random", "continuous_random"]
+            movement_type: One of ["stationary", "discrete_random", "continuous_random", "circular_formation"]
         """
         self.grid_size = grid_size
         self.movement_type = movement_type
         self.rounding_digits = rounding_digits
         
         # Validate movement type
-        valid_types = ["stationary", "discrete_random", "continuous_random"]
+        valid_types = ["stationary", "discrete_random", "continuous_random", "circular_formation"]
         if movement_type not in valid_types:
             raise ValueError(f"Movement type must be one of {valid_types}")
 
@@ -60,8 +60,10 @@ class MovementHandler:
             return self._stationary_move(x, y)
         elif self.movement_type == "discrete_random":
             return self._discrete_random_move(x, y, rng)
-        elif self.movement_type == "continuous_random":  # continuous_random
+        elif self.movement_type == "continuous_random":
             return self._continuous_random_move(x, y, rng)
+        elif self.movement_type == "circular_formation":
+            return self._circular_formation_move(x, y, rng)
         else:
             raise ValueError(f"Invalid movement type: {self.movement_type}")
 
@@ -94,6 +96,34 @@ class MovementHandler:
         new_y = (y + dy) % self.grid_size
         
         return round(new_x, self.rounding_digits), round(new_y, self.rounding_digits)
+
+    def _circular_formation_move(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
+        """
+        Maintain position in a circular formation around the center agent.
+        The agent is assumed to be at (grid_size//2, grid_size//2).
+        Each human maintains their relative angle but stays in the formation.
+        """
+        # Center point (agent's position)
+        center_x = self.grid_size // 2
+        center_y = self.grid_size // 2
+        
+        # Calculate current angle of the human relative to center
+        dx = x - center_x
+        dy = y - center_y
+        current_angle = np.arctan2(dy, dx)
+        
+        # Fixed radius for the circle (1/4 of the grid size)
+        radius = self.grid_size / 4
+        
+        # Calculate new position maintaining the same angle
+        new_x = center_x + radius * np.cos(current_angle)
+        new_y = center_y + radius * np.sin(current_angle)
+        
+        # Ensure we stay within bounds and round to specified digits
+        new_x = round(new_x % self.grid_size, self.rounding_digits)
+        new_y = round(new_y % self.grid_size, self.rounding_digits)
+        
+        return new_x, new_y
 
 
 ######## Human class ########
