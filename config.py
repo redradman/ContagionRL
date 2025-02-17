@@ -16,7 +16,7 @@ env_config = {
     "visibility_radius": 20,       # Moderate visibility for the agent
     "reinfection_count": 8,        # Moderate reinfection count to maintain some infected presence
     "safe_distance": 8,            # Slightly increased safe distance for better distance rewards
-    "reward_type": "noInfection",  # Switch to simpler reward function
+    "reward_type": "rewardForState",  # Switch to simpler reward function
     "render_mode": None            # No rendering during training
 }
 
