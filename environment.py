@@ -1158,29 +1158,3 @@ class SIRSEnvironment(gym.Env):
     def close(self):
         """Close the environment and cleanup resources."""
         self.fig = None
-
-#############################
-########## ARCHIVE ##########
-#############################
-
-        # Observation and Action spaces
-        # self.observation_space = gym.spaces.Dict({
-        #     "agent_position": gym.spaces.Box(
-        #         low=0, 
-        #         high=self.grid_size, 
-        #         shape=(2,),  # x, y
-        #         dtype=np.float32
-        #     ),
-        #     "agent_adherence": gym.spaces.Box(
-        #         low=0, 
-        #         high=1, 
-        #         shape=(1,),  # agent adherence
-        #         dtype=np.float32
-        #     ),
-        #     "humans": gym.spaces.Box(
-        #         low=np.array([0, 0, 0, 0, 0] * self.n_humans),  # visibility_flag, x, y, distance, state
-        #         high=np.array([1, 1, 1, 1, 4] * self.n_humans),  # state goes from 0 to 4 (S=0, I=1, R=2, D=3)
-        #         shape=(self.n_humans, 5),  # visibility_flag, x, y, distance, state
-        #         dtype=np.float32
-        #     )
-        # })
