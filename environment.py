@@ -281,16 +281,20 @@ class SIRSEnvironment(gym.Env):
         
         # Initialize humans with positions from movement handler
         self.humans = []
-        initial_positions = self.movement_handler.initialize_positions(self.n_humans, self.np_random)
+        initial_positions = self.movement_handler.initialize_positions(
+            self.n_humans, 
+            self.np_random,
+            n_infected=self.n_infected,
+            safe_distance=self.safe_distance
+        )
         
         # Create humans at the initialized positions
-        for x, y in initial_positions:
-            self.humans.append(Human(x, y, STATE_DICT['S']))
+        for i, (x, y) in enumerate(initial_positions):
+            self.humans.append(Human(x, y, STATE_DICT['S'], id=i+1))  # id+1 because 0 is reserved
 
-        # Select random humans to be infected
-        initial_infected = self.np_random.choice(self.humans, self.n_infected, replace=False)
-        for human in initial_infected:
-            human.update_state(STATE_DICT['I'])
+        # First n_infected humans will be infected (they are already at safe distance)
+        for i in range(self.n_infected):
+            self.humans[i].update_state(STATE_DICT['I'])
 
         return self._get_observation(), {}
 
@@ -370,10 +374,11 @@ class SIRSEnvironment(gym.Env):
 
             # Only move humans that are not dead
             new_x, new_y = self.movement_handler.get_new_position(
-            human.x, 
-            human.y, 
-            self.np_random
-        )
+                human.x, 
+                human.y, 
+                self.np_random,
+                human_id=human.id
+            )
             human.move(new_x, new_y, self.grid_size)
 
             human.time_in_state += 1
@@ -405,34 +410,28 @@ class SIRSEnvironment(gym.Env):
                     human.update_state(STATE_DICT['S'])
 
         # Handle reinfection if needed
-        if self.reinfection_count > 0 and self.infected_count == 0 and self.dead_count > 0:
-            # Only attempt reinfection if there are susceptible or recovered people
-            susceptible_count = sum(1 for h in self.humans if h.state == STATE_DICT['S'])
-            recovered_count = sum(1 for h in self.humans if h.state == STATE_DICT['R'])
+        if self.reinfection_count > 0 and self.infected_count == 0:
+            # Create a temporary Human object for the agent to use distance calculations
+            agent_human = Human(
+                x=self.agent_position[0],
+                y=self.agent_position[1],
+                state=self.agent_state,
+                id=-1
+            )
             
-            if susceptible_count > 0 or recovered_count > 0:
-                # Create a temporary Human object for the agent to use distance calculations
-                agent_human = Human(
-                    x=self.agent_position[0],
-                    y=self.agent_position[1],
-                    state=self.agent_state,
-                    id=-1
-                )
-                
-                # Get list of dead humans that are outside the safe distance
-                dead_humans = [h for h in self.humans 
-                             if h.state == STATE_DICT['D'] and 
-                             self._calculate_distance(agent_human, h) > self.safe_distance]
-                
-                n_to_reinfect = min(self.reinfection_count, len(dead_humans))
-                
-                if n_to_reinfect > 0:
-                    # Select random dead humans to reinfect
-                    reinfected_humans = self.np_random.choice(dead_humans, n_to_reinfect, replace=False)
-                    for human in reinfected_humans:
-                        human.update_state(STATE_DICT['I'])
-                        self.infected_count += 1
-                        self.dead_count -= 1
+            # Get list of susceptible humans that are outside the safe distance
+            susceptible_humans = [h for h in self.humans 
+                                if h.state == STATE_DICT['S'] and 
+                                self._calculate_distance(agent_human, h) > self.safe_distance]
+            
+            n_to_reinfect = min(self.reinfection_count, len(susceptible_humans))
+            
+            if n_to_reinfect > 0:
+                # Select random susceptible humans to reinfect
+                reinfected_humans = self.np_random.choice(susceptible_humans, n_to_reinfect, replace=False)
+                for human in reinfected_humans:
+                    human.update_state(STATE_DICT['I'])
+                    self.infected_count += 1
 
     def _get_observation(self):
         """
@@ -662,14 +661,27 @@ class SIRSEnvironment(gym.Env):
             terminated = True
 
         truncated = False
+        # Create temporary agent human for distance calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        
+        # Get count of susceptible humans beyond safe distance
+        distant_susceptible_count = sum(1 for h in self.humans 
+                                      if h.state == STATE_DICT['S'] and 
+                                      self._calculate_distance(agent_human, h) > self.safe_distance)
+        
         # Truncate if:
         # 1. The agent dies, or
         # 2. There are no infected individuals AND either:
         #    a) reinfection is disabled (reinfection_count == 0) or
-        #    b) there aren't enough dead people for reinfection (dead_count < reinfection_count)
+        #    b) there aren't enough susceptible humans beyond safe distance for reinfection
         if (self.agent_state == STATE_DICT['D'] or 
             (self.infected_count == 0 and  # No infected individuals
-             (self.reinfection_count == 0 or self.dead_count < self.reinfection_count))):  # Can't reinfect
+             (self.reinfection_count == 0 or distant_susceptible_count < self.reinfection_count))):  # Can't reinfect
             truncated = True
 
         # Store frame if rendering is enabled - moved after truncation check to capture final state
