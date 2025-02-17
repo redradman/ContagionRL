@@ -529,20 +529,24 @@ class SIRSEnvironment(gym.Env):
 
     def _calculate_reward_for_state(self):
         """
-        Multiplicative reward function combining:
-        1. State reward: 1.0 if susceptible, 0 otherwise
-        2. Distance reward: Exponential reward based on distance to closest infected
-        3. NPI penalty: Reduces reward based on adherence level
-        Final reward = state_reward * distance_reward * (1 - adherence_penalty)
+        Additive reward function combining:
+        1. State reward: Base reward for being susceptible
+        2. Distance reward: Reward for maintaining distance from infected
+        3. NPI penalty: Small penalty for high adherence
+        Final reward = w1*state_reward + w2*distance_reward - w3*adherence_penalty
         """
-        # 1. State reward component
+        # 1. State reward component (40% of total possible reward)
         state_reward = 0
         if self.agent_state == STATE_DICT['S']:
-            state_reward = 1.0
-        else:
-            state_reward = 0
+            state_reward = 2.0
+        elif self.agent_state == STATE_DICT['R']:
+            state_reward = 0.5  # Small positive reward for being recovered
+        elif self.agent_state == STATE_DICT['I']:
+            state_reward = -1.0  # Penalty for being infected
+        else:  # Dead
+            state_reward = -2.0  # Larger penalty for death
 
-        # 2. Distance reward component
+        # 2. Distance reward component (40% of total possible reward)
         agent_human = Human(
             x=self.agent_position[0],
             y=self.agent_position[1],
@@ -555,31 +559,24 @@ class SIRSEnvironment(gym.Env):
         infected_list = self._get_infected_list(agent_human)
         
         # Calculate distance reward
-        distance_reward = 1.0  # Default if no infected are visible
+        distance_reward = 2.0  # Maximum reward if no infected are visible
         if infected_list:
             # Find distance to closest infected
             distances = [self._calculate_distance(agent_human, infected) for infected in infected_list]
             min_distance = min(distances)
             
-            # Normalize distance by grid size
+            # Normalize distance by max possible distance
             normalized_distance = min_distance / self.max_distance
             
-            # Exponential reward that grows as distance increases
-            # exp(-3 * (1-d)) gives:
-            # - At d=0: exp(-3) ≈ 0.05 (very small reward when close)
-            # - At d=0.5: exp(-1.5) ≈ 0.22 (moderate reward)
-            # - At d=1: exp(0) = 1.0 (maximum reward at maximum distance)
-            distance_reward = math.exp(-self.distance_decay * (1 - normalized_distance))
+            # Linear reward that scales with distance
+            distance_reward = 2.0 * normalized_distance
         
-        # 3. Calculate adherence penalty
-        # Scale adherence penalty by adherence_penalty_factor
-        # This means:
-        # - At adherence=0: no penalty (multiplier=1)
-        # - At adherence=1: maximum penalty (multiplier=1-1/factor)
-        adherence_multiplier = 1 - (self.agent_adherence / self.adherence_penalty_factor)
+        # 3. Calculate adherence penalty (20% of total possible reward)
+        # Quadratic penalty that grows faster at higher adherence levels
+        adherence_penalty = (self.agent_adherence ** 2) / self.adherence_penalty_factor
         
-        # Combine rewards multiplicatively with adherence penalty
-        final_reward = state_reward * distance_reward * adherence_multiplier
+        # Combine rewards additively with weights
+        final_reward = 0.4 * state_reward + 0.4 * distance_reward - 0.2 * adherence_penalty
         
         return final_reward
 
@@ -588,8 +585,7 @@ class SIRSEnvironment(gym.Env):
         reward_functions = {
             "stateBased": self._calculate_stateBased_reward,
             "avoidInfection": self._calculate_avoidInfection_reward,
-            "increaseDistanceWithInfected": self._calculate_increaseDistanceWithInfected_reward,
-            "rewardForState": self._calculate_reward_for_state,
+            "rewardForState": self._calculate_reward_for_state
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")

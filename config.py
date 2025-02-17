@@ -1,10 +1,10 @@
 # Environment Parameters
 env_config = {
-    "simulation_time": 200,        # Longer episodes for more learning opportunity
+    "simulation_time": 100,        # Longer episodes for more learning opportunity
     "grid_size": 50,               # A slightly smaller grid for easier navigation
-    "n_humans": 80,                # Fewer humans to reduce environmental complexity
+    "n_humans": 50,                # Fewer humans to reduce environmental complexity
     "n_infected": 10,              # Fewer initial infections to avoid overwhelming the agent
-    "beta": 0.2,                   # Reduced infection rate
+    "beta": 0.15,                   # Reduced infection rate
     "initial_agent_adherence": 0.3,# Lower initial adherence to allow the agent more flexibility
     "distance_decay": 0.2,         # Increased decay rate to make distance more important
     "lethality": 0.05,             # Increased to 2% chance of death per step
@@ -25,26 +25,26 @@ ppo_config = {
     # Network Architecture
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
-        net_arch=dict(pi=[512, 256, 128], vf=[512, 512, 256]), 
+        net_arch=dict(pi=[64, 64], vf=[64, 64]),  # Simpler architecture for less deterministic behavior
         normalize_images=True,
-        log_std_init=-0.5,
+        log_std_init=0.0,  # Initial std = 1.0, allows more exploration
         ortho_init=True
     ),
     
     # PPO specific parameters
-    "batch_size": 512,            
-    "n_epochs": 10,               # Reduced from 10 to prevent overfitting on each batch
-    "learning_rate": 1e-4,       # Reduced from 1e-4 for more stable learning
+    "batch_size": 256,            # Smaller batch size for more variance
+    "n_epochs": 10,               
+    "learning_rate": 3e-4,        # Standard learning rate for PPO
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_range": 0.2,           
-    "ent_coef": 0.01,          # Reduced from 0.01 to prevent too much exploration
+    "ent_coef": 0.05,            # Increased entropy coefficient for more exploration
     "vf_coef": 0.5,
     "max_grad_norm": 0.5,        
     
     # Training parameters
-    "total_timesteps": 2_000_000,      # Total steps across all episodes and environments
-    "n_envs": 8,                  # Number of parallel environments
+    "total_timesteps": 2_000_000,
+    "n_envs": 8
 }
 
 # For reference:
@@ -59,5 +59,5 @@ save_config = {
     "save_freq": 100_000,  # Save model every n steps
     "save_replay_buffer": True,
     "verbose": 1,
-    "eval_freq": 50000,  # How often to run evaluation episodes
+    "eval_freq": 40000,  # How often to run evaluation episodes
 } 
