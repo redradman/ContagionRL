@@ -25,26 +25,26 @@ ppo_config = {
     # Network Architecture
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
-        net_arch=dict(pi=[64, 64], vf=[64, 64]),  # Simpler architecture for less deterministic behavior
+        net_arch=dict(pi=[512, 512, 256], vf=[512, 512, 256]),  # Wider architecture for large one-hot encoded input
         normalize_images=True,
-        log_std_init=0.0,  # Initial std = 1.0, allows more exploration
+        log_std_init=-1.0,  # Initial std = 1.0, allows more exploration
         ortho_init=True
     ),
     
     # PPO specific parameters
-    "batch_size": 256,            # Smaller batch size for more variance
+    "batch_size": 1024,            # Increase for more stable updates
     "n_epochs": 10,               
-    "learning_rate": 3e-4,        # Standard learning rate for PPO
+    "learning_rate": 1e-4,        # Reduce to help with value function training
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_range": 0.2,           
-    "ent_coef": 0.05,            # Increased entropy coefficient for more exploration
-    "vf_coef": 0.5,
-    "max_grad_norm": 0.5,        
+    "ent_coef": 0.01,            # Reduce to encourage more exploitation
+    "vf_coef": 1.0,
+    "max_grad_norm": 1.0,         
     
     # Training parameters
-    "total_timesteps": 2_000_000,
-    "n_envs": 8
+    "total_timesteps": 5_000_000,
+    "n_envs": 5
 }
 
 # For reference:

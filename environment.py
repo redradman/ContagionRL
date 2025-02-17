@@ -577,7 +577,8 @@ class SIRSEnvironment(gym.Env):
         adherence_penalty = (self.agent_adherence ** 2) / self.adherence_penalty_factor
         
         # Combine rewards additively with weights
-        final_reward = 0.4 * state_reward + 0.4 * distance_reward - 0.2 * adherence_penalty
+        # final_reward = 0.4 * state_reward + 0.4 * distance_reward - 0.2 * adherence_penalty
+        final_reward = state_reward * distance_reward * (1 - adherence_penalty)
         
         return final_reward
 
