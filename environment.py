@@ -506,7 +506,7 @@ class SIRSEnvironment(gym.Env):
         else:  # Infected or Dead or Recovered
             state_reward = 0
 
-        reward = state_reward - self.agent_adherence / self.adherence_penalty_factor
+        reward = state_reward - self.agent_adherence**2 / self.adherence_penalty_factor
         reward = max(0, reward)
         return reward
 
@@ -555,7 +555,7 @@ class SIRSEnvironment(gym.Env):
         infected_list = self._get_infected_list(agent_human)
         
         # Calculate distance reward
-        distance_reward = 2.0  # Maximum reward if no infected are visible
+        distance_reward = 1
         if infected_list:
             # Find distance to closest infected
             distances = [self._calculate_distance(agent_human, infected) for infected in infected_list]
