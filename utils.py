@@ -1,6 +1,7 @@
 import random
 import numpy as np
 from typing import Tuple
+import math
 
 # State definitions
 STATE_DICT = {
@@ -39,18 +40,28 @@ class MovementHandler:
         self.movement_type = movement_type
         self.rounding_digits = rounding_digits
         
+        # Movement parameters for continuous random
+        self.momentum = 0.8  # How much previous velocity affects current velocity
+        self.max_acceleration = 0.2  # Maximum change in velocity per step
+        self.max_velocity = 1.0  # Maximum velocity magnitude
+        
+        # Store velocities for continuous random movement
+        self.velocities = {}  # Dictionary to store velocities for each human
+        
         # Validate movement type
         valid_types = ["stationary", "discrete_random", "continuous_random", "circular_formation"]
         if movement_type not in valid_types:
             raise ValueError(f"Movement type must be one of {valid_types}")
 
-    def initialize_positions(self, n_humans: int, rng: np.random.Generator) -> list:
+    def initialize_positions(self, n_humans: int, rng: np.random.Generator, n_infected: int = 0, safe_distance: float = 0) -> list:
         """
         Initialize positions for all humans based on movement type
         
         Args:
             n_humans: Number of humans to place
             rng: Random number generator for reproducibility
+            n_infected: Number of humans that will be infected (for safe distance initialization)
+            safe_distance: Minimum distance required between agent and infected humans
             
         Returns:
             List of tuples (x, y) for each human's initial position
@@ -58,7 +69,55 @@ class MovementHandler:
         if self.movement_type == "circular_formation":
             return self._initialize_circular_positions(n_humans)
         else:
-            return self._initialize_random_positions(n_humans, rng)
+            positions = self._initialize_random_positions(n_humans, rng)
+            
+            # If we need to ensure safe distance for infected humans
+            if n_infected > 0 and safe_distance > 0:
+                agent_pos = (self.grid_size // 2, self.grid_size // 2)  # Agent starts at center
+                
+                # Separate positions into infected and non-infected
+                infected_positions = []
+                non_infected_positions = []
+                
+                # Keep trying to find valid positions for infected humans
+                while len(infected_positions) < n_infected:
+                    for pos in positions:
+                        # Calculate minimum distance considering periodic boundaries
+                        min_dist = float('inf')
+                        for dx in [-self.grid_size, 0, self.grid_size]:
+                            for dy in [-self.grid_size, 0, self.grid_size]:
+                                wrapped_pos = (pos[0] + dx, pos[1] + dy)
+                                dist = math.sqrt((wrapped_pos[0] - agent_pos[0])**2 + 
+                                               (wrapped_pos[1] - agent_pos[1])**2)
+                                min_dist = min(min_dist, dist)
+                        
+                        if min_dist >= safe_distance and len(infected_positions) < n_infected:
+                            infected_positions.append(pos)
+                        else:
+                            non_infected_positions.append(pos)
+                    
+                    # If we don't have enough infected positions, generate more
+                    if len(infected_positions) < n_infected:
+                        new_positions = self._initialize_random_positions(n_infected - len(infected_positions), rng)
+                        positions.extend(new_positions)
+                
+                # Combine positions with infected first (to maintain order)
+                positions = infected_positions + non_infected_positions
+            
+            # Initialize velocities for continuous random movement
+            if self.movement_type == "continuous_random":
+                for i in range(n_humans):
+                    # Initialize random velocities
+                    vx = rng.uniform(-self.max_velocity, self.max_velocity)
+                    vy = rng.uniform(-self.max_velocity, self.max_velocity)
+                    # Normalize if speed is too high
+                    speed = math.sqrt(vx**2 + vy**2)
+                    if speed > self.max_velocity:
+                        vx = (vx / speed) * self.max_velocity
+                        vy = (vy / speed) * self.max_velocity
+                    self.velocities[i] = [vx, vy]
+            
+            return positions
 
     def _initialize_random_positions(self, n_humans: int, rng: np.random.Generator) -> list:
         """Initialize random positions for humans"""
@@ -66,8 +125,10 @@ class MovementHandler:
         result = []
         
         while len(positions) < n_humans:
-            x = rng.integers(0, self.grid_size)
-            y = rng.integers(0, self.grid_size)
+            x = rng.uniform(0, self.grid_size)
+            y = rng.uniform(0, self.grid_size)
+            x = round(x, self.rounding_digits)
+            y = round(y, self.rounding_digits)
             if (x, y) not in positions:
                 positions.add((x, y))
                 result.append((x, y))
@@ -106,7 +167,43 @@ class MovementHandler:
         
         return positions
 
-    def get_new_position(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
+    def _continuous_random_move(self, x: float, y: float, human_id: int, rng: np.random.Generator) -> Tuple[float, float]:
+        """
+        Random movement in continuous steps with momentum and smooth acceleration
+        """
+        if human_id not in self.velocities:
+            # Initialize velocity if not exists
+            vx = rng.uniform(-self.max_velocity, self.max_velocity)
+            vy = rng.uniform(-self.max_velocity, self.max_velocity)
+            self.velocities[human_id] = [vx, vy]
+        
+        # Get current velocity
+        vx, vy = self.velocities[human_id]
+        
+        # Add random acceleration
+        ax = rng.uniform(-self.max_acceleration, self.max_acceleration)
+        ay = rng.uniform(-self.max_acceleration, self.max_acceleration)
+        
+        # Update velocity with momentum
+        vx = self.momentum * vx + (1 - self.momentum) * ax
+        vy = self.momentum * vy + (1 - self.momentum) * ay
+        
+        # Limit velocity magnitude
+        speed = math.sqrt(vx**2 + vy**2)
+        if speed > self.max_velocity:
+            vx = (vx / speed) * self.max_velocity
+            vy = (vy / speed) * self.max_velocity
+        
+        # Store new velocity
+        self.velocities[human_id] = [vx, vy]
+        
+        # Update position
+        new_x = (x + vx) % self.grid_size
+        new_y = (y + vy) % self.grid_size
+        
+        return round(new_x, self.rounding_digits), round(new_y, self.rounding_digits)
+
+    def get_new_position(self, x: float, y: float, rng: np.random.Generator, human_id: int = None) -> Tuple[float, float]:
         """
         Get new position based on current position and movement type
         
@@ -114,6 +211,7 @@ class MovementHandler:
             x: Current x position
             y: Current y position
             rng: Random number generator for reproducibility
+            human_id: ID of the human (needed for continuous random movement)
             
         Returns:
             Tuple of (new_x, new_y)
@@ -123,7 +221,9 @@ class MovementHandler:
         elif self.movement_type == "discrete_random":
             return self._discrete_random_move(x, y, rng)
         elif self.movement_type == "continuous_random":
-            return self._continuous_random_move(x, y, rng)
+            if human_id is None:
+                raise ValueError("human_id is required for continuous random movement")
+            return self._continuous_random_move(x, y, human_id, rng)
         elif self.movement_type == "circular_formation":
             return self._circular_formation_move(x, y, rng)
         else:
@@ -145,19 +245,6 @@ class MovementHandler:
         new_y = (y + dy) % self.grid_size
         
         return new_x, new_y
-
-    def _continuous_random_move(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
-        """
-        Random movement in continuous steps [-1, 1] for both x and y
-        """
-        dx = rng.uniform(-1, 1)
-        dy = rng.uniform(-1, 1)
-        
-        # Ensure we stay within bounds
-        new_x = (x + dx) % self.grid_size
-        new_y = (y + dy) % self.grid_size
-        
-        return round(new_x, self.rounding_digits), round(new_y, self.rounding_digits)
 
     def _circular_formation_move(self, x: int, y: int, rng: np.random.Generator) -> Tuple[int, int]:
         """
