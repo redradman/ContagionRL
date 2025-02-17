@@ -155,9 +155,9 @@ class SIRSEnvironment(gym.Env):
             ),
             "humans_discrete": gym.spaces.Box(
                 low=0,
-                high=3,  # S=0, I=1, R=2, D=3
-                shape=(self.n_humans,),
-                dtype=np.int32
+                high=1,  # Changed to 1 since we're using one-hot encoding
+                shape=(self.n_humans * 4,),  # 4 states: [S, I, R, D] for each human
+                dtype=np.float32  # Changed to float32 for one-hot vectors
             )
         })
 
@@ -464,7 +464,7 @@ class SIRSEnvironment(gym.Env):
 
         # Initialize arrays for human observations
         humans_continuous = np.zeros((self.n_humans * 4,), dtype=np.float32)
-        humans_discrete = np.zeros((self.n_humans,), dtype=np.int32)
+        humans_discrete = np.zeros((self.n_humans * 4,), dtype=np.float32)
 
         # Fill in human observations
         for i, human in enumerate(self.humans):
@@ -474,7 +474,7 @@ class SIRSEnvironment(gym.Env):
             if visibility_flag == 0: 
                 # All values remain 0 for invisible humans
                 humans_continuous[base_idx:base_idx + 4] = 0
-                humans_discrete[i] = 0
+                humans_discrete[base_idx:base_idx + 4] = 0
             else:
                 # Normalize positions and calculate distance
                 x_norm = human.x / self.grid_size
@@ -485,7 +485,8 @@ class SIRSEnvironment(gym.Env):
                 # Set continuous features [visibility, x, y, distance]
                 humans_continuous[base_idx:base_idx + 4] = [visibility_flag, x_norm, y_norm, dist_norm]
                 # Set discrete state
-                humans_discrete[i] = human.state
+                humans_discrete[base_idx:base_idx + 4] = [0, 0, 0, 0]
+                humans_discrete[base_idx + human.state] = 1
 
         # Compose final observation dict
         obs = {
