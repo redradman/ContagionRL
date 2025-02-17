@@ -240,7 +240,7 @@ class SIRSEnvironment(gym.Env):
             total_exposure += math.exp(-self.distance_decay * distance)
 
         if is_agent:
-            return min(1,(self.beta / (1 + self.agent_adherence)) * total_exposure)
+            return min(1,(self.beta / (1 + 10 * self.agent_adherence)) * total_exposure)
         else:
             return min(1,(self.beta) * total_exposure)
 
@@ -528,15 +528,52 @@ class SIRSEnvironment(gym.Env):
         return reward
 
     def _calculate_reward_for_state(self):
-        """Sparse reward that only rewards the agent for staying susceptible throughout the episode"""
+        """
+        Multiplicative reward function combining:
+        1. State reward: 1.0 if susceptible, 0 otherwise
+        2. Distance reward: Exponential reward based on distance to closest infected
+        Final reward = state_reward * distance_reward
+        """
+        # 1. State reward component
+        state_reward = 0
         if self.agent_state == STATE_DICT['S']:
-            return 1
-        elif self.agent_state == STATE_DICT['I']:
-            return -100
-        elif self.agent_state == STATE_DICT['D']:
-            return -500
+            state_reward = 1.0
         else:
-            return 0
+            state_reward = 0
+
+        # 2. Distance reward component
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1,
+            time_in_state=self.agent_time_in_state
+        )
+        
+        # Get list of infected humans
+        infected_list = self._get_infected_list(agent_human)
+        
+        # Calculate distance reward
+        distance_reward = 1.0  # Default if no infected are visible
+        if infected_list:
+            # Find distance to closest infected
+            distances = [self._calculate_distance(agent_human, infected) for infected in infected_list]
+            min_distance = min(distances)
+            
+            # Normalize distance by grid size
+            normalized_distance = min_distance / self.max_distance
+            
+            # Exponential reward that grows as distance increases
+            # exp(-3 * (1-d)) gives:
+            # - At d=0: exp(-3) ≈ 0.05 (very small reward when close)
+            # - At d=0.5: exp(-1.5) ≈ 0.22 (moderate reward)
+            # - At d=1: exp(0) = 1.0 (maximum reward at maximum distance)
+            distance_reward = math.exp(-self.distance_decay * (1 - normalized_distance))
+        
+        # Combine rewards multiplicatively
+        final_reward = state_reward * distance_reward
+        
+        return final_reward
 
     def _calculate_increaseDistanceWithInfected_reward(self):
         """Reward for increasing distance from infected humans while conserving energy"""
