@@ -537,15 +537,10 @@ class SIRSEnvironment(gym.Env):
         Final reward = w1*state_reward + w2*distance_reward - w3*adherence_penalty
         """
         # 1. State reward component (40% of total possible reward)
-        state_reward = 0
         if self.agent_state == STATE_DICT['S']:
-            state_reward = 2.0
-        elif self.agent_state == STATE_DICT['R']:
-            state_reward = 0.5  # Small positive reward for being recovered
-        elif self.agent_state == STATE_DICT['I']:
-            state_reward = -1.0  # Penalty for being infected
+            state_reward = 1
         else:  # Dead
-            state_reward = -2.0  # Larger penalty for death
+            state_reward = 0
 
         # 2. Distance reward component (40% of total possible reward)
         agent_human = Human(
@@ -566,11 +561,7 @@ class SIRSEnvironment(gym.Env):
             distances = [self._calculate_distance(agent_human, infected) for infected in infected_list]
             min_distance = min(distances)
             
-            # Normalize distance by max possible distance
-            normalized_distance = min_distance / self.max_distance
-            
-            # Linear reward that scales with distance
-            distance_reward = 2.0 * normalized_distance
+            distance_reward = 1 - math.exp(-self.distance_decay * min_distance)
         
         # 3. Calculate adherence penalty (20% of total possible reward)
         # Quadratic penalty that grows faster at higher adherence levels

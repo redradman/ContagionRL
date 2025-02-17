@@ -59,5 +59,5 @@ save_config = {
     "save_freq": 100_000,  # Save model every n steps
     "save_replay_buffer": True,
     "verbose": 1,
-    "eval_freq": 40000,  # How often to run evaluation episodes
+    "eval_freq": 100000000000,  # How often to run evaluation episodes
 } 
