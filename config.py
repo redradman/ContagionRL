@@ -25,25 +25,28 @@ ppo_config = {
     # Network Architecture
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
-        net_arch=dict(pi=[512, 512, 256], vf=[512, 512, 256]),  # Wider architecture for large one-hot encoded input
+        net_arch=dict(
+            pi=[512, 256, 128],  # Policy network
+            vf=[1024, 512, 512, 256]  # Deeper/wider value network
+        ),
         normalize_images=True,
-        log_std_init=-1.0,  # Initial std = 1.0, allows more exploration
+        log_std_init=-1.0,  # Initial std = 0.37
         ortho_init=True
     ),
     
     # PPO specific parameters
-    "batch_size": 1024,            # Increase for more stable updates
-    "n_epochs": 10,               
-    "learning_rate": 1e-4,        # Reduce to help with value function training
-    "gamma": 0.99,
-    "gae_lambda": 0.95,
-    "clip_range": 0.2,           
-    "ent_coef": 0.01,            # Reduce to encourage more exploitation
-    "vf_coef": 1.0,
-    "max_grad_norm": 1.0,         
+    "batch_size": 2048,            # Larger batch for more stable value estimates
+    "n_epochs": 5,                 # Reduced to prevent overfitting
+    "learning_rate": 5e-5,         # Slower learning for better value estimation
+    "gamma": 0.995,                # Slightly higher gamma for better long-term predictions
+    "gae_lambda": 0.98,            # Higher lambda for better advantage estimation
+    "clip_range": 0.1,             # Smaller clip range for more conservative updates
+    "ent_coef": 0.005,             # Lower entropy to focus on value prediction
+    "vf_coef": 2.0,                # Increased focus on value function
+    "max_grad_norm": 0.5,          # More conservative updates
     
     # Training parameters
-    "total_timesteps": 5_000_000,
+    "total_timesteps": 10_000_000,
     "n_envs": 5
 }
 
