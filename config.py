@@ -11,12 +11,12 @@ env_config = {
     "immunity_decay": 0.05,        # Slower immunity decay so recovered remain immune longer
     "recovery_rate": 0.3,          # Faster recovery rate to help the agent recover quickly if infected
     "max_immunity_loss_prob": 0.5, # Lower maximum immunity loss probability
-    "adherence_penalty_factor": 5, # Reduced penalty so that safety measures are not overly punishing
+    "adherence_penalty_factor": 8, # Increased penalty factor for more nuanced adherence decisions
     "movement_type": "continuous_random",  # Continuous random movement for humans
     "visibility_radius": 15,       # Moderate visibility for the agent
-    "reinfection_count": 1,        # Minimal reinfections for stability
-    "safe_distance": 5,            # Lower threshold for safe distance in reinfection logic
-    "reward_type": "balanced",   # Use the new balanced reward function for smoother learning
+    "reinfection_count": 2,        # Moderate reinfection count to maintain some infected presence
+    "safe_distance": 6,            # Slightly increased safe distance for better distance rewards
+    "reward_type": "distanceMaximizing",  # Use the new distance maximizing reward
     "render_mode": None            # No rendering during training
 }
 
