@@ -306,9 +306,9 @@ class SIRSEnvironment(gym.Env):
         Action space is normalized to [-1, 1] for movement and [0, 1] for adherence.
         Ensures agent position stays within grid bounds using periodic boundary conditions.
         """
-        dx = action[0]
-        dy = action[1]
-        adherence = action[2]
+        dx = np.clip(action[0], -1, 1)
+        dy = np.clip(action[1], -1, 1)
+        adherence = np.clip(action[2], 0, 1)
         
         # Scale movement from [-1,1] to actual grid movement
         scaled_dx = dx * self.max_movement
@@ -568,8 +568,8 @@ class SIRSEnvironment(gym.Env):
         adherence_penalty = (self.agent_adherence ** 2) / self.adherence_penalty_factor
         
         # Combine rewards additively with weights
-        # final_reward = 0.4 * state_reward + 0.4 * distance_reward - 0.2 * adherence_penalty
-        final_reward = state_reward * distance_reward * (1 - adherence_penalty)
+        final_reward = 0.4 * state_reward + 0.4 * distance_reward - 0.2 * adherence_penalty
+        # final_reward = state_reward * distance_reward * (1 - adherence_penalty)
         
         return final_reward
 

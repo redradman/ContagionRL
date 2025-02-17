@@ -15,7 +15,7 @@ env_config = {
     "movement_type": "continuous_random",  # Continuous random movement for humans
     "visibility_radius": 20,       # Moderate visibility for the agent
     "reinfection_count": 8,        # Moderate reinfection count to maintain some infected presence
-    "safe_distance": 8,            # Slightly increased safe distance for better distance rewards
+    "safe_distance": 4,            # Slightly increased safe distance for better distance rewards
     "reward_type": "rewardForState",  # Switch to simpler reward function
     "render_mode": None            # No rendering during training
 }
@@ -35,9 +35,9 @@ ppo_config = {
     ),
     
     # PPO specific parameters
-    "batch_size": 2048,            # Larger batch for more stable value estimates
+    "batch_size": 1024,            # Larger batch for more stable value estimates
     "n_epochs": 10,                 # Reduced to prevent overfitting
-    "learning_rate": 5e-5,         # Slower learning for better value estimation
+    "learning_rate": 3e-4,         # Slower learning for better value estimation
     "gamma": 0.995,                # Slightly higher gamma for better long-term predictions
     "gae_lambda": 0.98,            # Higher lambda for better advantage estimation
     "clip_range": 0.1,             # Smaller clip range for more conservative updates
