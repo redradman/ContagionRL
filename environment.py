@@ -505,10 +505,6 @@ class SIRSEnvironment(gym.Env):
         else:  # Infected or Dead or Recovered
             state_reward = 0
 
-        # # Add pandemic survival bonus
-        # if self.dead_count == 0 and self.infected_count == 0:
-        #     state_reward += 10  # Big bonus for surviving the pandemic
-
         reward = state_reward - self.agent_adherence / self.adherence_penalty_factor
         reward = max(0, reward)
         return reward
@@ -530,6 +526,17 @@ class SIRSEnvironment(gym.Env):
         reward = avoid_infection_reward - self.agent_adherence / self.adherence_penalty_factor
         reward = max(0, reward)
         return reward
+
+    def _calculate_reward_for_state(self):
+        """Sparse reward that only rewards the agent for staying susceptible throughout the episode"""
+        if self.agent_state == STATE_DICT['S']:
+            return 1
+        elif self.agent_state == STATE_DICT['I']:
+            return -100
+        elif self.agent_state == STATE_DICT['D']:
+            return -500
+        else:
+            return 0
 
     def _calculate_increaseDistanceWithInfected_reward(self):
         """Reward for increasing distance from infected humans while conserving energy"""
@@ -580,14 +587,60 @@ class SIRSEnvironment(gym.Env):
         
         return reward
 
+    def _calculate_balanced_reward(self):
+        """
+        Balanced reward function that encourages the agent to remain healthy
+        and maintain distance from infected individuals while managing its adherence cost.
+        This reward is computed as a weighted sum of:
+          - A health component: high reward for staying susceptible, moderate for recovered, negative for infected, strongly negative for dead.
+          - A distance component: reward increases based on the average distance to infected individuals (normalized by max distance).
+          - A penalty component for high adherence.
+        """
+        # Health component based on current state
+        if self.agent_state == STATE_DICT['S']:
+            health_reward = 1.0
+        elif self.agent_state == STATE_DICT['I']:
+            health_reward = -0.5
+        elif self.agent_state == STATE_DICT['D']:
+            health_reward = -1.0
+        else:
+            health_reward = 0
+
+        # Calculate distance component
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1,
+            time_in_state=self.agent_time_in_state
+        )
+        infected_list = self._get_infected_list(agent_human)
+        if infected_list:
+            total_distance = sum(self._calculate_distance(agent_human, infected) for infected in infected_list)
+            avg_distance = total_distance / len(infected_list)
+            normalized_distance = avg_distance / self.max_distance
+            distance_reward = normalized_distance
+        else:
+            distance_reward = 1.0  # Best reward if no infected nearby
+
+        # Penalty for high adherence
+        adherence_penalty = self.agent_adherence / self.adherence_penalty_factor
+
+        # Combine components with chosen weights
+        reward = 0.6 * health_reward + 0.4 * distance_reward - adherence_penalty
+        reward = max(-1, min(1, reward))  # Clip reward between -1 and 1
+        return reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
             "stateBased": self._calculate_stateBased_reward,
             "avoidInfection": self._calculate_avoidInfection_reward,
             "increaseDistanceWithInfected": self._calculate_increaseDistanceWithInfected_reward,
+            "rewardForState": self._calculate_reward_for_state,
+            "balanced": self._calculate_balanced_reward
         }
-        if self.reward_type not in reward_functions: # throw error if reward type is not valid
+        if self.reward_type not in reward_functions:  # throw error if reward type is not valid
             raise ValueError(f"Invalid reward type: {self.reward_type}")
         
         return reward_functions[self.reward_type]()

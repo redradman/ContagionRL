@@ -1,23 +1,23 @@
 # Environment Parameters
 env_config = {
-    "simulation_time": 100,        # Steps per episode
-    "grid_size": 50,
-    "n_humans": 20,
-    "n_infected": 5,
-    "beta": 0.2,
-    "initial_agent_adherence": 0.5,
-    "distance_decay": 0.15,
-    "lethality": 0.4,
-    "immunity_decay": 0.1,
-    "recovery_rate": 0.2,
-    "max_immunity_loss_prob": 1,
-    "adherence_penalty_factor": 10,
-    "movement_type": "circular_formation",
-    "visibility_radius": 8,
-    "reinfection_count": 5,
-    "safe_distance": 8,
-    "reward_type": "increaseDistanceWithInfected",       
-    "render_mode": None,  # No rendering during training
+    "simulation_time": 200,        # Longer episodes for more learning opportunity
+    "grid_size": 40,               # A slightly smaller grid for easier navigation
+    "n_humans": 15,                # Fewer humans to reduce environmental complexity
+    "n_infected": 3,               # Fewer initial infections to avoid overwhelming the agent
+    "beta": 0.2,                   # Lower infection rate for a milder disease spread
+    "initial_agent_adherence": 0.3,# Lower initial adherence to allow the agent more flexibility
+    "distance_decay": 0.3,         # Moderate decay rate
+    "lethality": 0.05,             # Much lower lethality to reduce abrupt episode endings
+    "immunity_decay": 0.05,        # Slower immunity decay so recovered remain immune longer
+    "recovery_rate": 0.3,          # Faster recovery rate to help the agent recover quickly if infected
+    "max_immunity_loss_prob": 0.5, # Lower maximum immunity loss probability
+    "adherence_penalty_factor": 5, # Reduced penalty so that safety measures are not overly punishing
+    "movement_type": "continuous_random",  # Continuous random movement for humans
+    "visibility_radius": 15,       # Moderate visibility for the agent
+    "reinfection_count": 1,        # Minimal reinfections for stability
+    "safe_distance": 5,            # Lower threshold for safe distance in reinfection logic
+    "reward_type": "balanced",   # Use the new balanced reward function for smoother learning
+    "render_mode": None            # No rendering during training
 }
 
 # PPO Hyperparameters
@@ -25,7 +25,7 @@ ppo_config = {
     # Network Architecture
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
-        net_arch=dict(pi=[256, 128, 256], vf=[256, 128, 256])
+        net_arch=dict(pi=[128, 64, 128], vf=[128, 64, 128])
     ),
     
     # PPO specific parameters
