@@ -36,7 +36,7 @@ ppo_config = {
     
     # PPO specific parameters
     "batch_size": 2048,            # Larger batch for more stable value estimates
-    "n_epochs": 5,                 # Reduced to prevent overfitting
+    "n_epochs": 10,                 # Reduced to prevent overfitting
     "learning_rate": 5e-5,         # Slower learning for better value estimation
     "gamma": 0.995,                # Slightly higher gamma for better long-term predictions
     "gae_lambda": 0.98,            # Higher lambda for better advantage estimation
