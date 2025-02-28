@@ -603,7 +603,7 @@ class SIRSEnvironment(gym.Env):
         elif self.agent_state == STATE_DICT['I']:
             health_reward = -0.6  # Significant penalty for becoming infected
         elif self.agent_state == STATE_DICT['R']:
-            health_reward = 0.2  # Small reward for recovered (immune) state
+            health_reward = 0
         else:  # Dead
             health_reward = -0.6  # Same penalty as infected (we already penalize via episode termination)
         
