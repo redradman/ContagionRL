@@ -16,7 +16,7 @@ env_config = {
     "visibility_radius": 20,       # Moderate visibility for the agent
     "reinfection_count": 8,        # Moderate reinfection count to maintain some infected presence
     "safe_distance": 4,            # Slightly increased safe distance for better distance rewards
-    "reward_type": "rewardForState",  # Switch to simpler reward function
+    "reward_type": "infectionAvoidance",  # Using our new reward function focused on avoiding infection
     "render_mode": None            # No rendering during training
 }
 
@@ -27,26 +27,26 @@ ppo_config = {
     "policy_kwargs": dict(
         net_arch=dict(
             pi=[512, 256, 128],  # Policy network
-            vf=[1024, 512, 512, 256]  # Deeper/wider value network
+            vf=[1024, 512, 512, 256, 64]  # Deeper/wider value network
         ),
         normalize_images=True,
-        log_std_init=-1.0,  # Initial std = 0.37
+        # log_std_init=-1.0,  # Initial std = 0.37
         ortho_init=True
     ),
     
     # PPO specific parameters
-    "batch_size": 1024,            # Larger batch for more stable value estimates
+    "batch_size": 2048,            # Larger batch for more stable value estimates
     "n_epochs": 10,                 # Reduced to prevent overfitting
     "learning_rate": 3e-4,         # Slower learning for better value estimation
-    "gamma": 0.995,                # Slightly higher gamma for better long-term predictions
-    "gae_lambda": 0.98,            # Higher lambda for better advantage estimation
+    "gamma": 0.98,                # Slightly higher gamma for better long-term predictions
+    "gae_lambda": 0.95,            # Higher lambda for better advantage estimation
     "clip_range": 0.1,             # Smaller clip range for more conservative updates
     "ent_coef": 0.005,             # Lower entropy to focus on value prediction
     "vf_coef": 2.0,                # Increased focus on value function
     "max_grad_norm": 0.5,          # More conservative updates
     
     # Training parameters
-    "total_timesteps": 10_000_000,
+    "total_timesteps": 5_000_000,
     "n_envs": 5
 }
 
@@ -62,5 +62,5 @@ save_config = {
     "save_freq": 100_000,  # Save model every n steps
     "save_replay_buffer": True,
     "verbose": 1,
-    "eval_freq": 100000000000,  # How often to run evaluation episodes
+    "eval_freq": 100_000,  # How often to run evaluation episodes
 } 
