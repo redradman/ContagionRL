@@ -573,12 +573,79 @@ class SIRSEnvironment(gym.Env):
         
         return final_reward
 
+    def _calculate_infection_avoidance_reward(self):
+        """
+        Normalized reward function focused on avoiding infection with a strong penalty for becoming infected.
+        All reward components are carefully scaled to a [-1, 1] range to maintain stable learning.
+        
+        Components:
+        1. Health state reward/penalty: Reward for being susceptible, penalty for being infected
+        2. Distance reward: Reward for maintaining distance from infected humans
+        3. Risk assessment: Reward for avoiding high infection probability areas
+        4. Adherence cost: Small cost for maintaining adherence
+        """
+        # Create human object for the agent for calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1,
+            time_in_state=self.agent_time_in_state
+        )
+        
+        # Calculate base factors needed for multiple components
+        infected_list = self._get_infected_list(agent_human)
+        infection_probability = self._calculate_infection_probability(agent_human, is_agent=True)
+        
+        # 1. Health state component [-0.6 to 0.6] - core incentive for staying healthy
+        if self.agent_state == STATE_DICT['S']:
+            health_reward = 0.6  # Significant reward for staying susceptible
+        elif self.agent_state == STATE_DICT['I']:
+            health_reward = -0.6  # Significant penalty for becoming infected
+        elif self.agent_state == STATE_DICT['R']:
+            health_reward = 0.2  # Small reward for recovered (immune) state
+        else:  # Dead
+            health_reward = -0.6  # Same penalty as infected (we already penalize via episode termination)
+        
+        # 2. Distance component [0 to 0.3] - incentivize maintaining distance
+        if infected_list and self.agent_state != STATE_DICT['D']:  # Not relevant if dead
+            # Calculate distances to infected humans
+            distances = [self._calculate_distance(agent_human, infected) for infected in infected_list]
+            min_distance = min(distances)
+            
+            # Normalize minimum distance to [0, 1] range using sigmoid-like function
+            # This creates a smooth reward curve that increases with distance
+            normalized_distance = 1 - np.exp(-self.distance_decay * min_distance)
+            distance_reward = 0.3 * normalized_distance
+        else:
+            # Maximum reward if no infected are visible
+            distance_reward = 0.3
+            
+        # 3. Risk assessment component [0 to 0.3] - reward for avoiding risky areas
+        risk_reward = 0.3 * (1 - infection_probability)
+        
+        # 4. Adherence cost component [-0.2 to 0] - small cost proportional to adherence
+        # Using a scaled cost that's gentler at lower adherence levels
+        adherence_cost = -0.2 * (self.agent_adherence / self.adherence_penalty_factor)
+        
+        # Combine all components - total range is guaranteed to be [-0.8, 1.2]
+        # Further normalize to ensure reward stays in a consistent range
+        combined_reward = health_reward + distance_reward + risk_reward + adherence_cost
+        
+        # Final scaling to ensure the typical range is closer to [-1, 1]
+        # Note: The absolute maximum is still slightly outside this range,
+        # but typical values will be well-behaved
+        final_reward = combined_reward / 1.2
+        
+        return final_reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
             "stateBased": self._calculate_stateBased_reward,
             "avoidInfection": self._calculate_avoidInfection_reward,
-            "rewardForState": self._calculate_reward_for_state
+            "rewardForState": self._calculate_reward_for_state,
+            "infectionAvoidance": self._calculate_infection_avoidance_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
