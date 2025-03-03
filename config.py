@@ -11,7 +11,7 @@ env_config = {
     "immunity_decay": 0.05,        # Slower immunity decay so recovered remain immune longer
     "recovery_rate": 0.1,          # Increased to 10% chance of recovery per step
     "max_immunity_loss_prob": 0.3, # Lower maximum immunity loss probability
-    "adherence_penalty_factor": 4, # Reduced penalty factor for more balanced adherence decisions
+    "adherence_penalty_factor": 1, # Reduced penalty factor for more balanced adherence decisions
     "movement_type": "continuous_random",  # Continuous random movement for humans
     "visibility_radius": 20,       # Moderate visibility for the agent
     "reinfection_count": 8,        # Moderate reinfection count to maintain some infected presence
@@ -30,24 +30,24 @@ ppo_config = {
             vf=[1024, 512, 512, 256, 64]  # Deeper/wider value network
         ),
         normalize_images=True,
-        # log_std_init=-1.0,  # Initial std = 0.37
+        log_std_init=-1.0,  # Initial std = 0.135 (reduced from default ~0.5)
         ortho_init=True
     ),
     
     # PPO specific parameters
-    "batch_size": 2048,            # Larger batch for more stable value estimates
-    "n_epochs": 10,                 # Reduced to prevent overfitting
-    "learning_rate": 3e-4,         # Slower learning for better value estimation
-    "gamma": 0.98,                # Slightly higher gamma for better long-term predictions
-    "gae_lambda": 0.95,            # Higher lambda for better advantage estimation
-    "clip_range": 0.1,             # Smaller clip range for more conservative updates
-    "ent_coef": 0.005,             # Lower entropy to focus on value prediction
-    "vf_coef": 2.0,                # Increased focus on value function
-    "max_grad_norm": 0.5,          # More conservative updates
+    "batch_size": 4096,            # Double batch size for more stable updates
+    "n_epochs": 15,                # Increased epochs for better value function fitting
+    "learning_rate": 3e-4,         # Keep same learning rate
+    "gamma": 0.98,                 # Slightly increased gamma for better long-term predictions
+    "gae_lambda": 0.95,            # Keep same lambda
+    "clip_range": 0.2,             # Slightly increased clip range for more impactful updates
+    "ent_coef": 0.003,             # Reduced entropy to encourage more deterministic policy
+    "vf_coef": 2.5,                # Increased focus on value function
+    "max_grad_norm": 0.5,          # Keep same gradient clipping
     
     # Training parameters
     "total_timesteps": 5_000_000,
-    "n_envs": 5
+    "n_envs": 8                    # Increased parallel environments for more diverse experience
 }
 
 # For reference:
