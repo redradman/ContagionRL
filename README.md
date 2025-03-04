@@ -22,6 +22,50 @@ python train.py --use-wandb
 python train.py --config my_config.py
 ```
 
+### Weights & Biases Integration
+
+Track your training experiments with Weights & Biases:
+
+```bash
+# Basic wandb usage
+python train.py --use-wandb
+
+# Use offline mode to avoid timeout issues
+python train.py --use-wandb --wandb-offline
+```
+
+#### Offline Mode
+
+If you encounter timeout issues with wandb, use offline mode to store data locally:
+
+```bash
+python train.py --use-wandb --wandb-offline
+```
+
+This stores all data in the `wandb/` directory without requiring an internet connection during training.
+
+#### Syncing Offline Runs
+
+After training with offline mode, sync your data to the wandb servers:
+
+```bash
+# Sync a specific run using its timestamp ID
+./sync_wandb.py --run-id 20250303_184216
+
+# Sync all offline runs at once
+./sync_wandb.py --all
+```
+
+#### Troubleshooting wandb Issues
+
+If you encounter connection issues with wandb:
+
+1. Use offline mode as described above
+2. Check your internet connection and firewall settings
+3. Try refreshing your credentials: `wandb login --relogin`
+4. Update wandb: `pip install wandb --upgrade`
+5. Increase timeout duration by modifying `setup_wandb()` in train.py
+
 ### Visualization (visualize.py)
 
 Visualize a trained model:
