@@ -46,6 +46,32 @@ You can also visualize checkpoints saved during training:
 python visualize.py --model-path logs/your_run_name/sirs_model_20000_steps.zip
 ```
 
+### Benchmarking (results/benchmark.py)
+
+Compare a trained model against random actions:
+```bash
+python results/benchmark.py --model-path logs/your_run_name/final_model.zip
+```
+
+Common benchmarking options:
+```bash
+# Run more episodes for more reliable statistics
+python results/benchmark.py --model-path logs/your_run_name/final_model.zip --runs 30
+
+# Skip the random agent comparison
+python results/benchmark.py --model-path logs/your_run_name/final_model.zip --no-random
+
+# Specify a custom title for the plot
+python results/benchmark.py --model-path logs/your_run_name/final_model.zip --title "My Custom Plot Title"
+```
+
+For a quick demonstration without needing a trained model:
+```bash
+python results/quick_test.py
+```
+
+See `results/README.md` for more detailed information on benchmarking.
+
 ### Model Files
 
 After training, you'll find the following in your log directory (`logs/your_run_name/`):
