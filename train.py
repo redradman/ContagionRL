@@ -44,11 +44,12 @@ def set_global_seeds(seed: int) -> None:
     print(f"Set global seed to: {seed}")
 
 class VideoRecorderCallback(BaseCallback):
-    def __init__(self, eval_env, video_folder, eval_freq=1000):
+    def __init__(self, eval_env, video_folder, eval_freq=1000, use_wandb=False):
         super().__init__()
         self.eval_env = eval_env
         self.video_folder = video_folder
         self.eval_freq = eval_freq
+        self.use_wandb = use_wandb
         os.makedirs(video_folder, exist_ok=True)
 
     def _on_step(self) -> bool:
@@ -106,6 +107,24 @@ class VideoRecorderCallback(BaseCallback):
                     raise ValueError("Environment metadata must contain 'render_fps'")
                 env_fps = self.eval_env.envs[0].metadata["render_fps"]
                 imageio.mimsave(video_path, frames, fps=env_fps)
+                
+                # Log video to wandb if enabled
+                if self.use_wandb:
+                    try:
+                        # Create a meaningful name for the video
+                        episode_name = f"episode_{self.n_calls}"
+                        
+                        # Log video to wandb - removed fps parameter since it doesn't work with file paths
+                        wandb.log({
+                            f"videos/{episode_name}": wandb.Video(
+                                video_path, 
+                                caption=f"Evaluation at {self.n_calls} steps"
+                            )
+                        }, step=self.n_calls)
+                        print(f"Logged evaluation video to wandb at step {self.n_calls}")
+                    except Exception as e:
+                        # Don't fail if wandb logging fails
+                        print(f"Error logging video to wandb: {e}")
             else:
                 # print("Warning: No frames were collected during the episode")
                 pass
@@ -233,7 +252,8 @@ def main(args):
         video_recorder = VideoRecorderCallback(
             eval_env,
             video_folder,
-            eval_freq=eval_freq
+            eval_freq=eval_freq,
+            use_wandb=use_wandb
         )
         callbacks.extend([eval_callback, video_recorder])
 
