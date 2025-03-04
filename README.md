@@ -20,7 +20,26 @@ python train.py --use-wandb
 
 # Use a custom config file
 python train.py --config my_config.py
+
+# Set a specific random seed for reproducibility
+python train.py --seed 12345
 ```
+
+#### Reproducibility
+
+For reproducible experiments, use the `--seed` argument to set a specific random seed:
+
+```bash
+python train.py --seed 12345
+```
+
+This ensures consistent results across runs by:
+- Setting global random seeds (Python's random module, NumPy, PyTorch)
+- Using sequential seeds derived from the base seed for vectorized environments
+- Storing the seed value in configuration files and model metadata
+- Including the seed in the run name when not using the default seed (42)
+
+Without specifying a seed, each run will have different random initializations.
 
 ### Weights & Biases Integration
 
