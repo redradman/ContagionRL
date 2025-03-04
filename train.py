@@ -103,6 +103,7 @@ def setup_wandb(config: Dict[str, Any], run_name: str):
     # Create wandb settings with increased timeout
     wandb_settings = wandb.Settings(
         init_timeout=120, 
+        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
     )
     
     wandb.init(
@@ -196,7 +197,9 @@ def main(args):
 
     # Wandb callback if requested
     if args.use_wandb:
-        callbacks.append(WandbCallback())
+        callbacks.append(WandbCallback(model_save_path=f"models/{tensorboard_path}",
+        gradient_save_freq=100,
+        verbose=2))
 
     # Save configs
     save_config_with_model(log_path, {
