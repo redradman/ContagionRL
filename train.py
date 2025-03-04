@@ -177,12 +177,23 @@ def main(args):
     # Set global seeds for reproducibility
     set_global_seeds(args.seed)
     
-    # Create unique run name
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"sirs_ppo_{timestamp}"
+    # Create unique run name with reward function type and formatted timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")  # Removed seconds for cleaner names
+    
+    # Get reward function type from environment config - throw error if not found
+    if "reward_type" not in env_config:
+        raise ValueError("reward_type must be specified in env_config for run naming")
+    reward_type = env_config["reward_type"]
+    
+    # Create run name with reward function type followed by timestamp
+    run_name = f"{reward_type}_{timestamp}"
+    
+    # Add experiment name prefix if provided
     if args.exp_name:
         run_name = f"{args.exp_name}_{run_name}"
-    if args.seed != 42:  # Add seed to run name if not using the default
+    
+    # Add seed to run name if not using the default
+    if args.seed != 42:
         run_name = f"{run_name}_seed{args.seed}"
 
     # Setup logging directory
