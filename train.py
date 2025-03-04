@@ -100,14 +100,20 @@ def make_eval_env(env_config: Dict[str, Any], seed: int = 0):
 
 def setup_wandb(config: Dict[str, Any], run_name: str):
     """Initialize wandb with all configs."""
+    # Create wandb settings with increased timeout
+    wandb_settings = wandb.Settings(
+        init_timeout=120, 
+    )
+    
     wandb.init(
         project="sirs-rl",
         name=run_name,
         config={
-            "environment": env_config,
-            "ppo": ppo_config,
-            "save": save_config
-        }
+            "environment": config["environment"],
+            "ppo": config["ppo"],
+            "save": config["save"]
+        },
+        settings=wandb_settings
     )
 
 def save_config_with_model(save_path: str, config: Dict[str, Any]):
@@ -140,6 +146,11 @@ def main(args):
             "ppo": ppo_config,
             "save": save_config
         }, run_name)
+        
+        # If using offline mode, print instructions for syncing later
+        if args.wandb_offline:
+            print("\nRunning wandb in offline mode. To sync later, run:")
+            print(f"wandb sync {os.path.join('wandb', f'run-{timestamp}*')}")
 
     # Create vectorized environment
     env_fns = [make_env(env_config, seed=i) for i in range(ppo_config["n_envs"])]
@@ -223,16 +234,20 @@ def main(args):
             eval_env.close()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Train a PPO agent for the SIRS environment')
-    parser.add_argument('--exp-name', type=str, default='',
-                        help='Optional experiment name prefix')
-    parser.add_argument('--use-wandb', action='store_true',
-                        help='Enable Weights & Biases logging')
+    parser = argparse.ArgumentParser(description="Train a SIRS environment agent using PPO")
+    parser.add_argument("--exp-name", type=str, default="", help="Optional experiment name prefix")
+    parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
+    parser.add_argument("--wandb-offline", action="store_true", help="Run wandb in offline mode to avoid timeout issues")
     parser.add_argument('--config', type=str, default='config.py',
                         help='Path to config file')
     
     args = parser.parse_args()
     
+    # Set wandb mode to offline if requested
+    if args.use_wandb and args.wandb_offline:
+        os.environ["WANDB_MODE"] = "offline"
+        print("Using wandb in offline mode")
+        
     # Import config if custom path provided
     if args.config != 'config.py':
         import importlib.util
