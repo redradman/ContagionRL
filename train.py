@@ -286,7 +286,7 @@ if __name__ == "__main__":
     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
     parser.add_argument("--wandb-offline", action="store_true", help="Run wandb in offline mode to avoid timeout issues")
     parser.add_argument("--config", type=str, default="config.py", help="Path to config file")
-    parser.add_argument("--seed", type=int, default=888, help="Random seed for reproducibility (default: 42)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default: 42)")
     
     args = parser.parse_args()
     
