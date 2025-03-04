@@ -176,8 +176,9 @@ def main(args):
     os.makedirs(tensorboard_path, exist_ok=True)
     os.makedirs(video_folder, exist_ok=True)
 
-    # Initialize wandb if requested
-    if args.use_wandb:
+    # Initialize wandb by default, unless disabled with --no-wandb
+    use_wandb = not args.no_wandb
+    if use_wandb:
         # Add seed information to wandb config
         env_config_with_seed = env_config.copy()
         env_config_with_seed["random_seed"] = args.seed
@@ -236,8 +237,8 @@ def main(args):
         )
         callbacks.extend([eval_callback, video_recorder])
 
-    # Wandb callback if requested
-    if args.use_wandb:
+    # Wandb callback if wandb is enabled
+    if use_wandb:
         callbacks.append(WandbCallback(model_save_path=f"models/{tensorboard_path}",
         gradient_save_freq=100,
         verbose=2))
@@ -273,7 +274,7 @@ def main(args):
     finally:
         # Save the final model
         model.save(os.path.join(log_path, "final_model"))
-        if args.use_wandb:
+        if use_wandb:
             wandb.finish()
         # Clean up
         vec_env.close()
@@ -283,7 +284,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a SIRS environment agent using PPO")
     parser.add_argument("--exp-name", type=str, default="", help="Optional experiment name prefix")
-    parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
+    parser.add_argument("--no-wandb", action="store_true", help="Disable Weights & Biases logging (enabled by default)")
     parser.add_argument("--wandb-offline", action="store_true", help="Run wandb in offline mode to avoid timeout issues")
     parser.add_argument("--config", type=str, default="config.py", help="Path to config file")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default: 42)")
@@ -291,7 +292,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Set wandb mode to offline if requested
-    if args.use_wandb and args.wandb_offline:
+    if not args.no_wandb and args.wandb_offline:
         os.environ["WANDB_MODE"] = "offline"
         print("Using wandb in offline mode")
         
