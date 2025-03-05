@@ -44,7 +44,7 @@ class SIRSEnvironment(gym.Env):
         max_immunity_loss_prob: float = 0.2,
         adherence_penalty_factor: float = 2,
         movement_type: str = "stationary",
-        visibility_radius: float = -1,
+        visibility_radius: float = -1,  # Restored: -1 means full visibility, >=0 means limited visibility
         rounding_digits: int = 2,
         reinfection_count: int = 3,
         safe_distance: float = 0,  # New parameter for minimum safe distance for reinfection
@@ -122,7 +122,7 @@ class SIRSEnvironment(gym.Env):
         self.immunity_decay = immunity_decay # immunity decay rate
         self.recovery_rate = recovery_rate # recovery rate
         self.max_immunity_loss_prob = max_immunity_loss_prob # maximum immunity loss probability
-        self.visibility_radius = visibility_radius # visibility radius
+        self.visibility_radius = visibility_radius # Visibility radius restored
 
         ##############################
         ####### Observation and Action spaces
@@ -131,8 +131,14 @@ class SIRSEnvironment(gym.Env):
         # Structure:
         # - agent_position (2): [x, y]
         # - agent_adherence (1): [adherence]
-        # - humans_continuous (n_humans * 4): [visibility, x, y, distance] for each human
-        # - humans_discrete (n_humans): [state] for each human
+        # - is_agent_infected (1): [1 if infected, 0 otherwise]
+        # - humans_features (n_humans * features_per_human):
+        #   If visibility_radius == -1: [x, y, distance, is_infected] for each human
+        #   If visibility_radius >= 0: [visibility, x, y, distance, is_infected] for each human
+        
+        # Calculate features per human based on visibility setting
+        self.use_visibility_flag = (visibility_radius >= 0)
+        features_per_human = 5 if self.use_visibility_flag else 4
         
         self.observation_space = gym.spaces.Dict({
             "agent_position": gym.spaces.Box(
@@ -147,17 +153,17 @@ class SIRSEnvironment(gym.Env):
                 shape=(1,),
                 dtype=np.float32
             ),
-            "humans_continuous": gym.spaces.Box(
+            "is_agent_infected": gym.spaces.Box(
                 low=0,
                 high=1,
-                shape=(self.n_humans * 4,),  # [visibility, x, y, distance] for each human
+                shape=(1,),
                 dtype=np.float32
             ),
-            "humans_discrete": gym.spaces.Box(
+            "humans_features": gym.spaces.Box(
                 low=0,
-                high=1,  # Changed to 1 since we're using one-hot encoding
-                shape=(self.n_humans * 4,),  # 4 states: [S, I, R, D] for each human
-                dtype=np.float32  # Changed to float32 for one-hot vectors
+                high=1,
+                shape=(self.n_humans * features_per_human,),  # Features for each human (with or without visibility flag)
+                dtype=np.float32
             )
         })
 
@@ -201,31 +207,38 @@ class SIRSEnvironment(gym.Env):
 
     def _get_neighbors_list(self, current_human: Human) -> List[Human]:
         """
-        Get list of humans within visibility radius of given position
-        If visibility_radius is -1, return all humans
+        Returns a list of human neighbors within visibility radius.
+        If visibility_radius is -1, returns all humans.
         """
         if self.visibility_radius == -1:
-            return [h for h in self.humans if h.id != current_human.id] # return all humans except the one that is being checked
-        else: 
+            # Full visibility mode - return all humans except the current one
+            return [h for h in self.humans if h.id != current_human.id]
+        else:
+            # Limited visibility mode - only return humans within visibility radius
             visible_humans = []
             for human in self.humans:
                 if human.id == current_human.id:
-                    continue # skip the current human
-
+                    continue  # Skip the current human
+                
                 distance = self._calculate_distance(current_human, human)
                 if distance <= self.visibility_radius:
                     visible_humans.append(human)
             
             return visible_humans
 
-
     def _get_infected_list(self, current_human: Human) -> List[Human]:
         """
-        Return list of infected humans
-        If center coordinates are provided, only return infected humans within visibility radius
+        Returns a list of infected humans.
+        If visibility_radius is -1, returns all infected humans.
+        Otherwise, returns only infected humans within visibility radius.
         """
-        neighbors = self._get_neighbors_list(current_human)
-        return [h for h in neighbors if h.state == STATE_DICT['I']]
+        if self.visibility_radius == -1:
+            # Full visibility mode - return all infected humans except the current one
+            return [h for h in self.humans if h.state == STATE_DICT['I'] and h.id != current_human.id]
+        else:
+            # Limited visibility mode - return visible infected humans
+            neighbors = self._get_neighbors_list(current_human)
+            return [h for h in neighbors if h.state == STATE_DICT['I']]
 
     def _calculate_infection_probability(self, susceptible: Human, is_agent: bool = False) -> float:
         """
@@ -442,60 +455,75 @@ class SIRSEnvironment(gym.Env):
         {
             "agent_position": Box(shape=(2,)),           # (x, y) normalized to [0,1]
             "agent_adherence": Box(shape=(1,)),          # [adherence in 0..1]
-            "humans_continuous": Box(shape=(n_humans * 4,)),  # [visibility, x, y, distance] for each human
-            "humans_discrete": Box(shape=(n_humans,)),   # [state] for each human
+            "is_agent_infected": Box(shape=(1,)),        # [1 if infected, 0 otherwise]
+            "humans_features": Box(shape=(n_humans * features_per_human,)),
+                # If visibility_radius == -1: [x, y, distance, is_infected] for each human
+                # If visibility_radius >= 0: [visibility, x, y, distance, is_infected] for each human
         }
         """
         # Normalize agent position to [0,1] range
         agent_position = np.array(self.agent_position, dtype=np.float32) / self.grid_size  # shape=(2,)
         agent_adherence = np.array([self.agent_adherence], dtype=np.float32)  # already in [0,1]
+        
+        # Create agent infection status indicator (1 if infected, 0 otherwise)
+        is_agent_infected = np.array([1.0 if self.agent_state == STATE_DICT['I'] else 0.0], dtype=np.float32)
 
-        # Create a temporary human for the agent to reuse existing _get_neighbors_list logic
+        # Create a temporary human for the agent to reuse existing logic for distance calculations
         agent_human = Human(
             x=self.agent_position[0],
             y=self.agent_position[1],
             state=self.agent_state,
-            id=-1  # distinct ID so we don't filter this out in _get_neighbors_list
+            id=-1  # distinct ID
         )
         
-        # Get visible humans
-        visible_humans = self._get_neighbors_list(agent_human)
-        visible_ids = set(h.id for h in visible_humans)
+        # Get visible humans if using limited visibility
+        if self.use_visibility_flag:
+            visible_humans = self._get_neighbors_list(agent_human)
+            visible_ids = set(h.id for h in visible_humans)
+        
+        # Calculate features per human based on visibility setting
+        features_per_human = 5 if self.use_visibility_flag else 4
 
-        # Initialize arrays for human observations
-        humans_continuous = np.zeros((self.n_humans * 4,), dtype=np.float32)
-        humans_discrete = np.zeros((self.n_humans * 4,), dtype=np.float32)
+        # Initialize array for human observations
+        humans_features = np.zeros((self.n_humans * features_per_human,), dtype=np.float32)
 
         # Fill in human observations
-        for i, human in enumerate(self.humans):
-            base_idx = i * 4  # Index for continuous features
-            visibility_flag = 1.0 if human.id in visible_ids else 0.0
+        for i, curent_human in enumerate(self.humans):
+            # Calculate base index for this human's features
+            base_idx = i * features_per_human
             
-            if visibility_flag == 0: 
-                # All values remain 0 for invisible humans
-                humans_continuous[base_idx:base_idx + 4] = 0
-                humans_discrete[base_idx:base_idx + 4] = 0
+            # Set infection status (1 for infected, 0 for all other states)
+            is_infected = 1.0 if curent_human.state == STATE_DICT['I'] else 0.0
+            
+            # Calculate normalized position and distance
+            x_norm = curent_human.x / self.grid_size
+            y_norm = curent_human.y / self.grid_size
+            dist = self._calculate_distance(agent_human, curent_human)
+            dist_norm = dist / self.max_distance
+            
+            if self.use_visibility_flag:
+                # Mode with visibility flag
+                visibility_flag = 1.0 if curent_human.id in visible_ids else 0.0
+                
+                if visibility_flag == 0.0:
+                    # Invisible human - set position values to 0, but keep infection status
+                    humans_features[base_idx:base_idx + 5] = [0.0, 0.0, 0.0, 0.0, is_infected]
+                else:
+                    # Visible human - include all information
+                    humans_features[base_idx:base_idx + 5] = [visibility_flag, x_norm, y_norm, dist_norm, is_infected]
             else:
-                # Normalize positions and calculate distance
-                x_norm = human.x / self.grid_size
-                y_norm = human.y / self.grid_size
-                dist = self._calculate_distance(agent_human, human)
-                dist_norm = dist / self.max_distance
-
-                # Set continuous features [visibility, x, y, distance]
-                humans_continuous[base_idx:base_idx + 4] = [visibility_flag, x_norm, y_norm, dist_norm]
-                # Set discrete state
-                humans_discrete[base_idx:base_idx + 4] = [0, 0, 0, 0]
-                humans_discrete[base_idx + human.state] = 1
+                # Simple mode without visibility flag (all humans visible)
+                humans_features[base_idx:base_idx + 4] = [x_norm, y_norm, dist_norm, is_infected]
 
         # Compose final observation dict
         obs = {
             "agent_position": agent_position,
             "agent_adherence": agent_adherence,
-            "humans_continuous": humans_continuous,
-            "humans_discrete": humans_discrete
+            "is_agent_infected": is_agent_infected,
+            "humans_features": humans_features
         }
-
+        # print(obs)
+        # print("--------------------------------")
         return obs
 
     def _calculate_strategic_avoidance_reward(self):
@@ -519,11 +547,10 @@ class SIRSEnvironment(gym.Env):
             id=-1
         )
         
-        # Get visible infected and susceptible individuals
-        infected_list = [h for h in self.humans if h.state == STATE_DICT['I'] and 
-                     self._calculate_distance(agent_human, h) <= self.visibility_radius]
+        # Get infected individuals (respecting visibility if enabled)
+        infected_list = self._get_infected_list(agent_human)
         
-        # Calculate distances to infected humans if any are visible
+        # Calculate distances to infected humans if any exist
         if infected_list:
             distances_to_infected = [self._calculate_distance(agent_human, h) for h in infected_list]
             min_distance = min(distances_to_infected)
@@ -531,8 +558,10 @@ class SIRSEnvironment(gym.Env):
             # Count nearby infected (within 2x safe distance)
             nearby_infected_count = sum(1 for d in distances_to_infected if d < self.safe_distance * 2)
         else:
-            min_distance = self.visibility_radius  # Maximum possible if no infected visible
-            avg_distance = self.visibility_radius
+            # Use a large value if no infected are present
+            max_distance = math.sqrt(2) * self.grid_size
+            min_distance = max_distance
+            avg_distance = max_distance
             nearby_infected_count = 0
         
         # Calculate current infection probability
@@ -544,25 +573,21 @@ class SIRSEnvironment(gym.Env):
         else:  # Infected, Recovered, or Dead
             survival_reward = 0
             
-        # 2. Distance management reward [0 to 0.4] - sophisticated scaling based on safe distance
+        # 2. Distance management reward [0 to 0.4] - reward for maximizing distance to infected
+        safe_dist = max(1, self.safe_distance)  # Ensure at least 1 for sensible distance scaling
+        max_grid_dist = math.sqrt(2) * self.grid_size  # Maximum possible distance
+        
         if infected_list:
-            # Calculate a smooth distance reward that increases as distance increases
-            # Uses a logistic function to create a steeper gradient near the safe distance
-            safe_dist = self.safe_distance
-            # Normalized distance from 0 to 1, where 1 is at visibility radius
-            norm_dist = min(min_distance / self.visibility_radius, 1.0)
+            # Scale the minimum distance to [0,1] - closer to 1 means better distance management
+            norm_dist = min(min_distance / max_grid_dist, 1.0)
             
-            # Logistic function centered at safe distance (steeper penalty below safe distance)
-            k = 10  # Steepness of the curve
-            midpoint = safe_dist / self.visibility_radius  # Centered at safe distance
-            distance_reward = 0.4 / (1 + np.exp(-k * (norm_dist - midpoint)))
-            
-            # Additional penalty for having multiple infected nearby (crowding factor)
-            if nearby_infected_count > 1:
-                crowd_penalty = 0.1 * min(nearby_infected_count - 1, 3)  # Cap at 0.3 penalty
-                distance_reward = max(distance_reward - crowd_penalty, 0)
+            # Create a sigmoid-like function centered at safe distance for smooth reward
+            # This gives diminishing returns as we go beyond safe distance
+            midpoint = safe_dist / max_grid_dist  # Centered at safe distance
+            # Shifted sigmoid to create peak reward around the safe distance
+            distance_reward = 0.4 * (1 / (1 + math.exp(-10 * (norm_dist - midpoint)))) 
         else:
-            # Maximum reward if no infected are visible
+            # If no infected visible, maximum reward
             distance_reward = 0.4
             
         # 3. Adherence optimization [0 to 0.3] - rewards strategic use of adherence
@@ -619,19 +644,12 @@ class SIRSEnvironment(gym.Env):
 
     def _calculate_distance_maximization_reward(self):
         """
-        Reward function focused on maximizing distance from infected individuals.
+        Reward function focused on maximizing distance to infected individuals.
         
-        Key components:
-        1. Potential field approach - uses exponential potential function to create gradient rewards
-        2. Dual distance considerations:
-           - Immediate threat (closest infected individual)
-           - Overall threat (summed influence from all infected individuals)
-        3. Enhanced adherence optimization - rewards strategic adherence management
-        4. Minimal health state component
-        
-        Mathematical formulation:
-        - Potential function: f(d) = 1 - e^(-α*d) where α is the distance_decay parameter
-        - Reward combines minimum distance potential and summed influence
+        This function promotes:
+        1. Staying alive and susceptible (not getting infected)
+        2. Maximizing distance from infected individuals
+        3. Using adherence appropriately based on infection proximity
         """
         # Create temporary agent human for distance calculations
         agent_human = Human(
@@ -641,75 +659,34 @@ class SIRSEnvironment(gym.Env):
             id=-1
         )
         
-        # Get visible infected individuals
-        infected_list = [h for h in self.humans if h.state == STATE_DICT['I'] and 
-                     self._calculate_distance(agent_human, h) <= self.visibility_radius]
+        # Get infected individuals (respecting visibility if enabled)
+        infected_list = self._get_infected_list(agent_human)
         
-        # Initialize rewards
-        min_distance_reward = 0
-        summed_influence_reward = 0
-        
-        # Calculate distance-based rewards if infected individuals are visible
-        if infected_list:
-            # Calculate distances to all visible infected humans
-            distances = [self._calculate_distance(agent_human, h) for h in infected_list]
-            
-            # Get minimum distance (closest infected)
-            min_distance = min(distances)
-            
-            # Potential function parameter (α in the formula)
-            alpha = self.distance_decay
-            
-            # 1. Minimum distance potential (focus on closest threat)
-            # f(d) = 1 - e^(-α*d)
-            min_distance_reward = 1 - np.exp(-alpha * min_distance)
-            
-            # 2. Summed influence (consider all threats)
-            # Sum of f(d) = Σ (1 - e^(-α*d))
-            summed_influence = sum(1 - np.exp(-alpha * d) for d in distances)
-            # Normalize by the number of infected
-            summed_influence_reward = summed_influence / len(infected_list)
-            
-        else:
-            # Maximum rewards if no infected are visible (equivalent to infinite distance)
-            min_distance_reward = 1.0
-            summed_influence_reward = 1.0
-        
-        # Small health state reward component
+        # Base survival component - reward for staying susceptible
         if self.agent_state == STATE_DICT['S']:
-            health_reward = 0.1  # Reduced reward for staying susceptible
-        elif self.agent_state == STATE_DICT['I']:
-            health_reward = -0.2  # Penalty for becoming infected
-        elif self.agent_state == STATE_DICT['R']:
-            health_reward = 0.05  # Minimal reward for recovered
-        else:  # Dead
-            health_reward = -0.2  # Penalty for death
+            survival_bonus = 0.2  # Base reward for staying susceptible
+        else:
+            survival_bonus = 0  # No survival bonus if infected/dead/recovered
+
+        # Distance component - reward increases with distance from infected
+        if infected_list:
+            # Calculate distances to all infected
+            distances = [self._calculate_distance(agent_human, h) for h in infected_list]
+            min_distance = min(distances)
+            max_possible_distance = math.sqrt(2) * self.grid_size
+            
+            # Normalize distance to [0,1] range
+            normalized_distance = min(min_distance / max_possible_distance, 1.0)
+            
+            # Calculate reward based on normalized distance
+            # Use a sigmoid function to create stronger gradient at mid-distances
+            distance_reward = 0.4 * (1 / (1 + math.exp(-10 * (normalized_distance - 0.3))))
+        else:
+            # Maximum reward if no infected are present
+            distance_reward = 0.4
         
-        # Calculate infection probability for adherence optimization
-        infection_probability = self._calculate_infection_probability(agent_human, is_agent=True)
-        
-        # Increased adherence reward based on risk level
-        ideal_adherence = min(infection_probability * 2, 1.0)  # Higher risk → higher ideal adherence
-        adherence_diff = abs(self.agent_adherence - ideal_adherence)
-        adherence_reward = 0.2 * (1.0 - adherence_diff)  # Increased to max 0.2
-        
-        # Combine rewards with appropriate weighting
-        # λ1 and λ2 are weights for min distance and summed influence
-        lambda_min = 0.6  # Weight for minimum distance (closest threat)
-        lambda_sum = 0.3  # Weight for summed influence (all threats)
-        
-        distance_component = (lambda_min * min_distance_reward + 
-                              lambda_sum * summed_influence_reward)
-        
-        # Ensure distance component is bounded
-        distance_component = np.clip(distance_component, 0.0, 1.0)
-        
-        # Final reward formula
-        final_reward = (
-            distance_component +       # [0.0 to 0.9] - Distance-based component
-            health_reward +            # [-0.2 to 0.1] - Reduced health component
-            adherence_reward           # [0 to 0.2] - Enhanced adherence component
-        )
+        # Combine rewards
+        final_reward = survival_bonus + distance_reward
         
         return final_reward
 
@@ -725,9 +702,22 @@ class SIRSEnvironment(gym.Env):
         return reward_functions[self.reward_type]()
 
     def step(self, action: np.ndarray) -> Tuple[dict, float, bool, bool, dict]:
-        """Take a step in the environment"""
-        self.counter += 1
+        """
+        Step the environment by one timestep
+        Args:
+            action: np.ndarray with format [delta_x, delta_y, adherence]
+        Returns:
+            observation: dict of gym.spaces.Space objects
+            reward: float
+            terminated: bool
+            truncated: bool
+            info: dict
+        """
+        # Store the action for rendering
         self.last_action = action.copy()
+        
+        # Increment counter
+        self.counter += 1
         
         # Store current state before update for terminal reward calculation
         previous_state = self.agent_state
@@ -878,23 +868,6 @@ class SIRSEnvironment(gym.Env):
                        linewidth=2,
                        label='Agent',
                        zorder=5)  # Ensure agent is on top
-
-        # Draw visibility radius if it's not -1 (full visibility)
-        if self.visibility_radius != -1:
-            # Draw circles for all periodic images that might be visible
-            # We need to consider the 9 possible positions (including wraparound)
-            for dx in [-self.grid_size, 0, self.grid_size]:
-                for dy in [-self.grid_size, 0, self.grid_size]:
-                    circle = plt.Circle(
-                        (self.agent_position[0] + dx, self.agent_position[1] + dy),
-                        self.visibility_radius,
-                        color=self.COLORS['agent'],
-                        fill=False,
-                        linestyle='--',
-                        alpha=0.3,
-                        zorder=4
-                    )
-                    ax_grid.add_patch(circle)
 
         # Draw movement vector with improved styling
         if self.last_action is not None:
