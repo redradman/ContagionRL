@@ -359,6 +359,70 @@ def plot_survival_boxplot(
     plt.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
     plt.close()
 
+def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+    """
+    Calculate summary statistics from benchmark results.
+    
+    Args:
+        results: Results dictionary from run_benchmark
+        
+    Returns:
+        Dictionary with summary statistics
+    """
+    summary = {}
+    
+    # Calculate stats for trained model
+    # Flatten all rewards across all episodes for overall statistics
+    all_trained_rewards = [reward for rewards_list in results["trained"]["rewards_over_time"] for reward in rewards_list]
+    
+    # Get cumulative rewards for statistical analysis
+    # Note: rewards_over_time already contains cumulative rewards
+    trained_cumulative_rewards = align_and_pad_rewards(results["trained"]["rewards_over_time"])
+    trained_mean_cumulative = np.mean(trained_cumulative_rewards, axis=0)
+    trained_std_cumulative = np.std(trained_cumulative_rewards, axis=0, ddof=1)
+    
+    # Calculate average of mean cumulative and average of std cumulative
+    avg_mean_cumulative = float(np.mean(trained_mean_cumulative))
+    avg_std_cumulative = float(np.mean(trained_std_cumulative))
+    
+    summary["trained"] = {
+        "mean_episode_length": float(np.mean(results["trained"]["episode_lengths"])),
+        "std_episode_length": float(np.std(results["trained"]["episode_lengths"], ddof=1)),
+        "mean_reward": float(np.mean(all_trained_rewards)),
+        "std_reward": float(np.std(all_trained_rewards, ddof=1)),
+        "mean_cumulative_reward": avg_mean_cumulative,
+        "std_cumulative_reward": avg_std_cumulative,
+        "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["trained"]["rewards_over_time"]])),
+        "std_final_reward": float(np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"]], ddof=1))
+    }
+    
+    # Calculate stats for random agent if available
+    if "random" in results:
+        # Flatten all rewards across all episodes for overall statistics
+        all_random_rewards = [reward for rewards_list in results["random"]["rewards_over_time"] for reward in rewards_list]
+        
+        # Get cumulative rewards for statistical analysis
+        random_cumulative_rewards = align_and_pad_rewards(results["random"]["rewards_over_time"])
+        random_mean_cumulative = np.mean(random_cumulative_rewards, axis=0)
+        random_std_cumulative = np.std(random_cumulative_rewards, axis=0, ddof=1)
+        
+        # Calculate average of mean cumulative and average of std cumulative
+        avg_mean_cumulative = float(np.mean(random_mean_cumulative))
+        avg_std_cumulative = float(np.mean(random_std_cumulative))
+        
+        summary["random"] = {
+            "mean_episode_length": float(np.mean(results["random"]["episode_lengths"])),
+            "std_episode_length": float(np.std(results["random"]["episode_lengths"], ddof=1)),
+            "mean_reward": float(np.mean(all_random_rewards)),
+            "std_reward": float(np.std(all_random_rewards, ddof=1)),
+            "mean_cumulative_reward": avg_mean_cumulative,
+            "std_cumulative_reward": avg_std_cumulative,
+            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"]])),
+            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"]], ddof=1))
+        }
+    
+    return summary 
+
 def save_benchmark_results(
     results: Dict[str, Any],
     filename: str = "benchmark_results.json",
@@ -375,21 +439,55 @@ def save_benchmark_results(
     # Create a copy of results that's JSON serializable
     serializable_results = {}
     
+    # Flatten all rewards across all episodes for trained model
+    all_trained_rewards = [reward for rewards_list in results["trained"]["rewards_over_time"] for reward in rewards_list]
+    
+    # Get cumulative rewards for statistical analysis
+    trained_cumulative_rewards = align_and_pad_rewards(results["trained"]["rewards_over_time"])
+    trained_mean_cumulative = np.mean(trained_cumulative_rewards, axis=0)
+    trained_std_cumulative = np.std(trained_cumulative_rewards, axis=0, ddof=1)
+    
+    # Calculate average of mean cumulative and average of std cumulative
+    avg_mean_cumulative = float(np.mean(trained_mean_cumulative))
+    avg_std_cumulative = float(np.mean(trained_std_cumulative))
+    
     # Handle trained model results
     serializable_results["trained"] = {
         "mean_episode_length": np.mean(results["trained"]["episode_lengths"]).item(),
-        "std_episode_length": np.std(results["trained"]["episode_lengths"]).item(),
+        "std_episode_length": np.std(results["trained"]["episode_lengths"], ddof=1).item(),
+        "mean_reward": np.mean(all_trained_rewards).item(),
+        "std_reward": np.std(all_trained_rewards, ddof=1).item(),
+        "mean_cumulative_reward": avg_mean_cumulative,
+        "std_cumulative_reward": avg_std_cumulative,
+        # Keep the final reward stats for backward compatibility
         "mean_final_reward": np.mean([rewards[-1] for rewards in results["trained"]["rewards_over_time"]]).item(),
-        "std_final_reward": np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"]]).item()
+        "std_final_reward": np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"]], ddof=1).item()
     }
     
     # Handle random model results if available
     if "random" in results:
+        # Flatten all rewards across all episodes for random model
+        all_random_rewards = [reward for rewards_list in results["random"]["rewards_over_time"] for reward in rewards_list]
+        
+        # Get cumulative rewards for statistical analysis
+        random_cumulative_rewards = align_and_pad_rewards(results["random"]["rewards_over_time"])
+        random_mean_cumulative = np.mean(random_cumulative_rewards, axis=0)
+        random_std_cumulative = np.std(random_cumulative_rewards, axis=0, ddof=1)
+        
+        # Calculate average of mean cumulative and average of std cumulative
+        avg_mean_cumulative = float(np.mean(random_mean_cumulative))
+        avg_std_cumulative = float(np.mean(random_std_cumulative))
+        
         serializable_results["random"] = {
             "mean_episode_length": np.mean(results["random"]["episode_lengths"]).item(),
-            "std_episode_length": np.std(results["random"]["episode_lengths"]).item(),
+            "std_episode_length": np.std(results["random"]["episode_lengths"], ddof=1).item(),
+            "mean_reward": np.mean(all_random_rewards).item(),
+            "std_reward": np.std(all_random_rewards, ddof=1).item(),
+            "mean_cumulative_reward": avg_mean_cumulative,
+            "std_cumulative_reward": avg_std_cumulative,
+            # Keep the final reward stats for backward compatibility
             "mean_final_reward": np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"]]).item(),
-            "std_final_reward": np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"]]).item()
+            "std_final_reward": np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"]], ddof=1).item()
         }
     
     # Add config info
@@ -406,35 +504,4 @@ def save_benchmark_results(
     
     # Save to JSON file
     with open(os.path.join(save_dir, filename), 'w') as f:
-        json.dump(serializable_results, f, indent=4)
-
-def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
-    """
-    Calculate summary statistics from benchmark results.
-    
-    Args:
-        results: Results dictionary from run_benchmark
-        
-    Returns:
-        Dictionary with summary statistics
-    """
-    summary = {}
-    
-    # Calculate stats for trained model
-    summary["trained"] = {
-        "mean_episode_length": float(np.mean(results["trained"]["episode_lengths"])),
-        "std_episode_length": float(np.std(results["trained"]["episode_lengths"])),
-        "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["trained"]["rewards_over_time"]])),
-        "std_final_reward": float(np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"]]))
-    }
-    
-    # Calculate stats for random agent if available
-    if "random" in results:
-        summary["random"] = {
-            "mean_episode_length": float(np.mean(results["random"]["episode_lengths"])),
-            "std_episode_length": float(np.std(results["random"]["episode_lengths"])),
-            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"]])),
-            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"]]))
-        }
-    
-    return summary 
+        json.dump(serializable_results, f, indent=4) 

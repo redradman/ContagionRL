@@ -36,6 +36,27 @@ The script produces:
 2. A JSON file with detailed benchmark data
 3. Console output with summary statistics
 
+## Statistics
+
+The benchmark tools provide comprehensive statistics including:
+
+- **Mean Episode Length**: Average number of steps per episode
+- **Standard Deviation of Episode Length**: Variation in episode lengths
+- **Mean Reward (all steps)**: Average of individual reward values across all steps in all episodes
+- **Standard Deviation of Reward**: Variation in individual reward values
+- **Mean Cumulative Reward**: Average of cumulative reward values across the trajectory of episodes
+- **Standard Deviation of Cumulative Reward**: Variation in cumulative reward values
+- **Mean Final Reward**: Average of the final cumulative reward for each episode
+- **Standard Deviation of Final Reward**: Variation in final rewards
+
+All standard deviation calculations use the statistical formula (using n-1 denominator for sample standard deviation) rather than the population formula.
+
+### Understanding the Different Reward Statistics
+
+- **Mean Reward (all steps)**: This calculates the average of all individual step rewards. It tells you the typical reward received at any given step.
+- **Mean Cumulative Reward**: This calculates the average of all cumulative reward values over time. It represents the average trajectory of reward accumulation.
+- **Mean Final Reward**: This is the average of only the final cumulative reward from each episode, representing the typical total reward an agent receives by the end of an episode.
+
 ## Progress Tracking
 
 The benchmark script includes progress bars using `tqdm` to provide real-time feedback on the benchmarking process. This makes it easy to monitor:
@@ -71,9 +92,13 @@ After running a benchmark, you'll see output like:
 Benchmark Summary:
   Trained Model:
     Mean Episode Length: 98.50 steps (±3.21)
+    Mean Reward (all steps): 0.2374 (±0.1257)
+    Mean Cumulative Reward: 23.45 (±10.78)
     Mean Final Reward: 42.78 (±5.64)
   Random Actions:
     Mean Episode Length: 45.30 steps (±12.86)
+    Mean Reward (all steps): 0.0843 (±0.1634)
+    Mean Cumulative Reward: 8.76 (±5.23)
     Mean Final Reward: 15.24 (±8.72)
 
 Results saved to results/graphs/

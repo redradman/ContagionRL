@@ -110,11 +110,15 @@ def main():
     print("\nQuick Test Summary:")
     print("  Untrained Model (randomly initialized):")
     print(f"    Mean Episode Length: {stats['trained']['mean_episode_length']:.2f} steps (±{stats['trained']['std_episode_length']:.2f})")
+    print(f"    Mean Reward (all steps): {stats['trained']['mean_reward']:.4f} (±{stats['trained']['std_reward']:.4f})")
+    print(f"    Mean Cumulative Reward: {stats['trained']['mean_cumulative_reward']:.2f} (±{stats['trained']['std_cumulative_reward']:.2f})")
     print(f"    Mean Final Reward: {stats['trained']['mean_final_reward']:.2f} (±{stats['trained']['std_final_reward']:.2f})")
     
     if "random" in stats:
         print("  Random Actions:")
         print(f"    Mean Episode Length: {stats['random']['mean_episode_length']:.2f} steps (±{stats['random']['std_episode_length']:.2f})")
+        print(f"    Mean Reward (all steps): {stats['random']['mean_reward']:.4f} (±{stats['random']['std_reward']:.4f})")
+        print(f"    Mean Cumulative Reward: {stats['random']['mean_cumulative_reward']:.2f} (±{stats['random']['std_cumulative_reward']:.2f})")
         print(f"    Mean Final Reward: {stats['random']['mean_final_reward']:.2f} (±{stats['random']['std_final_reward']:.2f})")
     
     print(f"\nTest reward plot saved to {graphs_dir}/{reward_filename}")
