@@ -50,8 +50,14 @@ def run_episode(env: SIRSEnvironment, model=None, seed: Optional[int] = None) ->
             # Use the trained model
             action, _ = model.predict(obs, deterministic=True)
         else:
-            # Use random actions
-            action = env.action_space.sample()
+            # Use random actions - sample using environment's RNG for consistency
+            # This ensures that the random actions are generated with the same RNG state
+            # that is used for environment dynamics
+            action = np.array([
+                env.np_random.uniform(-1, 1),  # delta_x
+                env.np_random.uniform(-1, 1),  # delta_y
+                env.np_random.uniform(0, 1)    # adherence
+            ], dtype=np.float32)
         
         # Take a step in the environment
         obs, reward, terminated, truncated, info = env.step(action)

@@ -63,8 +63,14 @@ def record_episode(model, env, video_path: str, deterministic: bool = True, use_
     
     while not done:
         if use_random:
-            # Sample random actions from the action space
-            action = env.action_space.sample()
+            # Use random actions - sample using environment's RNG for consistency
+            # This ensures that the random actions are generated with the same RNG state
+            # that is used for environment dynamics
+            action = np.array([
+                env.np_random.uniform(-1, 1),  # delta_x
+                env.np_random.uniform(-1, 1),  # delta_y
+                env.np_random.uniform(0, 1)    # adherence
+            ], dtype=np.float32)
         else:
             # Get action from the model
             action, _ = model.predict(obs, deterministic=deterministic)
