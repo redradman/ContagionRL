@@ -233,7 +233,8 @@ def main(args):
     # Create evaluation environment if needed
     eval_freq = save_config.get("eval_freq", 0)  # Get eval_freq from config, default to 0
     if eval_freq > 0:
-        eval_env = make_eval_env(env_config, seed=base_seed + 100)  # Different seed for eval
+        # eval_env = make_eval_env(env_config, seed=base_seed + 100)  # Different seed for eval
+        eval_env = make_eval_env(env_config, seed=base_seed)  # same seed
         eval_env = DummyVecEnv([lambda: eval_env])
         eval_env = VecMonitor(eval_env, os.path.join(log_path, "eval"))
 
