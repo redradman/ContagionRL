@@ -114,7 +114,7 @@ def run_benchmark(
         print("Running episodes with random actions...")
         for i in tqdm(range(n_runs), desc="Random Action Episodes", unit="episode"):
             # Use different seeds for each run
-            seed = random_seed + n_runs + i if random_seed is not None else None
+            seed = random_seed + i if random_seed is not None else None
             rewards, episode_length = run_episode(env, None, seed=seed)
             random_rewards_over_time.append(rewards)
             random_episode_lengths.append(episode_length)
