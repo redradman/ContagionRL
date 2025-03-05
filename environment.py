@@ -497,143 +497,6 @@ class SIRSEnvironment(gym.Env):
         }
 
         return obs
-        
-
-    def _calculate_stateBased_reward(self):
-        """Basic health-focused reward"""
-        if self.agent_state == STATE_DICT['S']:
-            state_reward = 1
-        else:  # Infected or Dead or Recovered
-            state_reward = 0
-
-        reward = state_reward - self.agent_adherence**2 / self.adherence_penalty_factor
-        reward = max(0, reward)
-        return reward
-
-    def _calculate_avoidInfection_reward(self):
-        """Basic altruistic reward focusing on population health"""
-        # make human object for the agent to use existing infection probability calculation
-        agent_human = Human(
-                x=self.agent_position[0],
-                y=self.agent_position[1],
-                state=self.agent_state,
-                id=-1,
-                time_in_state=self.agent_time_in_state  # Pass the agent's time in state
-        )
-        
-        probability_infection = self._calculate_infection_probability(agent_human, is_agent=True)
-        avoid_infection_reward = 1 - np.exp(-probability_infection*5) # constant multiplier for the reward here (flag)
-
-        reward = avoid_infection_reward - self.agent_adherence / self.adherence_penalty_factor
-        reward = max(0, reward)
-        return reward
-
-    def _calculate_reward_for_state(self):
-        """
-        Additive reward function combining:
-        1. State reward: Base reward for being susceptible
-        2. Distance reward: Reward for maintaining distance from infected
-        3. NPI penalty: Small penalty for high adherence
-        Final reward = w1*state_reward + w2*distance_reward - w3*adherence_penalty
-        """
-        # 1. State reward component (40% of total possible reward)
-        if self.agent_state == STATE_DICT['S']:
-            state_reward = 1
-        else:  # Dead
-            state_reward = 0
-
-        # 2. Distance reward component (40% of total possible reward)
-        agent_human = Human(
-            x=self.agent_position[0],
-            y=self.agent_position[1],
-            state=self.agent_state,
-            id=-1,
-            time_in_state=self.agent_time_in_state
-        )
-        
-        # Get list of infected humans
-        infected_list = self._get_infected_list(agent_human)
-        
-        # Calculate distance reward
-        distance_reward = 1
-        if infected_list:
-            # Find distance to closest infected
-            distances = [self._calculate_distance(agent_human, infected) for infected in infected_list]
-            min_distance = min(distances)
-            
-            distance_reward = 1 - math.exp(-self.distance_decay * min_distance)
-        
-        # 3. Calculate adherence penalty (20% of total possible reward)
-        # Quadratic penalty that grows faster at higher adherence levels
-        adherence_penalty = (self.agent_adherence ** 2) / self.adherence_penalty_factor
-        
-        # Combine rewards additively with weights
-        final_reward = 0.4 * state_reward + 0.4 * distance_reward - 0.2 * adherence_penalty
-        # final_reward = state_reward * distance_reward * (1 - adherence_penalty)
-        
-        return final_reward
-
-    def _calculate_infection_avoidance_reward(self):
-        """
-        Reward function focused on infection avoidance with balanced components.
-        Provides continuous gradient for learning how to avoid infected individuals.
-        """
-        # Create temporary agent human for distance calculations
-        agent_human = Human(
-            x=self.agent_position[0],
-            y=self.agent_position[1],
-            state=self.agent_state,
-            id=-1
-        )
-        
-        # Get visible infected individuals
-        infected_list = [h for h in self.humans if h.state == STATE_DICT['I'] and 
-                      self._calculate_distance(agent_human, h) <= self.visibility_radius]
-        
-        # Calculate current infection probability (used for risk assessment)
-        infection_probability = self._calculate_infection_probability(agent_human, is_agent=True)
-        
-        # 1. Health state component [-0.6 to 0.6] - core incentive for staying healthy
-        if self.agent_state == STATE_DICT['S']:
-            health_reward = 0.6  # Significant reward for staying susceptible
-        elif self.agent_state == STATE_DICT['I']:
-            health_reward = -0.6  # Significant penalty for becoming infected
-        elif self.agent_state == STATE_DICT['R']:
-            health_reward = 0
-        else:  # Dead
-            health_reward = -0.6  # Same penalty as infected (we already penalize via episode termination)
-        
-        # 2. Distance component [0 to 0.3] - incentivize maintaining distance
-        if infected_list and self.agent_state != STATE_DICT['D']:  # Not relevant if dead
-            # Calculate distances to infected humans
-            distances = [self._calculate_distance(agent_human, infected) for infected in infected_list]
-            min_distance = min(distances)
-            
-            # Normalize minimum distance to [0, 1] range using sigmoid-like function
-            # This creates a smooth reward curve that increases with distance
-            normalized_distance = 1 - np.exp(-self.distance_decay * min_distance)
-            distance_reward = 0.3 * normalized_distance
-        else:
-            # Maximum reward if no infected are visible
-            distance_reward = 0.3
-            
-        # 3. Risk assessment component [0 to 0.3] - reward for avoiding risky areas
-        risk_reward = 0.3 * (1 - infection_probability)
-        
-        # 4. Adherence cost component [-0.2 to 0] - small cost proportional to adherence
-        # Using a scaled cost that's gentler at lower adherence levels
-        adherence_cost = -0.2 * (self.agent_adherence / self.adherence_penalty_factor)
-        
-        # Combine all components - total range is guaranteed to be [-0.8, 1.2]
-        # Further normalize to ensure reward stays in a consistent range
-        combined_reward = health_reward + distance_reward + risk_reward + adherence_cost
-        
-        # Final scaling to ensure the typical range is closer to [-1, 1]
-        # Note: The absolute maximum is still slightly outside this range,
-        # but typical values will be well-behaved
-        final_reward = combined_reward / 1.2
-        
-        return final_reward
 
     def _calculate_strategic_avoidance_reward(self):
         """
@@ -754,14 +617,107 @@ class SIRSEnvironment(gym.Env):
         # But typical values will stay in [-0.1, 1.0] range
         return combined_reward
 
+    def _calculate_distance_maximization_reward(self):
+        """
+        Reward function focused on maximizing distance from infected individuals.
+        
+        Key components:
+        1. Potential field approach - uses exponential potential function to create gradient rewards
+        2. Dual distance considerations:
+           - Immediate threat (closest infected individual)
+           - Overall threat (summed influence from all infected individuals)
+        3. Enhanced adherence optimization - rewards strategic adherence management
+        4. Minimal health state component
+        
+        Mathematical formulation:
+        - Potential function: f(d) = 1 - e^(-α*d) where α is the distance_decay parameter
+        - Reward combines minimum distance potential and summed influence
+        """
+        # Create temporary agent human for distance calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        
+        # Get visible infected individuals
+        infected_list = [h for h in self.humans if h.state == STATE_DICT['I'] and 
+                     self._calculate_distance(agent_human, h) <= self.visibility_radius]
+        
+        # Initialize rewards
+        min_distance_reward = 0
+        summed_influence_reward = 0
+        
+        # Calculate distance-based rewards if infected individuals are visible
+        if infected_list:
+            # Calculate distances to all visible infected humans
+            distances = [self._calculate_distance(agent_human, h) for h in infected_list]
+            
+            # Get minimum distance (closest infected)
+            min_distance = min(distances)
+            
+            # Potential function parameter (α in the formula)
+            alpha = self.distance_decay
+            
+            # 1. Minimum distance potential (focus on closest threat)
+            # f(d) = 1 - e^(-α*d)
+            min_distance_reward = 1 - np.exp(-alpha * min_distance)
+            
+            # 2. Summed influence (consider all threats)
+            # Sum of f(d) = Σ (1 - e^(-α*d))
+            summed_influence = sum(1 - np.exp(-alpha * d) for d in distances)
+            # Normalize by the number of infected
+            summed_influence_reward = summed_influence / len(infected_list)
+            
+        else:
+            # Maximum rewards if no infected are visible (equivalent to infinite distance)
+            min_distance_reward = 1.0
+            summed_influence_reward = 1.0
+        
+        # Small health state reward component
+        if self.agent_state == STATE_DICT['S']:
+            health_reward = 0.1  # Reduced reward for staying susceptible
+        elif self.agent_state == STATE_DICT['I']:
+            health_reward = -0.2  # Penalty for becoming infected
+        elif self.agent_state == STATE_DICT['R']:
+            health_reward = 0.05  # Minimal reward for recovered
+        else:  # Dead
+            health_reward = -0.2  # Penalty for death
+        
+        # Calculate infection probability for adherence optimization
+        infection_probability = self._calculate_infection_probability(agent_human, is_agent=True)
+        
+        # Increased adherence reward based on risk level
+        ideal_adherence = min(infection_probability * 2, 1.0)  # Higher risk → higher ideal adherence
+        adherence_diff = abs(self.agent_adherence - ideal_adherence)
+        adherence_reward = 0.2 * (1.0 - adherence_diff)  # Increased to max 0.2
+        
+        # Combine rewards with appropriate weighting
+        # λ1 and λ2 are weights for min distance and summed influence
+        lambda_min = 0.6  # Weight for minimum distance (closest threat)
+        lambda_sum = 0.3  # Weight for summed influence (all threats)
+        
+        distance_component = (lambda_min * min_distance_reward + 
+                              lambda_sum * summed_influence_reward)
+        
+        # Ensure distance component is bounded
+        distance_component = np.clip(distance_component, 0.0, 1.0)
+        
+        # Final reward formula
+        final_reward = (
+            distance_component +       # [0.0 to 0.9] - Distance-based component
+            health_reward +            # [-0.2 to 0.1] - Reduced health component
+            adherence_reward           # [0 to 0.2] - Enhanced adherence component
+        )
+        
+        return final_reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
-            "stateBased": self._calculate_stateBased_reward,
-            "avoidInfection": self._calculate_avoidInfection_reward,
-            "rewardForState": self._calculate_reward_for_state,
-            "infectionAvoidance": self._calculate_infection_avoidance_reward,
-            "strategicAvoidance": self._calculate_strategic_avoidance_reward
+            "strategicAvoidance": self._calculate_strategic_avoidance_reward,
+            "distanceMaximization": self._calculate_distance_maximization_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
