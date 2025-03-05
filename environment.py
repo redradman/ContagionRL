@@ -575,26 +575,22 @@ class SIRSEnvironment(gym.Env):
 
     def _calculate_infection_avoidance_reward(self):
         """
-        Normalized reward function focused on avoiding infection with a strong penalty for becoming infected.
-        All reward components are carefully scaled to a [-1, 1] range to maintain stable learning.
-        
-        Components:
-        1. Health state reward/penalty: Reward for being susceptible, penalty for being infected
-        2. Distance reward: Reward for maintaining distance from infected humans
-        3. Risk assessment: Reward for avoiding high infection probability areas
-        4. Adherence cost: Small cost for maintaining adherence
+        Reward function focused on infection avoidance with balanced components.
+        Provides continuous gradient for learning how to avoid infected individuals.
         """
-        # Create human object for the agent for calculations
+        # Create temporary agent human for distance calculations
         agent_human = Human(
             x=self.agent_position[0],
             y=self.agent_position[1],
             state=self.agent_state,
-            id=-1,
-            time_in_state=self.agent_time_in_state
+            id=-1
         )
         
-        # Calculate base factors needed for multiple components
-        infected_list = self._get_infected_list(agent_human)
+        # Get visible infected individuals
+        infected_list = [h for h in self.humans if h.state == STATE_DICT['I'] and 
+                      self._calculate_distance(agent_human, h) <= self.visibility_radius]
+        
+        # Calculate current infection probability (used for risk assessment)
         infection_probability = self._calculate_infection_probability(agent_human, is_agent=True)
         
         # 1. Health state component [-0.6 to 0.6] - core incentive for staying healthy
@@ -639,13 +635,133 @@ class SIRSEnvironment(gym.Env):
         
         return final_reward
 
+    def _calculate_strategic_avoidance_reward(self):
+        """
+        Advanced reward function designed to teach strategic avoidance of infected individuals
+        with optimal adherence management. Provides rich gradient information for the agent
+        to learn effective navigation in the presence of infection risks.
+        
+        Key components:
+        1. Survival incentive - base reward for staying alive and susceptible
+        2. Distance management - sophisticated scaling of distance to infected individuals
+        3. Adherence optimization - rewards for appropriate adherence based on infection proximity
+        4. Risk gradient - continuous evaluation of infection risk
+        5. Strategic planning - rewards for positioning that allows escape routes
+        """
+        # Create temporary agent human for distance calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        
+        # Get visible infected and susceptible individuals
+        infected_list = [h for h in self.humans if h.state == STATE_DICT['I'] and 
+                     self._calculate_distance(agent_human, h) <= self.visibility_radius]
+        
+        # Calculate distances to infected humans if any are visible
+        if infected_list:
+            distances_to_infected = [self._calculate_distance(agent_human, h) for h in infected_list]
+            min_distance = min(distances_to_infected)
+            avg_distance = sum(distances_to_infected) / len(distances_to_infected)
+            # Count nearby infected (within 2x safe distance)
+            nearby_infected_count = sum(1 for d in distances_to_infected if d < self.safe_distance * 2)
+        else:
+            min_distance = self.visibility_radius  # Maximum possible if no infected visible
+            avg_distance = self.visibility_radius
+            nearby_infected_count = 0
+        
+        # Calculate current infection probability
+        infection_probability = self._calculate_infection_probability(agent_human, is_agent=True)
+        
+        # 1. Base survival reward [0.2] - small constant reward for staying alive and susceptible
+        if self.agent_state == STATE_DICT['S']:
+            survival_reward = 0.2
+        else:  # Infected, Recovered, or Dead
+            survival_reward = 0
+            
+        # 2. Distance management reward [0 to 0.4] - sophisticated scaling based on safe distance
+        if infected_list:
+            # Calculate a smooth distance reward that increases as distance increases
+            # Uses a logistic function to create a steeper gradient near the safe distance
+            safe_dist = self.safe_distance
+            # Normalized distance from 0 to 1, where 1 is at visibility radius
+            norm_dist = min(min_distance / self.visibility_radius, 1.0)
+            
+            # Logistic function centered at safe distance (steeper penalty below safe distance)
+            k = 10  # Steepness of the curve
+            midpoint = safe_dist / self.visibility_radius  # Centered at safe distance
+            distance_reward = 0.4 / (1 + np.exp(-k * (norm_dist - midpoint)))
+            
+            # Additional penalty for having multiple infected nearby (crowding factor)
+            if nearby_infected_count > 1:
+                crowd_penalty = 0.1 * min(nearby_infected_count - 1, 3)  # Cap at 0.3 penalty
+                distance_reward = max(distance_reward - crowd_penalty, 0)
+        else:
+            # Maximum reward if no infected are visible
+            distance_reward = 0.4
+            
+        # 3. Adherence optimization [0 to 0.3] - rewards strategic use of adherence
+        ideal_adherence = 0.0  # Default when no infection nearby
+        
+        if infected_list:
+            # Calculate ideal adherence based on proximity to infection
+            # Closer to infected → higher ideal adherence
+            proximity_factor = 1.0 - min(min_distance / (self.safe_distance * 3), 1.0)
+            ideal_adherence = proximity_factor
+            
+            # Scale adherence reward - max reward when adherence matches ideal
+            adherence_diff = abs(self.agent_adherence - ideal_adherence)
+            adherence_reward = 0.3 * (1.0 - adherence_diff)
+        else:
+            # When no infected visible, reward lower adherence (less cost)
+            adherence_reward = 0.3 * (1.0 - self.agent_adherence)
+            
+        # 4. Risk avoidance component [0 to 0.3] - continuous gradient based on infection risk
+        # Transform infection probability with decreasing marginal penalties
+        # (small risks aren't severely punished, but high risks are)
+        risk_reward = 0.3 * (1.0 - np.power(infection_probability, 0.7))
+        
+        # 5. Exploration incentive [-0.1 to 0] - small cost to encourage movement
+        # Only apply when there are no infected nearby to avoid conflicting incentives
+        if not infected_list:
+            # Check if the agent has moved significantly (at least 10% of grid_size)
+            if hasattr(self, 'previous_position'):
+                distance_moved = np.sqrt(np.sum(np.square(
+                    np.array(self.agent_position) - np.array(self.previous_position)
+                )))
+                movement_factor = min(distance_moved / (0.1 * self.grid_size), 1.0)
+                exploration_cost = -0.1 * (1.0 - movement_factor)
+            else:
+                exploration_cost = -0.05  # Moderate cost when we don't have a previous position
+        else:
+            exploration_cost = 0  # No exploration cost when there are infected nearby
+            
+        # Store current position for next step's movement calculation
+        self.previous_position = self.agent_position.copy()
+        
+        # Combine all components
+        combined_reward = (
+            survival_reward +     # [0 to 0.2] - Base survival
+            distance_reward +     # [0 to 0.4] - Distance management
+            adherence_reward +    # [0 to 0.3] - Adherence optimization
+            risk_reward +         # [0 to 0.3] - Risk avoidance
+            exploration_cost      # [-0.1 to 0] - Exploration incentive
+        )
+        
+        # Final reward has a theoretical range of [-0.1, 1.2]
+        # But typical values will stay in [-0.1, 1.0] range
+        return combined_reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
             "stateBased": self._calculate_stateBased_reward,
             "avoidInfection": self._calculate_avoidInfection_reward,
             "rewardForState": self._calculate_reward_for_state,
-            "infectionAvoidance": self._calculate_infection_avoidance_reward
+            "infectionAvoidance": self._calculate_infection_avoidance_reward,
+            "strategicAvoidance": self._calculate_strategic_avoidance_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
@@ -657,6 +773,9 @@ class SIRSEnvironment(gym.Env):
         self.counter += 1
         self.last_action = action.copy()
         
+        # Store current state before update for terminal reward calculation
+        previous_state = self.agent_state
+        
         self._update_agent(action) 
         self._handle_human_stepping()
 
@@ -664,6 +783,17 @@ class SIRSEnvironment(gym.Env):
         reward = self._calculate_reward()
         self.cumulative_reward += reward  # Update cumulative reward
      
+        # Check if agent became infected in this step
+        became_infected = previous_state != STATE_DICT['I'] and self.agent_state == STATE_DICT['I']
+        
+        # Apply strong negative terminal reward if agent became infected
+        if became_infected:
+            infection_penalty = -5.0  # Strong negative reward for becoming infected
+            reward += infection_penalty
+            self.cumulative_reward += infection_penalty
+            # Add to info dict for monitoring
+            self.infection_penalty_applied = True
+        
         terminated = False
         if self.counter >= self.simulation_time:
             terminated = True
@@ -687,7 +817,8 @@ class SIRSEnvironment(gym.Env):
         # 2. There are no infected individuals AND either:
         #    a) reinfection is disabled (reinfection_count == 0) or
         #    b) there aren't enough susceptible humans beyond safe distance for reinfection
-        if (self.agent_state == STATE_DICT['D'] or 
+        if (self.agent_state == STATE_DICT['D'] or
+            self.agent_state == STATE_DICT['I'] or
             (self.infected_count == 0 and  # No infected individuals
              (self.reinfection_count == 0 or distant_susceptible_count < self.reinfection_count))):  # Can't reinfect
             truncated = True
@@ -705,8 +836,17 @@ class SIRSEnvironment(gym.Env):
             "cumulative_reward": self.cumulative_reward,
             "truncation_reason": "timeout" if terminated else (
                 "agent_death" if self.agent_state == STATE_DICT['D'] else
+                "agent_infected" if self.agent_state == STATE_DICT['I'] else
                 "no_infection_possible" if truncated else None
-            )
+            ),
+            "agent_state": [k for k, v in STATE_DICT.items() if v == self.agent_state][0],
+            "episode_length": self.counter,
+            "healthy_count": sum(1 for h in self.humans if h.state == STATE_DICT['S']),
+            "infected_count": sum(1 for h in self.humans if h.state == STATE_DICT['I']),
+            "recovered_count": sum(1 for h in self.humans if h.state == STATE_DICT['R']),
+            "dead_count": sum(1 for h in self.humans if h.state == STATE_DICT['D']),
+            "adherence": float(self.agent_adherence),
+            "terminal_infection_penalty": became_infected,  # Flag if terminal penalty was applied
         }
         return observation, reward, terminated, truncated, info
 
