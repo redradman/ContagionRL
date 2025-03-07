@@ -531,7 +531,7 @@ class SIRSEnvironment(gym.Env):
 
         # Compose final observation dict
         obs = {
-            "agent_position": agent_position,
+            # "agent_position": agent_position,
             "agent_adherence": agent_adherence,
             "is_agent_infected": is_agent_infected,
             "humans_features": humans_features
