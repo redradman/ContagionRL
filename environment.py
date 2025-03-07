@@ -690,11 +690,76 @@ class SIRSEnvironment(gym.Env):
         
         return final_reward
 
+    def _calculate_weighted_avoidance_reward(self):
+        """
+        Custom reward function that rewards:
+        1. Maximizing distance to nearest infected person (40% weight)
+        2. Reducing infection probability (40% weight)
+        3. Staying alive bonus (10% for susceptible, 0 otherwise)
+        
+        Total reward is normalized to range approximately [0, 1]
+        """
+        # Create temporary agent human for calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+
+        if self.agent_state != STATE_DICT['S']:
+            return 0
+        
+        if self.agent_state == STATE_DICT['I']:
+            return - self.simulation_time / 4 # because we want it to last at least this long
+        
+        # Get infected individuals
+        infected_list = self._get_infected_list(agent_human)
+        
+        # Component 1: Distance to nearest infected (40% weight)
+        if infected_list:
+            # Calculate distances to all infected
+            distances = [self._calculate_distance(agent_human, h) for h in infected_list]
+            min_distance = min(distances)
+            max_possible_distance = math.sqrt(2) * self.grid_size
+            
+            # Normalize distance to [0,1] range
+            normalized_distance = min(min_distance / max_possible_distance, 1.0)
+            
+            # Apply weight of 0.4
+            distance_reward = 0.4 * normalized_distance
+        else:
+            # Maximum reward if no infected are present
+            distance_reward = 0.4
+        
+        # Component 2: Infection probability reduction (40% weight)
+        if self.agent_state == STATE_DICT['S']:
+            # Calculate current infection probability
+            infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
+            
+            # Normalize and invert: lower probability = higher reward
+            infection_prob_reward = 0.4 * (1.0 - infection_prob)
+        else:
+            # If already infected/recovered/dead, no reward for this component
+            infection_prob_reward = 0.0
+        
+        # Component 3: Stay alive bonus (10% weight)
+        if self.agent_state == STATE_DICT['S']:
+            survival_bonus = 0.1  # Fixed bonus for being susceptible
+        else:
+            survival_bonus = 0.0  # No bonus for other states
+        
+        # Combine all reward components
+        final_reward = distance_reward + infection_prob_reward + survival_bonus
+        
+        return final_reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
             "strategicAvoidance": self._calculate_strategic_avoidance_reward,
-            "distanceMaximization": self._calculate_distance_maximization_reward
+            "distanceMaximization": self._calculate_distance_maximization_reward,
+            "weightedAvoidance": self._calculate_weighted_avoidance_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
@@ -734,7 +799,8 @@ class SIRSEnvironment(gym.Env):
         
         # Apply strong negative terminal reward if agent became infected
         if became_infected:
-            infection_penalty = -5.0  # Strong negative reward for becoming infected
+            infection_penalty = - self.simulation_time / 4  # Strong negative reward for becoming infected
+            # used -50 for penalty in the test_weighted_avoidance 20250305 1546
             reward += infection_penalty
             self.cumulative_reward += infection_penalty
             # Add to info dict for monitoring
