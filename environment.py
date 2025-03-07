@@ -133,8 +133,8 @@ class SIRSEnvironment(gym.Env):
         # - agent_adherence (1): [adherence]
         # - is_agent_infected (1): [1 if infected, 0 otherwise]
         # - humans_features (n_humans * features_per_human):
-        #   If visibility_radius == -1: [x, y, distance, is_infected] for each human
-        #   If visibility_radius >= 0: [visibility, x, y, distance, is_infected] for each human
+        #   If visibility_radius == -1: [delta_x, delta_y, distance, is_infected] for each human
+        #   If visibility_radius >= 0: [visibility, delta_x, delta_y, distance, is_infected] for each human
         
         # Calculate features per human based on visibility setting
         self.use_visibility_flag = (visibility_radius >= 0)
@@ -160,7 +160,7 @@ class SIRSEnvironment(gym.Env):
                 dtype=np.float32
             ),
             "humans_features": gym.spaces.Box(
-                low=0,
+                low=-1,  # Changed from 0 to -1 to accommodate negative relative positions
                 high=1,
                 shape=(self.n_humans * features_per_human,),  # Features for each human (with or without visibility flag)
                 dtype=np.float32
@@ -457,8 +457,9 @@ class SIRSEnvironment(gym.Env):
             "agent_adherence": Box(shape=(1,)),          # [adherence in 0..1]
             "is_agent_infected": Box(shape=(1,)),        # [1 if infected, 0 otherwise]
             "humans_features": Box(shape=(n_humans * features_per_human,)),
-                # If visibility_radius == -1: [x, y, distance, is_infected] for each human
-                # If visibility_radius >= 0: [visibility, x, y, distance, is_infected] for each human
+                # If visibility_radius == -1: [delta_x, delta_y, distance, is_infected] for each human
+                # If visibility_radius >= 0: [visibility, delta_x, delta_y, distance, is_infected] for each human
+                # delta_x and delta_y are normalized relative positions from agent to human
         }
         """
         # Normalize agent position to [0,1] range
@@ -488,32 +489,45 @@ class SIRSEnvironment(gym.Env):
         humans_features = np.zeros((self.n_humans * features_per_human,), dtype=np.float32)
 
         # Fill in human observations
-        for i, curent_human in enumerate(self.humans):
+        for i, current_human in enumerate(self.humans):
             # Calculate base index for this human's features
             base_idx = i * features_per_human
             
             # Set infection status (1 for infected, 0 for all other states)
-            is_infected = 1.0 if curent_human.state == STATE_DICT['I'] else 0.0
+            is_infected = 1.0 if current_human.state == STATE_DICT['I'] else 0.0
             
-            # Calculate normalized position and distance
-            x_norm = curent_human.x / self.grid_size
-            y_norm = curent_human.y / self.grid_size
-            dist = self._calculate_distance(agent_human, curent_human)
+            # Calculate relative position (delta_x, delta_y)
+            delta_x = current_human.x - self.agent_position[0]
+            delta_y = current_human.y - self.agent_position[1]
+            
+            # Handle wraparound for periodic boundary conditions
+            if abs(delta_x) > self.grid_size / 2:
+                delta_x = delta_x - np.sign(delta_x) * self.grid_size
+            if abs(delta_y) > self.grid_size / 2:
+                delta_y = delta_y - np.sign(delta_y) * self.grid_size
+                
+            # Normalize delta_x and delta_y to [-0.5, 0.5] range
+            # This represents relative position scaled by grid size
+            delta_x_norm = delta_x / self.grid_size
+            delta_y_norm = delta_y / self.grid_size
+            
+            # Calculate distance
+            dist = self._calculate_distance(agent_human, current_human)
             dist_norm = dist / self.max_distance
             
             if self.use_visibility_flag:
                 # Mode with visibility flag
-                visibility_flag = 1.0 if curent_human.id in visible_ids else 0.0
+                visibility_flag = 1.0 if current_human.id in visible_ids else 0.0
                 
                 if visibility_flag == 0.0:
                     # Invisible human - set position values to 0, but keep infection status
                     humans_features[base_idx:base_idx + 5] = [0.0, 0.0, 0.0, 0.0, is_infected]
                 else:
                     # Visible human - include all information
-                    humans_features[base_idx:base_idx + 5] = [visibility_flag, x_norm, y_norm, dist_norm, is_infected]
+                    humans_features[base_idx:base_idx + 5] = [visibility_flag, delta_x_norm, delta_y_norm, dist_norm, is_infected]
             else:
                 # Simple mode without visibility flag (all humans visible)
-                humans_features[base_idx:base_idx + 4] = [x_norm, y_norm, dist_norm, is_infected]
+                humans_features[base_idx:base_idx + 4] = [delta_x_norm, delta_y_norm, dist_norm, is_infected]
 
         # Compose final observation dict
         obs = {
@@ -522,8 +536,6 @@ class SIRSEnvironment(gym.Env):
             "is_agent_infected": is_agent_infected,
             "humans_features": humans_features
         }
-        # print(obs)
-        # print("--------------------------------")
         return obs
 
     def _calculate_strategic_avoidance_reward(self):
@@ -552,11 +564,11 @@ class SIRSEnvironment(gym.Env):
         
         # Calculate distances to infected humans if any exist
         if infected_list:
-            distances_to_infected = [self._calculate_distance(agent_human, h) for h in infected_list]
-            min_distance = min(distances_to_infected)
-            avg_distance = sum(distances_to_infected) / len(distances_to_infected)
+            distances = [self._calculate_distance(agent_human, h) for h in infected_list]
+            min_distance = min(distances)
+            avg_distance = sum(distances) / len(distances)
             # Count nearby infected (within 2x safe distance)
-            nearby_infected_count = sum(1 for d in distances_to_infected if d < self.safe_distance * 2)
+            nearby_infected_count = sum(1 for d in distances if d < self.safe_distance * 2)
         else:
             # Use a large value if no infected are present
             max_distance = math.sqrt(2) * self.grid_size
