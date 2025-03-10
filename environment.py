@@ -829,10 +829,7 @@ class SIRSEnvironment(gym.Env):
         if self.agent_state == STATE_DICT['S']:
             state_reward = 0.1  # Small positive reward for staying susceptible
         else:  # infected 
-            state_reward = -3.0
-            
-        # If agent is not susceptible, return just the state-based reward
-        if self.agent_state != STATE_DICT['S']:
+            state_reward = -1
             return state_reward
             
         # Component 2: Infection probability minimization (70% weight)
@@ -861,13 +858,75 @@ class SIRSEnvironment(gym.Env):
         
         return final_reward
 
+    def _calculate_minimize_exposure_reward(self):
+        """
+        Reward function focused on minimizing exposure to infected individuals.
+        
+        Key components:
+        1. Base reward for being susceptible (10%)
+        2. Exposure minimization (70%) - rewards lower total exposure to infected individuals
+        3. Adherence optimization (20%) - rewards efficient use of adherence based on exposure level
+        
+        This function encourages the agent to minimize its exposure to infected individuals
+        while using adherence strategically based on the current risk level.
+        """
+        # Create temporary agent human for calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        
+        # Component 1: State-based rewards/penalties
+        if self.agent_state == STATE_DICT['S']:
+            state_reward = 0.1  # Small positive reward for staying susceptible
+        else:  # infected 
+            state_reward = -1
+            return state_reward
+            
+        # Component 2: Exposure minimization (70% weight)
+        # Calculate total exposure using the existing function
+        total_exposure = self._calculate_total_exposure(agent_human)
+        
+        # Normalize exposure to [0,1] range
+        # Assuming max possible exposure is when all infected are at distance 0
+        infected_list = self._get_infected_list(agent_human)
+        if infected_list:
+            max_possible_exposure = len(infected_list)
+            normalized_exposure = min(total_exposure / max_possible_exposure, 1.0)
+            
+            # Invert and apply weight: lower exposure = higher reward
+            exposure_reward = 0.7 * (1.0 - normalized_exposure)
+        else:
+            # Maximum reward if no infected are present
+            exposure_reward = 0.7
+        
+        # Component 3: Adherence optimization (20% weight)
+        # Create an adherence cost that increases with higher adherence
+        # But make it conditional on infection probability
+        if total_exposure > 0.2:  
+            # Higher infection risk - adherence should be higher
+            ideal_adherence = min(0.5 + (total_exposure * 0.5), 1.0)  # Scales from 0.6 to 1.0 as exposure increases
+            adherence_diff = abs(self.agent_adherence - ideal_adherence)
+            adherence_reward = 0.2 * (1.0 - adherence_diff)
+        else:
+            # Lower infection risk - lower adherence is fine to reduce cost
+            adherence_reward = 0.2 * (1.0 - self.agent_adherence)
+        
+        # Combine components
+        final_reward = state_reward + exposure_reward + adherence_reward
+        
+        return final_reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
             "strategicAvoidance": self._calculate_strategic_avoidance_reward,
             "distanceMaximization": self._calculate_distance_maximization_reward,
             "weightedAvoidance": self._calculate_weighted_avoidance_reward,
-            "infectionAvoidance": self._calculate_infection_avoidance_reward
+            "infectionAvoidance": self._calculate_infection_avoidance_reward,
+            "minimizeExposure": self._calculate_minimize_exposure_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
