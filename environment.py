@@ -483,7 +483,7 @@ class SIRSEnvironment(gym.Env):
         }
         """
         # Normalize agent position to [0,1] range
-        agent_position = np.array(self.agent_position, dtype=np.float32) / self.grid_size  # shape=(2,)
+        # agent_position = np.array(self.agent_position, dtype=np.float32) / self.grid_size  # shape=(2,)
         agent_adherence = np.array([self.agent_adherence], dtype=np.float32)  # already in [0,1]
         
         # Create agent infection status indicator (1 if infected, 0 otherwise)
@@ -586,15 +586,15 @@ class SIRSEnvironment(gym.Env):
         if infected_list:
             distances = [self._calculate_distance(agent_human, h) for h in infected_list]
             min_distance = min(distances)
-            avg_distance = sum(distances) / len(distances)
+            # avg_distance = sum(distances) / len(distances)
             # Count nearby infected (within 2x safe distance)
-            nearby_infected_count = sum(1 for d in distances if d < self.safe_distance * 2)
+            # nearby_infected_count = sum(1 for d in distances if d < self.safe_distance * 2)
         else:
             # Use a large value if no infected are present
             max_distance = math.sqrt(2) * self.grid_size
             min_distance = max_distance
-            avg_distance = max_distance
-            nearby_infected_count = 0
+            # avg_distance = max_distance
+            # nearby_infected_count = 0
         
         # Calculate current infection probability
         infection_probability = self._calculate_infection_probability(agent_human, is_agent=True)
