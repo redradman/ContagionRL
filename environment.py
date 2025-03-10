@@ -141,12 +141,12 @@ class SIRSEnvironment(gym.Env):
         features_per_human = 5 if self.use_visibility_flag else 4
         
         self.observation_space = gym.spaces.Dict({
-            "agent_position": gym.spaces.Box(
-                low=0, 
-                high=1,
-                shape=(2,),
-                dtype=np.float32
-            ),
+            # "agent_position": gym.spaces.Box(
+            #     low=0, 
+            #     high=1,
+            #     shape=(2,),
+            #     dtype=np.float32
+            # ),
             "agent_adherence": gym.spaces.Box(
                 low=0,
                 high=1,
@@ -483,7 +483,7 @@ class SIRSEnvironment(gym.Env):
         }
         """
         # Normalize agent position to [0,1] range
-        # agent_position = np.array(self.agent_position, dtype=np.float32) / self.grid_size  # shape=(2,)
+        # agent_pos = np.array(self.agent_position, dtype=np.float32) / self.grid_size  # shape=(2,)
         agent_adherence = np.array([self.agent_adherence], dtype=np.float32)  # already in [0,1]
         
         # Create agent infection status indicator (1 if infected, 0 otherwise)
