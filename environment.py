@@ -964,14 +964,14 @@ class SIRSEnvironment(gym.Env):
         # Check if agent became infected in this step
         became_infected = previous_state != STATE_DICT['I'] and self.agent_state == STATE_DICT['I']
         
-        # Apply strong negative terminal reward if agent became infected
-        if became_infected:
-            infection_penalty = - self.simulation_time / 4  # Strong negative reward for becoming infected
-            # used -50 for penalty in the test_weighted_avoidance 20250305 1546
-            reward += infection_penalty
-            self.cumulative_reward += infection_penalty
-            # Add to info dict for monitoring
-            self.infection_penalty_applied = True
+        # # Apply strong negative terminal reward if agent became infected
+        # if became_infected:
+        #     infection_penalty = - self.simulation_time / 4  # Strong negative reward for becoming infected
+        #     # used -50 for penalty in the test_weighted_avoidance 20250305 1546
+        #     reward += infection_penalty
+        #     self.cumulative_reward += infection_penalty
+        #     # Add to info dict for monitoring
+        #     self.infection_penalty_applied = True
         
         terminated = False
         if self.counter >= self.simulation_time:
