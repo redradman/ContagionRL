@@ -245,6 +245,18 @@ class SIRSEnvironment(gym.Env):
         Calculate probability of infection based on nearby infected individuals
         If visibility_radius is -1, consider all infected individuals
         """
+        # infected_list = self._get_infected_list(susceptible)
+
+        # total_exposure = 0
+        # for infected in infected_list:
+        #     distance = self._calculate_distance(susceptible, infected)
+        #     total_exposure += math.exp(-self.distance_decay * distance)
+
+        # if is_agent:
+        #     return min(1,(self.beta / (1 + 10 * self.agent_adherence)) * total_exposure)
+        # else:
+        #     return min(1,(self.beta) * total_exposure)
+
         infected_list = self._get_infected_list(susceptible)
 
         total_exposure = 0
@@ -252,10 +264,18 @@ class SIRSEnvironment(gym.Env):
             distance = self._calculate_distance(susceptible, infected)
             total_exposure += math.exp(-self.distance_decay * distance)
 
+        # Define a minimum effective factor that ensures beta never goes to zero
+        min_factor = 0.2  # for example, 20% of beta remains at maximum adherence
+
         if is_agent:
-            return min(1,(self.beta / (1 + 10 * self.agent_adherence)) * total_exposure)
+            # Effective beta is reduced but not eliminated by adherence
+            effective_beta = self.beta * (min_factor + (1 - min_factor) * (1 - self.agent_adherence))
         else:
-            return min(1,(self.beta) * total_exposure)
+            effective_beta = self.beta
+
+        # Use a Poisson model for infection probability: P = 1 - exp(-effective_beta * total_exposure)
+        probability = 1 - math.exp(- effective_beta * total_exposure)
+        return probability
 
     def _calculate_recovery_probabilities(self, human: Human) -> float:
         """Calculate recovery probabilities for a human: Transition from I to R"""
@@ -766,12 +786,73 @@ class SIRSEnvironment(gym.Env):
         
         return final_reward
 
+    def _calculate_infection_avoidance_reward(self):
+        """
+        Reward function focused primarily on minimizing infection probability.
+        
+        Key components:
+        1. Infection probability minimization (70% weight) - higher reward for lower probability
+        2. State-based rewards/penalties:
+           - Susceptible state: Small positive reward (10%)
+           - Infected state: Strong negative reward (-1.0)
+           - Recovered state: Neutral reward (0)
+           - Dead state: Strong negative reward (-2.0)
+        3. Adherence optimization (20% weight) - rewards efficient use of adherence
+        
+        The function encourages the agent to take actions that minimize infection risk
+        while using adherence judiciously.
+        """
+        # Create temporary agent human for calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        
+        # Component 1: State-based rewards/penalties
+        if self.agent_state == STATE_DICT['S']:
+            state_reward = 0.1  # Small positive reward for staying susceptible
+        else:  # infected 
+            state_reward = -3.0
+            
+        # If agent is not susceptible, return just the state-based reward
+        if self.agent_state != STATE_DICT['S']:
+            return state_reward
+            
+        # Component 2: Infection probability minimization (70% weight)
+        # Calculate current infection probability
+        infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
+        
+        # Apply a non-linear transformation to the probability
+        # This creates a stronger gradient as probability increases
+        # (e.g., reducing from 0.5 to 0.4 gives more reward than from 0.2 to 0.1)
+        infection_avoidance_reward = 0.7 * (1.0 - math.pow(infection_prob, 0.5))
+        
+        # Component 3: Adherence optimization (20% weight)
+        # Create an adherence cost that increases with higher adherence
+        # But make it conditional on infection probability
+        if infection_prob > 0.2:  
+            # Higher infection risk - adherence should be higher
+            ideal_adherence = 0.5 + (infection_prob * 0.5)  # Scales from 0.6 to 1.0 as risk increases
+            adherence_diff = abs(self.agent_adherence - ideal_adherence)
+            adherence_reward = 0.2 * (1.0 - adherence_diff)
+        else:
+            # Lower infection risk - lower adherence is fine to reduce cost
+            adherence_reward = 0.2 * (1.0 - self.agent_adherence)
+        
+        # Combine components
+        final_reward = state_reward + infection_avoidance_reward + adherence_reward
+        
+        return final_reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
             "strategicAvoidance": self._calculate_strategic_avoidance_reward,
             "distanceMaximization": self._calculate_distance_maximization_reward,
-            "weightedAvoidance": self._calculate_weighted_avoidance_reward
+            "weightedAvoidance": self._calculate_weighted_avoidance_reward,
+            "infectionAvoidance": self._calculate_infection_avoidance_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
