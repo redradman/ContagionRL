@@ -996,8 +996,9 @@ class SIRSEnvironment(gym.Env):
         # 2. There are no infected individuals AND either:
         #    a) reinfection is disabled (reinfection_count == 0) or
         #    b) there aren't enough susceptible humans beyond safe distance for reinfection
-        if (self.agent_state == STATE_DICT['D'] or
-            self.agent_state == STATE_DICT['I'] or
+        if (self.agent_state != STATE_DICT['S'] or
+            # self.agent_state == STATE_DICT['D'] or
+            # self.agent_state == STATE_DICT['I'] or
             (self.infected_count == 0 and  # No infected individuals
              (self.reinfection_count == 0 or distant_susceptible_count < self.reinfection_count))):  # Can't reinfect
             truncated = True
