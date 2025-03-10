@@ -240,11 +240,23 @@ class SIRSEnvironment(gym.Env):
             neighbors = self._get_neighbors_list(current_human)
             return [h for h in neighbors if h.state == STATE_DICT['I']]
 
+    def _calculate_total_exposure(self, susceptible: Human) -> float:
+        """ Return the total exposure"""
+        infected_list = self._get_infected_list(susceptible)
+
+        total_exposure = 0
+        for infected in infected_list:
+            distance = self._calculate_distance(susceptible, infected)
+            total_exposure += math.exp(-self.distance_decay * distance)
+
+        return total_exposure
+
     def _calculate_infection_probability(self, susceptible: Human, is_agent: bool = False) -> float:
         """
         Calculate probability of infection based on nearby infected individuals
         If visibility_radius is -1, consider all infected individuals
         """
+        # Phase 1
         # infected_list = self._get_infected_list(susceptible)
 
         # total_exposure = 0
@@ -257,15 +269,18 @@ class SIRSEnvironment(gym.Env):
         # else:
         #     return min(1,(self.beta) * total_exposure)
 
-        infected_list = self._get_infected_list(susceptible)
+        # Phase 2
 
-        total_exposure = 0
-        for infected in infected_list:
-            distance = self._calculate_distance(susceptible, infected)
-            total_exposure += math.exp(-self.distance_decay * distance)
+        total_exposure = self._calculate_total_exposure(susceptible)
+                # infected_list = self._get_infected_list(susceptible)
+
+                # total_exposure = 0
+                # for infected in infected_list:
+                #     distance = self._calculate_distance(susceptible, infected)
+                #     total_exposure += math.exp(-self.distance_decay * distance)
 
         # Define a minimum effective factor that ensures beta never goes to zero
-        min_factor = 0.2  # for example, 20% of beta remains at maximum adherence
+        min_factor = 0.5  # for example, 20% of beta remains at maximum adherence
 
         if is_agent:
             # Effective beta is reduced but not eliminated by adherence
