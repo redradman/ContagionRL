@@ -880,10 +880,12 @@ class SIRSEnvironment(gym.Env):
         
         # Component 1: State-based rewards/penalties
         if self.agent_state == STATE_DICT['S']:
-            state_reward = 0.1  # Small positive reward for staying susceptible
+            state_reward = 0.2  # Small positive reward for staying susceptible
         else:  # infected 
             state_reward = -1
             return state_reward
+        
+        survival_bonus = min(0.2, self.counter / 1500)  # Scales up to 0.2 at step 300
             
         # Component 2: Exposure minimization (70% weight)
         # Calculate total exposure using the existing function
@@ -897,10 +899,10 @@ class SIRSEnvironment(gym.Env):
             normalized_exposure = min(total_exposure / max_possible_exposure, 1.0)
             
             # Invert and apply weight: lower exposure = higher reward
-            exposure_reward = 0.7 * (1.0 - normalized_exposure)
+            exposure_reward = 0.6 * (1.0 - normalized_exposure)
         else:
             # Maximum reward if no infected are present
-            exposure_reward = 0.7
+            exposure_reward = 0.6
         
         # Component 3: Adherence optimization (20% weight)
         # Create an adherence cost that increases with higher adherence
@@ -915,9 +917,11 @@ class SIRSEnvironment(gym.Env):
             adherence_reward = 0.2 * (1.0 - self.agent_adherence)
         
         # Combine components
-        final_reward = state_reward + exposure_reward + adherence_reward
+        final_reward = state_reward + exposure_reward + adherence_reward + survival_bonus
         
         return final_reward
+        multiplicative_reward = exposure_reward/0.6 * adherence_reward/0.2 * state_reward/0.2
+        return (final_reward + multiplicative_reward)/2
 
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
