@@ -280,7 +280,7 @@ class SIRSEnvironment(gym.Env):
                 #     total_exposure += math.exp(-self.distance_decay * distance)
 
         # Define a minimum effective factor that ensures beta never goes to zero
-        min_factor = 0.5  # for example, 20% of beta remains at maximum adherence
+        min_factor = 0.2  # for example, 20% of beta remains at maximum adherence
 
         if is_agent:
             # Effective beta is reduced but not eliminated by adherence
@@ -882,10 +882,8 @@ class SIRSEnvironment(gym.Env):
         if self.agent_state == STATE_DICT['S']:
             state_reward = 0.2  # Small positive reward for staying susceptible
         else:  # infected 
-            state_reward = -1
+            state_reward = -10
             return state_reward
-        
-        survival_bonus = min(0.2, self.counter / 1500)  # Scales up to 0.2 at step 300
             
         # Component 2: Exposure minimization (70% weight)
         # Calculate total exposure using the existing function
@@ -917,11 +915,144 @@ class SIRSEnvironment(gym.Env):
             adherence_reward = 0.2 * (1.0 - self.agent_adherence)
         
         # Combine components
-        final_reward = state_reward + exposure_reward + adherence_reward + survival_bonus
+        final_reward = state_reward + exposure_reward + adherence_reward
         
         return final_reward
         multiplicative_reward = exposure_reward/0.6 * adherence_reward/0.2 * state_reward/0.2
         return (final_reward + multiplicative_reward)/2
+
+    def _calculate_strategic_survival_reward(self):
+        """
+        Enhanced reward function with sharper gradients and more immediate feedback
+        to improve explained variance.
+        
+        Key improvements:
+        1. More frequent positive feedback with granular rewards
+        2. Sharper distance-based gradients with exponential scaling
+        3. More direct adherence feedback based on current risk
+        4. Immediate rewards for positive actions
+        
+        Returns a reward with clearer action-reward correlation
+        """
+        # Create temporary agent human for calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        
+        # COMPONENT 1: State-based reward (50% of total)
+        # Only reward susceptible state, strongly penalize all others
+        if self.agent_state != STATE_DICT['S']:
+            return -2.0  # Stronger negative reward for non-susceptible states
+        
+        # Base reward for being susceptible
+        base_reward = 0.5
+        
+        # Get infected individuals
+        infected_list = self._get_infected_list(agent_human)
+        
+        # COMPONENT 2: Distance-based reward (30% of total)
+        # Using exponential scaling for sharper gradients
+        if infected_list:
+            # Calculate distances to all infected
+            distances = [self._calculate_distance(agent_human, h) for h in infected_list]
+            min_distance = min(distances)
+            
+            # Calculate safe distance ratio with sharper gradient
+            safe_dist = max(1.0, self.safe_distance)
+            distance_ratio = min_distance / safe_dist
+            
+            # Exponential reward function with sharper gradient
+            # Scales from ~0 at distance=0 to ~0.3 at distance=safe_distance
+            # and approaches 0.3 asymptotically beyond that
+            distance_reward = 0.3 * (1.0 - math.exp(-2.0 * distance_ratio))
+            
+            # Add bonus for being beyond safe distance
+            if min_distance > safe_dist:
+                distance_reward += 0.1
+        else:
+            # Maximum reward if no infected are present
+            distance_reward = 0.4
+        
+        # COMPONENT 3: Exposure-based reward (20% of total)
+        # Direct feedback on current exposure level
+        if infected_list:
+            # Calculate total exposure
+            total_exposure = self._calculate_total_exposure(agent_human)
+            
+            # Inverse exponential reward - higher exposure = lower reward
+            # Provides sharper gradient for exposure reduction
+            exposure_reward = 0.2 * math.exp(-3.0 * total_exposure)
+        else:
+            # Maximum reward if no infected are present
+            exposure_reward = 0.2
+        
+        # COMPONENT 4: Adherence optimization (20% of total)
+        # More direct feedback on adherence decisions
+        if infected_list:
+            # Calculate infection probability
+            infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
+            
+            # Determine ideal adherence based on infection probability
+            # Higher risk → higher ideal adherence with sharper transition
+            if infection_prob > 0.1:  # Significant risk threshold
+                ideal_adherence = min(0.8, infection_prob * 2.0)  # Scale up to 0.8 max
+                adherence_diff = abs(self.agent_adherence - ideal_adherence)
+                
+                # Sharper penalty for incorrect adherence when risk is high
+                adherence_reward = 0.2 * (1.0 - (adherence_diff * 2.0))  # Doubled penalty
+                adherence_reward = max(0.0, adherence_reward)  # Ensure non-negative
+            else:
+                # Low risk - reward lower adherence with clear gradient
+                adherence_reward = 0.2 * (1.0 - self.agent_adherence)
+        else:
+            # When no infected present, strongly reward lower adherence
+            adherence_reward = 0.2 * (1.0 - self.agent_adherence)
+        
+        # COMPONENT 5: Movement reward (10% of total)
+        # Reward effective movement away from infected
+        if hasattr(self, 'previous_position') and infected_list:
+            # Calculate previous and current minimum distances
+            prev_distances = []
+            for infected in infected_list:
+                prev_human = Human(
+                    x=self.previous_position[0],
+                    y=self.previous_position[1],
+                    state=self.agent_state,
+                    id=-1
+                )
+                prev_distances.append(self._calculate_distance(prev_human, infected))
+            
+            prev_min_distance = min(prev_distances) if prev_distances else 0
+            current_min_distance = min_distance
+            
+            # Reward increasing distance from infected
+            distance_change = current_min_distance - prev_min_distance
+            movement_reward = 0.1 * (1.0 / (1.0 + math.exp(-5.0 * distance_change)))
+        else:
+            movement_reward = 0.05  # Neutral movement reward
+        
+        # Store current position for next step
+        self.previous_position = self.agent_position.copy()
+        
+        # Combine all reward components
+        final_reward = base_reward + distance_reward + exposure_reward + adherence_reward + movement_reward
+        
+        return final_reward
+    
+    def _calculate_reduceInfectionProb_reward(self):
+        """
+        Reward function that encourages the agent to reduce the infection probability of the population.
+        """
+        # Calculate the infection probability of the agent
+        if self.agent_state != STATE_DICT['S']:
+            return -5
+        infection_prob = self._calculate_infection_probability(self.agent_human, is_agent=True)
+        return 1-infection_prob
+        
+
 
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
@@ -930,7 +1061,8 @@ class SIRSEnvironment(gym.Env):
             "distanceMaximization": self._calculate_distance_maximization_reward,
             "weightedAvoidance": self._calculate_weighted_avoidance_reward,
             "infectionAvoidance": self._calculate_infection_avoidance_reward,
-            "minimizeExposure": self._calculate_minimize_exposure_reward
+            "minimizeExposure": self._calculate_minimize_exposure_reward,
+            "strategicSurvival": self._calculate_strategic_survival_reward  # Add the new function
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
