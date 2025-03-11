@@ -1049,7 +1049,13 @@ class SIRSEnvironment(gym.Env):
         # Calculate the infection probability of the agent
         if self.agent_state != STATE_DICT['S']:
             return -5
-        infection_prob = self._calculate_infection_probability(self.agent_human, is_agent=True)
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
         return 1-infection_prob
         
 
