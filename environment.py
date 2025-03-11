@@ -1062,7 +1062,8 @@ class SIRSEnvironment(gym.Env):
             "weightedAvoidance": self._calculate_weighted_avoidance_reward,
             "infectionAvoidance": self._calculate_infection_avoidance_reward,
             "minimizeExposure": self._calculate_minimize_exposure_reward,
-            "strategicSurvival": self._calculate_strategic_survival_reward  # Add the new function
+            "strategicSurvival": self._calculate_strategic_survival_reward, 
+            "reduceInfectionProb": self._calculate_reduceInfectionProb_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
