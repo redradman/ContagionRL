@@ -1056,7 +1056,7 @@ class SIRSEnvironment(gym.Env):
             id=-1
         )
         infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
-        return 1-infection_prob
+        return (1-infection_prob)**2
         
 
 

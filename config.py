@@ -1,13 +1,13 @@
 # Environment Parameters
 env_config = {
-    "simulation_time": 300,        # Longer episodes for more learning opportunity
-    "grid_size": 30,               # A slightly smaller grid for easier navigation
-    "n_humans": 30,                # Fewer humans to reduce environmental complexity
-    "n_infected": 3,              # Fewer initial infections to avoid overwhelming the agent
-    "beta": 0.25,                   # Reduced infection rate
+    "simulation_time": 1000,        # Longer episodes for more learning opportunity
+    "grid_size": 50,               # A slightly smaller grid for easier navigation
+    "n_humans": 50,                # Fewer humans to reduce environmental complexity
+    "n_infected": 1,              # Fewer initial infections to avoid overwhelming the agent
+    "beta": 0.6,                   # Reduced infection rate
     "initial_agent_adherence": 0.5,# Lower initial adherence to allow the agent more flexibility
-    "distance_decay": 0.3,         # Increased decay rate to make distance more important
-    "lethality": 0.01,             # Increased to 2% chance of death per step
+    "distance_decay": 0.2,         # Increased decay rate to make distance more important
+    "lethality": 0,             # Increased to 2% chance of death per step
     "immunity_decay": 0.1,        # Slower immunity decay so recovered remain immune longer
     "recovery_rate": 0.2,          # Increased to 10% chance of recovery per step
     "max_immunity_loss_prob": 0.3, # Lower maximum immunity loss probability
@@ -15,8 +15,8 @@ env_config = {
     "movement_type": "continuous_random",  # Continuous random movement for humans
     "visibility_radius": -1,       # DO NOT CHANGE THIS. Fully visilibty is required
     "reinfection_count": 5,        # Moderate reinfection count to maintain some infected presence
-    "safe_distance": 5,            # Slightly increased safe distance for better distance rewards
-    "reward_type": "minimizeExposure",  # Using our custom reward function with weighted components
+    "safe_distance": 10,            # Slightly increased safe distance for better distance rewards
+    "reward_type": "reduceInfectionProb",  # Using our custom reward function with weighted components
     "render_mode": None            # No rendering during training
 }
 
@@ -26,8 +26,8 @@ ppo_config = {
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
         net_arch=dict(
-            pi=[128, 128, 128],  
-            vf=[128, 128, 128]  
+            pi=[256, 256],  
+            vf=[256, 256]  
         ),
         # activation_fn=nn.ReLU,  # Explicitly use ReLU activation
         ortho_init=True,        # Use orthogonal initialization for better training stability
@@ -47,7 +47,7 @@ ppo_config = {
     # "max_grad_norm": 0.5,          # Keep same gradient clipping
     
     # Advanced PPO settings
-    # "normalize_advantage": True,   # Normalize advantages for more stable training
+    "normalize_advantage": True,   # Normalize advantages for more stable training
 
     # Training parameters
     "total_timesteps": 5_000_000,
@@ -63,8 +63,8 @@ ppo_config = {
 # Logging and Saving
 save_config = {
     "base_log_path": "logs",
-    "save_freq": 2000_000,          # Save model every n steps
+    "save_freq": 125_000,          # Save model every n steps
     "save_replay_buffer": True,
     "verbose": 1,
-    "eval_freq": 2000_000,          # Evaluate less frequently to save time
+    "eval_freq": 125_000,          # Evaluate less frequently to save time
 } 
