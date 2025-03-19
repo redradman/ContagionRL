@@ -28,17 +28,20 @@ class ReplayBuffer:
 
 ######## Movement handler for humans in the environment ########
 class MovementHandler:
-    def __init__(self, grid_size: int, movement_type: str = "stationary", rounding_digits: int = 2):
+    def __init__(self, grid_size: int, movement_type: str = "stationary", rounding_digits: int = 2, movement_scale: float = 1.0):
         """
         Initialize movement handler
         
         Args:
             grid_size: Size of the environment grid
             movement_type: One of ["stationary", "discrete_random", "continuous_random", "circular_formation"]
+            rounding_digits: Number of digits to round position coordinates to
+            movement_scale: Scale factor for movement of non-focal agents (0 to 1, where 0 is no movement and 1 is full movement)
         """
         self.grid_size = grid_size
         self.movement_type = movement_type
         self.rounding_digits = rounding_digits
+        self.movement_scale = max(0.0, min(1.0, movement_scale))  # Ensure value is between 0 and 1
         
         # Movement parameters for continuous random
         self.momentum = 0.8  # How much previous velocity affects current velocity
@@ -193,6 +196,10 @@ class MovementHandler:
         if speed > self.max_velocity:
             vx = (vx / speed) * self.max_velocity
             vy = (vy / speed) * self.max_velocity
+        
+        # Apply movement scaling factor for non-focal agents
+        vx = vx * self.movement_scale
+        vy = vy * self.movement_scale
         
         # Store new velocity
         self.velocities[human_id] = [vx, vy]

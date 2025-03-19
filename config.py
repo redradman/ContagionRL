@@ -13,6 +13,7 @@ env_config = {
     "max_immunity_loss_prob": 0.3, # Lower maximum immunity loss probability
     "adherence_penalty_factor": 1, # Reduced penalty factor for more balanced adherence decisions
     "movement_type": "continuous_random",  # Continuous random movement for humans
+    "movement_scale": 0.7,         # Scale factor for non-focal agent movement (0 to 1)
     "visibility_radius": -1,       # DO NOT CHANGE THIS. Fully visilibty is required
     "reinfection_count": 5,        # Moderate reinfection count to maintain some infected presence
     "safe_distance": 10,            # Slightly increased safe distance for better distance rewards

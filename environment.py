@@ -44,6 +44,7 @@ class SIRSEnvironment(gym.Env):
         max_immunity_loss_prob: float = 0.2,
         adherence_penalty_factor: float = 2,
         movement_type: str = "stationary",
+        movement_scale: float = 1.0,  # Scale factor for non-focal agent movement (0 to 1)
         visibility_radius: float = -1,  # Restored: -1 means full visibility, >=0 means limited visibility
         rounding_digits: int = 2,
         reinfection_count: int = 3,
@@ -133,8 +134,8 @@ class SIRSEnvironment(gym.Env):
         # - agent_adherence (1): [adherence]
         # - is_agent_infected (1): [1 if infected, 0 otherwise]
         # - humans_features (n_humans * features_per_human):
-        #   If visibility_radius == -1: [delta_x, delta_y, distance, is_infected] for each human
-        #   If visibility_radius >= 0: [visibility, delta_x, delta_y, distance, is_infected] for each human
+        #   If visibility_radius == -1, returns all humans
+        #   If visibility_radius >= 0, returns humans within visibility radius
         
         # Calculate features per human based on visibility setting
         self.use_visibility_flag = (visibility_radius >= 0)
@@ -179,7 +180,7 @@ class SIRSEnvironment(gym.Env):
         # initialize humans list
         self.humans: List[Human] = [] 
         # Movement handler  
-        self.movement_handler = MovementHandler(grid_size, movement_type, rounding_digits=self.rounding_digits)
+        self.movement_handler = MovementHandler(grid_size, movement_type, rounding_digits=self.rounding_digits, movement_scale=movement_scale)
         
         # Store reward type
         self.reward_type = reward_type
