@@ -260,6 +260,7 @@ def plot_survival_boxplot(
 ) -> None:
     """
     Create a boxplot comparing the episode durations (time survived) between agents.
+    Saves two versions: one with individual data points and one without.
     
     Args:
         results: Results dictionary from run_benchmark
@@ -293,10 +294,10 @@ def plot_survival_boxplot(
         "Episode Duration (steps)": data
     })
     
-    # Set up the figure with higher DPI for better quality
-    plt.figure(figsize=figsize, dpi=120)
+    # Ensure save directory exists
+    os.makedirs(save_dir, exist_ok=True)
     
-    # Set clean style
+    # Set clean style for both plots
     sns.set_style("whitegrid")
     plt.rcParams.update({
         'font.family': 'sans-serif',
@@ -308,8 +309,11 @@ def plot_survival_boxplot(
         'ytick.labelsize': 10
     })
     
+    # FIRST PLOT: Boxplot with individual data points
+    plt.figure(figsize=figsize, dpi=120)
+    
     # Create a clean boxplot with minimal design
-    ax = sns.boxplot(
+    ax1 = sns.boxplot(
         x="Agent Type", 
         y="Episode Duration (steps)", 
         data=df,
@@ -318,46 +322,86 @@ def plot_survival_boxplot(
         fliersize=3
     )
     
-    # Add individual data points with minimal jitter and larger size
+    # Add individual data points with jitter
     sns.stripplot(
         x="Agent Type", 
         y="Episode Duration (steps)", 
         data=df,
         color='black',
-        size=7,  # Increased from 3 to 7
-        alpha=0.6,  # Increased from 0.4 to 0.6 for better visibility
+        size=5,  
+        alpha=0.5,
         jitter=True
     )
     
     # Remove colors and simplify
-    for i, box in enumerate(ax.artists):
+    for i, box in enumerate(ax1.artists):
         box.set_edgecolor('black')
         
         # Each box has 6 associated Line2D objects (whiskers, caps, and median)
         for j in range(6*i, 6*(i+1)):
-            ax.lines[j].set_color('black')
+            ax1.lines[j].set_color('black')
     
     # Customize appearance
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_linewidth(0.5)
-    ax.spines['bottom'].set_linewidth(0.5)
+    ax1.spines['top'].set_visible(False)
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['left'].set_linewidth(0.5)
+    ax1.spines['bottom'].set_linewidth(0.5)
     
     # Add a discrete grid on the y-axis only
-    ax.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
-    ax.xaxis.grid(False)
+    ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    ax1.xaxis.grid(False)
     
     # Customize plot
     plt.title(title, fontsize=14, pad=10)
     plt.xlabel("")  # Remove x-label as it's redundant
     plt.ylabel("Episode Duration (steps)", fontsize=12, labelpad=10)
     
-    # Ensure save directory exists
-    os.makedirs(save_dir, exist_ok=True)
-    
-    # Save the figure
+    # Save the figure with points
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
+    points_filename = os.path.splitext(filename)[0] + "_with_points" + os.path.splitext(filename)[1]
+    plt.savefig(os.path.join(save_dir, points_filename), dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # SECOND PLOT: Boxplot without individual data points
+    plt.figure(figsize=figsize, dpi=120)
+    
+    # Create a clean boxplot with minimal design (without stripplot)
+    ax2 = sns.boxplot(
+        x="Agent Type", 
+        y="Episode Duration (steps)", 
+        data=df,
+        width=0.5,
+        color='white',
+        fliersize=3
+    )
+    
+    # Remove colors and simplify
+    for i, box in enumerate(ax2.artists):
+        box.set_edgecolor('black')
+        
+        # Each box has 6 associated Line2D objects (whiskers, caps, and median)
+        for j in range(6*i, 6*(i+1)):
+            ax2.lines[j].set_color('black')
+    
+    # Customize appearance
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['right'].set_visible(False)
+    ax2.spines['left'].set_linewidth(0.5)
+    ax2.spines['bottom'].set_linewidth(0.5)
+    
+    # Add a discrete grid on the y-axis only
+    ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    ax2.xaxis.grid(False)
+    
+    # Customize plot
+    plt.title(title, fontsize=14, pad=10)
+    plt.xlabel("")  # Remove x-label as it's redundant
+    plt.ylabel("Episode Duration (steps)", fontsize=12, labelpad=10)
+    
+    # Save the figure without points
+    plt.tight_layout()
+    no_points_filename = os.path.splitext(filename)[0] + "_no_points" + os.path.splitext(filename)[1]
+    plt.savefig(os.path.join(save_dir, no_points_filename), dpi=300, bbox_inches='tight')
     plt.close()
 
 def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
@@ -669,7 +713,7 @@ def plot_exposure_adherence_scatterplot(
     figsize: Tuple[int, int] = (16, 8),
     alpha: float = 0.4,
     include_random: bool = True,
-    jitter_amount: float = 0.01
+    jitter_amount: float = 0.05
 ) -> None:
     """
     Create a scatterplot comparing total exposure vs agent adherence for
