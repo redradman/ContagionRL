@@ -12,13 +12,15 @@ from result_utils import (
     plot_cumulative_rewards,
     plot_survival_boxplot,
     save_benchmark_results,
-    get_summary_stats
+    get_summary_stats,
+    run_exposure_adherence_benchmark,
+    plot_exposure_adherence_scatterplot
 )
 
 def main():
     """
     Run benchmarks comparing a trained model against random actions.
-    Generates plots showing cumulative reward over time.
+    Generates plots showing cumulative reward over time, episode duration, and exposure vs adherence.
     """
     parser = argparse.ArgumentParser(
         description="Benchmark a trained SIRS model against random actions"
@@ -62,7 +64,7 @@ def main():
         "--title",
         type=str,
         default=None,
-        help="Custom title for the plot (default: auto-generated based on model path)"
+        help="Custom title for the plots (default: auto-generated based on model path)"
     )
     
     args = parser.parse_args()
@@ -76,14 +78,6 @@ def main():
     # Generate output filename using model name and timestamp
     output_base = f"{model_name}_{timestamp}"
     
-    # Generate title if not provided
-    title = args.title
-    if title is None:
-        title = f"Cumulative Reward: {model_name} vs Random Actions"
-    
-    # Add number of runs to title
-    title = f"{title} ({args.runs} runs)"
-    
     # Ensure output directory exists
     os.makedirs(args.output_dir, exist_ok=True)
     
@@ -91,14 +85,22 @@ def main():
     print(f"Model path: {args.model_path}")
     print(f"Results will be saved to: {args.output_dir}")
     
-    # Run benchmark
-    print("Running benchmark...")
+    # Run standard benchmark
+    print("Running standard benchmark...")
     results = run_benchmark(
         model_path=args.model_path,
         n_runs=args.runs,
         include_random=not args.no_random,
         random_seed=args.seed
     )
+    
+    # Generate title if not provided
+    title = args.title
+    if title is None:
+        title = f"Cumulative Reward: {model_name} vs Random Actions"
+    
+    # Add number of runs to title
+    title = f"{title} ({args.runs} runs)"
     
     # Generate and save reward plot
     reward_plot_filename = f"{output_base}_rewards.png"
@@ -122,6 +124,28 @@ def main():
         title=boxplot_title,
         filename=boxplot_filename,
         save_dir=args.output_dir
+    )
+    
+    # Run exposure vs adherence benchmark
+    print("Running exposure vs adherence benchmark...")
+    exposure_results = run_exposure_adherence_benchmark(
+        model_path=args.model_path,
+        n_runs=args.runs,
+        include_random=not args.no_random,
+        random_seed=args.seed
+    )
+    
+    # Generate exposure vs adherence scatterplot
+    scatterplot_filename = f"{output_base}_exposure_adherence.png"
+    exp_title = f"Exposure vs Adherence: {model_name} ({args.runs} runs)"
+    print(f"Generating exposure vs adherence scatterplot: {scatterplot_filename}")
+    
+    plot_exposure_adherence_scatterplot(
+        exposure_results,
+        title=exp_title,
+        filename=scatterplot_filename,
+        save_dir=args.output_dir,
+        include_random=not args.no_random
     )
     
     # Save benchmark data
@@ -154,6 +178,7 @@ def main():
     print(f"\nResults saved to {args.output_dir}/")
     print(f"Reward Plot: {os.path.join(args.output_dir, reward_plot_filename)}")
     print(f"Survival Boxplot: {os.path.join(args.output_dir, boxplot_filename)}")
+    print(f"Exposure vs Adherence Plot: {os.path.join(args.output_dir, scatterplot_filename)}")
     print(f"Data: {os.path.join(args.output_dir, data_filename)}")
 
 if __name__ == "__main__":
