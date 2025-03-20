@@ -78,6 +78,7 @@ def run_benchmark(
 ) -> Dict[str, Any]:
     """
     Run a benchmark comparing a trained model to random actions.
+    Collects reward data, episode lengths, and exposure/adherence data.
     
     Args:
         model_path: Path to the trained model
@@ -86,7 +87,7 @@ def run_benchmark(
         random_seed: Base seed for reproducibility
         
     Returns:
-        Dictionary with benchmark results
+        Dictionary with benchmark results including exposure and adherence data
     """
     # Load model config
     config = load_config(model_path)
@@ -104,43 +105,141 @@ def run_benchmark(
     # Run trained model episodes
     trained_rewards_over_time = []
     trained_episode_lengths = []
+    trained_exposure_data = []
+    trained_adherence_data = []
     
     print("Running episodes with trained model...")
     for i in tqdm(range(n_runs), desc="Trained Model Episodes", unit="episode"):
         # Use different seeds for each run
         seed = random_seed + i if random_seed is not None else None
-        rewards, episode_length = run_episode(env, model, seed=seed)
-        trained_rewards_over_time.append(rewards)
-        trained_episode_lengths.append(episode_length)
+        
+        # Reset environment
+        obs = env.reset(seed=seed)[0]
+        done = False
+        cumulative_rewards = [0]  # Start with 0 reward
+        
+        # Lists to store exposure and adherence data for this episode
+        episode_exposures = []
+        episode_adherences = []
+        
+        while not done:
+            # Use the trained model
+            action, _ = model.predict(obs, deterministic=True)
+            
+            # Get the agent's adherence from the action
+            adherence = action[2]  # Assuming action[2] is the adherence value
+            
+            # Get agent exposure before taking the step (if susceptible)
+            if env.agent_state == 0:  # If agent is susceptible
+                agent_human = Human(
+                    x=env.agent_position[0],
+                    y=env.agent_position[1],
+                    state=env.agent_state,
+                    id=-1
+                )
+                exposure = env._calculate_total_exposure(agent_human)
+            else:
+                exposure = 0.0  # Not susceptible, so no exposure
+            
+            # Store exposure and adherence data
+            episode_exposures.append(exposure)
+            episode_adherences.append(adherence)
+            
+            # Take a step in the environment
+            obs, reward, terminated, truncated, info = env.step(action)
+            
+            # Update cumulative reward
+            cumulative_rewards.append(cumulative_rewards[-1] + reward)
+            
+            done = terminated or truncated
+        
+        # Save episode data
+        trained_rewards_over_time.append(cumulative_rewards)
+        trained_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
+        trained_exposure_data.append(episode_exposures)
+        trained_adherence_data.append(episode_adherences)
     
     # Run random action episodes if requested
     random_rewards_over_time = []
     random_episode_lengths = []
+    random_exposure_data = []
+    random_adherence_data = []
     
     if include_random:
         print("Running episodes with random actions...")
         for i in tqdm(range(n_runs), desc="Random Action Episodes", unit="episode"):
             # Use different seeds for each run
             seed = random_seed + i if random_seed is not None else None
-            rewards, episode_length = run_episode(env, None, seed=seed)
-            random_rewards_over_time.append(rewards)
-            random_episode_lengths.append(episode_length)
+            
+            # Reset environment
+            obs = env.reset(seed=seed)[0]
+            done = False
+            cumulative_rewards = [0]  # Start with 0 reward
+            
+            # Lists to store exposure and adherence data for this episode
+            episode_exposures = []
+            episode_adherences = []
+            
+            while not done:
+                # Use random actions
+                action = np.array([
+                    env.np_random.uniform(-1, 1),  # delta_x
+                    env.np_random.uniform(-1, 1),  # delta_y
+                    env.np_random.uniform(0, 1)    # adherence
+                ], dtype=np.float32)
+                
+                # Get the agent's adherence from the action
+                adherence = action[2]  # Random adherence value
+                
+                # Get agent exposure before taking the step (if susceptible)
+                if env.agent_state == 0:  # If agent is susceptible
+                    agent_human = Human(
+                        x=env.agent_position[0],
+                        y=env.agent_position[1],
+                        state=env.agent_state,
+                        id=-1
+                    )
+                    exposure = env._calculate_total_exposure(agent_human)
+                else:
+                    exposure = 0.0  # Not susceptible, so no exposure
+                
+                # Store exposure and adherence data
+                episode_exposures.append(exposure)
+                episode_adherences.append(adherence)
+                
+                # Take a step in the environment
+                obs, reward, terminated, truncated, info = env.step(action)
+                
+                # Update cumulative reward
+                cumulative_rewards.append(cumulative_rewards[-1] + reward)
+                
+                done = terminated or truncated
+            
+            # Save episode data
+            random_rewards_over_time.append(cumulative_rewards)
+            random_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
+            random_exposure_data.append(episode_exposures)
+            random_adherence_data.append(episode_adherences)
     
     # Close environment
     env.close()
     
-    # Return results
+    # Return results with both reward and exposure/adherence data
     results = {
         "trained": {
             "rewards_over_time": trained_rewards_over_time,
-            "episode_lengths": trained_episode_lengths
+            "episode_lengths": trained_episode_lengths,
+            "exposure_data": trained_exposure_data,
+            "adherence_data": trained_adherence_data
         }
     }
     
     if include_random:
         results["random"] = {
             "rewards_over_time": random_rewards_over_time,
-            "episode_lengths": random_episode_lengths
+            "episode_lengths": random_episode_lengths,
+            "exposure_data": random_exposure_data,
+            "adherence_data": random_adherence_data
         }
         
     results["config"] = config

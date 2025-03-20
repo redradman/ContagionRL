@@ -4,12 +4,12 @@ env_config = {
     "grid_size": 50,               # A slightly smaller grid for easier navigation
     "n_humans": 50,                # Fewer humans to reduce environmental complexity
     "n_infected": 1,              # Fewer initial infections to avoid overwhelming the agent
-    "beta": 0.6,                   # Reduced infection rate
+    "beta": 0.1,                   # Reduced infection rate
     "initial_agent_adherence": 0.5,# Lower initial adherence to allow the agent more flexibility
-    "distance_decay": 0.2,         # Increased decay rate to make distance more important
+    "distance_decay": 0.4,         # Increased decay rate to make distance more important
     "lethality": 0,             # Increased to 2% chance of death per step
     "immunity_decay": 0.1,        # Slower immunity decay so recovered remain immune longer
-    "recovery_rate": 0.2,          # Increased to 10% chance of recovery per step
+    "recovery_rate": 0.1,          # Increased to 10% chance of recovery per step
     "max_immunity_loss_prob": 0.3, # Lower maximum immunity loss probability
     "adherence_penalty_factor": 1, # Reduced penalty factor for more balanced adherence decisions
     "movement_type": "continuous_random",  # Continuous random movement for humans
@@ -27,11 +27,11 @@ ppo_config = {
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
         net_arch=dict(
-            pi=[256, 256],  
-            vf=[256, 256]  
+            pi=[256, 256, 256],  
+            vf=[256, 256, 256]  
         ),
         # activation_fn=nn.ReLU,  # Explicitly use ReLU activation
-        ortho_init=True,        # Use orthogonal initialization for better training stability
+        # ortho_init=True,        # Use orthogonal initialization for better training stability
         # log_std_init=-1.0,
     ),
     

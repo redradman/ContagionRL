@@ -13,7 +13,6 @@ from result_utils import (
     plot_survival_boxplot,
     save_benchmark_results,
     get_summary_stats,
-    run_exposure_adherence_benchmark,
     plot_exposure_adherence_scatterplot
 )
 
@@ -85,8 +84,8 @@ def main():
     print(f"Model path: {args.model_path}")
     print(f"Results will be saved to: {args.output_dir}")
     
-    # Run standard benchmark
-    print("Running standard benchmark...")
+    # Run benchmark to collect all metrics in a single pass
+    print("Running benchmark...")
     results = run_benchmark(
         model_path=args.model_path,
         n_runs=args.runs,
@@ -126,22 +125,13 @@ def main():
         save_dir=args.output_dir
     )
     
-    # Run exposure vs adherence benchmark
-    print("Running exposure vs adherence benchmark...")
-    exposure_results = run_exposure_adherence_benchmark(
-        model_path=args.model_path,
-        n_runs=args.runs,
-        include_random=not args.no_random,
-        random_seed=args.seed
-    )
-    
-    # Generate exposure vs adherence scatterplot
+    # Generate exposure vs adherence scatterplot using data from the same benchmark run
     scatterplot_filename = f"{output_base}_exposure_adherence.png"
     exp_title = f"Exposure vs Adherence: {model_name} ({args.runs} runs)"
     print(f"Generating exposure vs adherence scatterplot: {scatterplot_filename}")
     
     plot_exposure_adherence_scatterplot(
-        exposure_results,
+        results,
         title=exp_title,
         filename=scatterplot_filename,
         save_dir=args.output_dir,
