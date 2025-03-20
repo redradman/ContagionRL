@@ -13,7 +13,8 @@ from result_utils import (
     plot_survival_boxplot,
     save_benchmark_results,
     get_summary_stats,
-    plot_exposure_adherence_scatterplot
+    plot_exposure_adherence_scatterplot,
+    plot_final_reward_boxplot
 )
 
 def main():
@@ -138,6 +139,18 @@ def main():
         include_random=not args.no_random
     )
     
+    # Generate and save final reward boxplot
+    final_reward_boxplot_filename = f"{output_base}_final_reward_boxplot.png"
+    final_reward_boxplot_title = f"Final Cumulative Reward: {model_name} vs Random Actions ({args.runs} runs)"
+    print(f"Generating final reward boxplot: {final_reward_boxplot_filename}")
+    
+    plot_final_reward_boxplot(
+        results,
+        title=final_reward_boxplot_title,
+        filename=final_reward_boxplot_filename,
+        save_dir=args.output_dir
+    )
+    
     # Save benchmark data
     data_filename = f"{output_base}_data.json"
     print(f"Saving benchmark data: {data_filename}")
@@ -169,6 +182,7 @@ def main():
     print(f"Reward Plot: {os.path.join(args.output_dir, reward_plot_filename)}")
     print(f"Survival Boxplot: {os.path.join(args.output_dir, boxplot_filename)}")
     print(f"Exposure vs Adherence Plot: {os.path.join(args.output_dir, scatterplot_filename)}")
+    print(f"Final Reward Boxplot: {os.path.join(args.output_dir, final_reward_boxplot_filename)}")
     print(f"Data: {os.path.join(args.output_dir, data_filename)}")
 
 if __name__ == "__main__":

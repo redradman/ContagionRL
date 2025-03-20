@@ -976,3 +976,156 @@ def plot_exposure_adherence_scatterplot(
     # Save the figure
     plt.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
     plt.close() 
+
+def plot_final_reward_boxplot(
+    results: Dict[str, Any],
+    title: str = "Final Cumulative Reward Comparison",
+    filename: str = "final_reward_boxplot.png",
+    save_dir: str = "results/graphs",
+    figsize: Tuple[int, int] = (8, 6)
+) -> None:
+    """
+    Create a boxplot comparing the final cumulative rewards between agents.
+    Saves two versions: one with individual data points and one without.
+    
+    Args:
+        results: Results dictionary from run_benchmark
+        title: Plot title
+        filename: Filename to save the plot as
+        save_dir: Directory to save the plot in
+        figsize: Figure size in inches
+    """
+    # Extract final rewards for trained model
+    trained_final_rewards = [rewards[-1] for rewards in results["trained"]["rewards_over_time"]]
+    
+    # Prepare data for boxplot
+    data = []
+    categories = []
+    
+    # Add trained model data
+    for reward in trained_final_rewards:
+        data.append(reward)
+        categories.append("Trained Model")
+    
+    # Add random agent data if available
+    if "random" in results:
+        random_final_rewards = [rewards[-1] for rewards in results["random"]["rewards_over_time"]]
+        for reward in random_final_rewards:
+            data.append(reward)
+            categories.append("Random Actions")
+    
+    # Create DataFrame for seaborn
+    df = pd.DataFrame({
+        "Agent Type": categories,
+        "Final Cumulative Reward": data
+    })
+    
+    # Ensure save directory exists
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Set clean style for both plots
+    sns.set_style("whitegrid")
+    plt.rcParams.update({
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial', 'DejaVu Sans', 'Liberation Sans'],
+        'font.size': 11,
+        'axes.labelsize': 12,
+        'axes.titlesize': 14,
+        'xtick.labelsize': 10,
+        'ytick.labelsize': 10
+    })
+    
+    # FIRST PLOT: Boxplot with individual data points
+    plt.figure(figsize=figsize, dpi=120)
+    
+    # Create a clean boxplot with minimal design
+    ax1 = sns.boxplot(
+        x="Agent Type", 
+        y="Final Cumulative Reward", 
+        data=df,
+        width=0.5,
+        color='white',
+        fliersize=3
+    )
+    
+    # Add individual data points with jitter
+    sns.stripplot(
+        x="Agent Type", 
+        y="Final Cumulative Reward", 
+        data=df,
+        color='black',
+        size=5,  
+        alpha=0.5,
+        jitter=True
+    )
+    
+    # Remove colors and simplify
+    for i, box in enumerate(ax1.artists):
+        box.set_edgecolor('black')
+        
+        # Each box has 6 associated Line2D objects (whiskers, caps, and median)
+        for j in range(6*i, 6*(i+1)):
+            ax1.lines[j].set_color('black')
+    
+    # Customize appearance
+    ax1.spines['top'].set_visible(False)
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['left'].set_linewidth(0.5)
+    ax1.spines['bottom'].set_linewidth(0.5)
+    
+    # Add a discrete grid on the y-axis only
+    ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    ax1.xaxis.grid(False)
+    
+    # Customize plot
+    plt.title(title, fontsize=14, pad=10)
+    plt.xlabel("")  # Remove x-label as it's redundant
+    plt.ylabel("Final Cumulative Reward", fontsize=12, labelpad=10)
+    
+    # Save the figure with points
+    plt.tight_layout()
+    points_filename = os.path.splitext(filename)[0] + "_with_points" + os.path.splitext(filename)[1]
+    plt.savefig(os.path.join(save_dir, points_filename), dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # SECOND PLOT: Boxplot without individual data points
+    plt.figure(figsize=figsize, dpi=120)
+    
+    # Create a clean boxplot with minimal design (without stripplot)
+    ax2 = sns.boxplot(
+        x="Agent Type", 
+        y="Final Cumulative Reward", 
+        data=df,
+        width=0.5,
+        color='white',
+        fliersize=3
+    )
+    
+    # Remove colors and simplify
+    for i, box in enumerate(ax2.artists):
+        box.set_edgecolor('black')
+        
+        # Each box has 6 associated Line2D objects (whiskers, caps, and median)
+        for j in range(6*i, 6*(i+1)):
+            ax2.lines[j].set_color('black')
+    
+    # Customize appearance
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['right'].set_visible(False)
+    ax2.spines['left'].set_linewidth(0.5)
+    ax2.spines['bottom'].set_linewidth(0.5)
+    
+    # Add a discrete grid on the y-axis only
+    ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    ax2.xaxis.grid(False)
+    
+    # Customize plot
+    plt.title(title, fontsize=14, pad=10)
+    plt.xlabel("")  # Remove x-label as it's redundant
+    plt.ylabel("Final Cumulative Reward", fontsize=12, labelpad=10)
+    
+    # Save the figure without points
+    plt.tight_layout()
+    no_points_filename = os.path.splitext(filename)[0] + "_no_points" + os.path.splitext(filename)[1]
+    plt.savefig(os.path.join(save_dir, no_points_filename), dpi=300, bbox_inches='tight')
+    plt.close() 
