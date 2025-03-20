@@ -4,19 +4,19 @@ env_config = {
     "grid_size": 50,               # A slightly smaller grid for easier navigation
     "n_humans": 50,                # Fewer humans to reduce environmental complexity
     "n_infected": 1,              # Fewer initial infections to avoid overwhelming the agent
-    "beta": 0.1,                   # Reduced infection rate
+    "beta": 0.4,                   # Reduced infection rate
     "initial_agent_adherence": 0.5,# Lower initial adherence to allow the agent more flexibility
-    "distance_decay": 0.4,         # Increased decay rate to make distance more important
+    "distance_decay": 0.25,         # Increased decay rate to make distance more important
     "lethality": 0,             # Increased to 2% chance of death per step
     "immunity_decay": 0.1,        # Slower immunity decay so recovered remain immune longer
-    "recovery_rate": 0.1,          # Increased to 10% chance of recovery per step
-    "max_immunity_loss_prob": 0.3, # Lower maximum immunity loss probability
+    "recovery_rate": 0.25,          # Increased to 10% chance of recovery per step
+    "max_immunity_loss_prob": 0.25, # Lower maximum immunity loss probability
     "adherence_penalty_factor": 1, # Reduced penalty factor for more balanced adherence decisions
     "movement_type": "continuous_random",  # Continuous random movement for humans
     "movement_scale": 0.7,         # Scale factor for non-focal agent movement (0 to 1)
     "visibility_radius": -1,       # DO NOT CHANGE THIS. Fully visilibty is required
     "reinfection_count": 5,        # Moderate reinfection count to maintain some infected presence
-    "safe_distance": 10,            # Slightly increased safe distance for better distance rewards
+    "safe_distance": 5,            # Slightly increased safe distance for better distance rewards
     "reward_type": "reduceInfectionProb",  # Using our custom reward function with weighted components
     "render_mode": None            # No rendering during training
 }
