@@ -12,7 +12,7 @@ import seaborn as sns
 # Add the parent directory to the path so we can import environment
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment import SIRSEnvironment
-from utils import Human, STATE_DICT
+from utils import Human
 
 def load_config(model_path: str) -> Dict[str, Any]:
     """Load the configuration file associated with the model."""
