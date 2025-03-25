@@ -1059,8 +1059,119 @@ class SIRSEnvironment(gym.Env):
         infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
         return (1-infection_prob)**2
         
-
-
+    def _calculate_enhanced_infection_avoidance_reward(self):
+        """
+        A custom reward function that places a stronger emphasis on avoiding infection by 
+        combining several weighted components:
+        
+        1. A constant survival reward for every time step the agent remains uninfected
+        2. A positive/negative distance reward based on proximity to infected individuals
+        3. A negative exposure penalty using the environment's total exposure
+        4. An adherence reward/penalty that evaluates how well the agent matches adherence to risk
+        5. A terminal bonus for remaining uninfected until the end of the simulation
+        
+        Components are normalized so that the maximum possible reward is 1.0:
+        - Survival reward: max 0.2 (20% of total)
+        - Distance reward: max 0.3 (30% of total)
+        - Exposure penalty: max -0.5 (can reduce reward by up to 50%)
+        - Adherence reward: max 0.2 (20% of total)
+        - Terminal bonus: max 0.3 (30% of total, only at simulation end)
+        """
+        # Create temporary agent human for calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        
+        # Get infected individuals in the environment
+        infected_list = self._get_infected_list(agent_human)
+        
+        # COMPONENT 1: Survival Reward (Base reward for staying uninfected)
+        # Strong negative reward if infected, constant positive reward if susceptible
+        if self.agent_state != STATE_DICT['S']:
+            # Early termination with strong penalty if agent becomes infected
+            return -1.0  # Normalized to -1.0 as the minimum reward
+        
+        # Base survival reward for remaining susceptible - normalized to 0.2 (20% of max)
+        survival_reward = 0.2  # Constant positive reward each time step
+        
+        # COMPONENT 2: Distance Reward (Encourages maintaining safe distance)
+        if infected_list:
+            # Calculate distances to all infected individuals
+            distances = [self._calculate_distance(agent_human, h) for h in infected_list]
+            min_distance = min(distances)
+            
+            # Use safe_distance as reference point (ensure it's at least 1.0)
+            safe_dist = max(1.0, self.safe_distance)
+            
+            # Calculate distance reward with sigmoid function:
+            # - Negative when close to infected (below safe distance)
+            # - Positive when far from infected (above safe distance)
+            # - Smooth transition around the safe distance threshold
+            # Scale factor of 3.0 gives steeper transition at the safe distance
+            distance_factor = (min_distance - safe_dist) / (safe_dist / 2)
+            
+            # Normalized to max 0.3 (30% of max reward)
+            distance_reward = 0.3 * (2.0 / (1.0 + math.exp(-3.0 * distance_factor)) - 1.0)
+        else:
+            # Maximum distance reward if no infected individuals present
+            distance_reward = 0.3
+        
+        # COMPONENT 3: Exposure Penalty (Penalizes high exposure situations)
+        if infected_list:
+            # Calculate total exposure using environment's method
+            total_exposure = self._calculate_total_exposure(agent_human)
+            
+            # Exponential penalty that increases with exposure
+            # Higher exposure results in increasingly more significant penalties
+            # Normalized to maximum penalty of -0.5 (can reduce reward by up to 50%)
+            exposure_penalty = -0.5 * (1.0 - math.exp(-2.0 * total_exposure))
+        else:
+            # No penalty if no infected individuals present
+            exposure_penalty = 0.0
+        
+        # COMPONENT 4: Adherence Alignment Reward (Matches adherence to current risk)
+        if infected_list:
+            # Calculate infection probability as a measure of current risk
+            infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
+            
+            # Determine ideal adherence based on current risk level
+            # Higher infection probability should lead to higher adherence
+            ideal_adherence = min(1.0, infection_prob * 2.5)  # Scale up with risk, cap at 1.0
+            
+            # Calculate difference between actual and ideal adherence
+            adherence_diff = abs(self.agent_adherence - ideal_adherence)
+            
+            # Reward adherence that matches the risk level
+            # Perfect match = full reward, 0.5 difference = no reward, >0.5 = penalty
+            # Normalized to max 0.2 (20% of max reward)
+            adherence_reward = 0.2 * (1.0 - 2.0 * adherence_diff)
+        else:
+            # When no infected present, lower adherence is preferred (conserve resources)
+            # Normalized to max 0.2 (20% of max reward)
+            adherence_reward = 0.2 * (1.0 - self.agent_adherence)
+        
+        # COMPONENT 5: Terminal Bonus (Significant reward for completing simulation uninfected)
+        # This will be added in the step function when terminating due to time limit
+        terminal_bonus = 0.0
+        if self.counter >= self.simulation_time - 1:
+            # Substantial bonus for successfully completing the simulation uninfected
+            # Normalized to 0.3 (30% of max reward)
+            terminal_bonus = 0.3
+        
+        # Combine all reward components
+        # Maximum possible reward = 0.2 + 0.3 + 0.0 + 0.2 + 0.3 = 1.0
+        # (exposure penalty is always 0 or negative)
+        total_reward = survival_reward + distance_reward + exposure_penalty + adherence_reward + terminal_bonus
+        
+        return total_reward
+    def constant_reward(self):
+        if self.agent_state == STATE_DICT['S']:
+            return 1
+        else:
+            return 0-5
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
@@ -1070,7 +1181,9 @@ class SIRSEnvironment(gym.Env):
             "infectionAvoidance": self._calculate_infection_avoidance_reward,
             "minimizeExposure": self._calculate_minimize_exposure_reward,
             "strategicSurvival": self._calculate_strategic_survival_reward, 
-            "reduceInfectionProb": self._calculate_reduceInfectionProb_reward
+            "reduceInfectionProb": self._calculate_reduceInfectionProb_reward,
+            "enhancedInfectionAvoidance": self._calculate_enhanced_infection_avoidance_reward,
+            "constant": self.constant_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
