@@ -17,7 +17,7 @@ env_config = {
     "visibility_radius": -1,       # DO NOT CHANGE THIS. Fully visilibty is required
     "reinfection_count": 5,        # Moderate reinfection count to maintain some infected presence
     "safe_distance": 5,            # Slightly increased safe distance for better distance rewards
-    "reward_type": "reduceInfectionProb",  # Using our custom reward function with weighted components
+    "reward_type": "constant",  # Using our new custom reward function
     "render_mode": None            # No rendering during training
 }
 
