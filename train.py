@@ -173,6 +173,28 @@ def save_config_with_model(save_path: str, config: Dict[str, Any]) -> None:
     with open(config_path, "w") as f:
         json.dump(config, f, indent=4)
 
+def get_activation_fn(activation_str: str) -> torch.nn.Module:
+    """Convert activation function string to PyTorch activation function."""
+    # If it's already a PyTorch activation function class, return it
+    if isinstance(activation_str, type) and issubclass(activation_str, torch.nn.Module):
+        return activation_str
+        
+    # If it's already a PyTorch activation function instance, return its class
+    if isinstance(activation_str, torch.nn.Module):
+        return activation_str.__class__
+        
+    # If it's a string, convert it to the appropriate activation function class
+    activation_map = {
+        "relu": torch.nn.ReLU,
+        "tanh": torch.nn.Tanh,
+        "sigmoid": torch.nn.Sigmoid,
+        "leaky_relu": torch.nn.LeakyReLU,
+        "elu": torch.nn.ELU
+    }
+    if activation_str.lower() not in activation_map:
+        raise ValueError(f"Unsupported activation function: {activation_str}")
+    return activation_map[activation_str.lower()]
+
 def main(args):
     # Set global seeds for reproducibility
     set_global_seeds(args.seed)
@@ -275,23 +297,38 @@ def main(args):
         gradient_save_freq=100,
         verbose=2))
 
+    # Create a copy of ppo_config for model creation
+    model_ppo_config = ppo_config.copy()
+
+    # Create a serializable copy of the config for saving
+    save_ppo_config = ppo_config.copy()
+    if "policy_kwargs" in save_ppo_config:
+        save_ppo_config["policy_kwargs"] = save_ppo_config["policy_kwargs"].copy()
+        if "activation_fn" in save_ppo_config["policy_kwargs"]:
+            save_ppo_config["policy_kwargs"]["activation_fn"] = "relu"  # Save as string
+
     # Save configs with seed information
     config_with_seed = {
         "environment": env_config.copy(),
-        "ppo": ppo_config.copy(),
+        "ppo": save_ppo_config,  # Use the serializable version
         "save": save_config.copy(),
         "seed": args.seed
     }
     save_config_with_model(log_path, config_with_seed)
 
+    # Convert activation function string to actual function for model creation
+    if "policy_kwargs" in model_ppo_config and "activation_fn" in model_ppo_config["policy_kwargs"]:
+        activation_str = model_ppo_config["policy_kwargs"]["activation_fn"]
+        model_ppo_config["policy_kwargs"]["activation_fn"] = get_activation_fn(activation_str)
+    
     # Create and train the agent
     model = PPO(
-        ppo_config["policy_type"],
+        model_ppo_config["policy_type"],
         vec_env,
         verbose=save_config["verbose"],
-        tensorboard_log=tensorboard_path,  # Use the dedicated tensorboard directory
-        seed=args.seed,  # Set seed for model initialization
-        **{k: v for k, v in ppo_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
+        tensorboard_log=tensorboard_path,
+        seed=args.seed,
+        **{k: v for k, v in model_ppo_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
     )
 
     try:
