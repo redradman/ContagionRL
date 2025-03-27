@@ -1171,7 +1171,22 @@ class SIRSEnvironment(gym.Env):
         if self.agent_state == STATE_DICT['S']:
             return 1
         else:
-            return 0-5
+            return -5
+    def _calculate_reduceInfectionProbwithConstant_reward(self):
+        """
+        Reward function that encourages the agent to reduce the infection probability of the population.
+        """
+        # Calculate the infection probability of the agent
+        if self.agent_state != STATE_DICT['S']:
+            return -5
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
+        return  0.8 * (1-infection_prob)**2 + 0.2 * self.constant_reward()
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
@@ -1183,7 +1198,8 @@ class SIRSEnvironment(gym.Env):
             "strategicSurvival": self._calculate_strategic_survival_reward, 
             "reduceInfectionProb": self._calculate_reduceInfectionProb_reward,
             "enhancedInfectionAvoidance": self._calculate_enhanced_infection_avoidance_reward,
-            "constant": self.constant_reward
+            "constant": self.constant_reward,
+            "reduceInfectionProbwithaliveBonus": self._calculate_reduceInfectionProbwithConstant_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
