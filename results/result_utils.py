@@ -561,6 +561,7 @@ def save_benchmark_results(
         
         # Episode length comparison (Mann-Whitney U test)
         if len(trained_lengths) > 0 and len(random_lengths) > 0:
+            # Mann-Whitney U test
             u_stat, p_value = stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
             serializable_results["statistical_tests"]["episode_length"] = {
                 "test": "Mann-Whitney U",
@@ -568,11 +569,77 @@ def save_benchmark_results(
                 "p_value": float(p_value),
                 "significant_0.05": bool(p_value < 0.05),
                 "significant_0.01": bool(p_value < 0.01),
-                "significant_0.001": bool(p_value < 0.001)
+                "significant_0.001": bool(p_value < 0.001),
+                "interpretation": "Non-parametric test comparing distributions; p<0.05 indicates significantly different episode lengths"
             }
+            
+            # Shapiro-Wilk test for normality (for both trained and random episode lengths)
+            if len(trained_lengths) >= 3:  # Shapiro-Wilk requires at least 3 samples
+                sw_stat_trained, sw_p_trained = stats.shapiro(trained_lengths)
+                serializable_results["statistical_tests"]["episode_length_normality_trained"] = {
+                    "test": "Shapiro-Wilk",
+                    "statistic": float(sw_stat_trained),
+                    "p_value": float(sw_p_trained),
+                    "is_normal": bool(sw_p_trained >= 0.05),
+                    "interpretation": "Tests if data is normally distributed; p<0.05 indicates non-normal distribution"
+                }
+            
+            if len(random_lengths) >= 3:
+                sw_stat_random, sw_p_random = stats.shapiro(random_lengths)
+                serializable_results["statistical_tests"]["episode_length_normality_random"] = {
+                    "test": "Shapiro-Wilk",
+                    "statistic": float(sw_stat_random),
+                    "p_value": float(sw_p_random),
+                    "is_normal": bool(sw_p_random >= 0.05),
+                    "interpretation": "Tests if data is normally distributed; p<0.05 indicates non-normal distribution"
+                }
+            
+            # Levene's test for equality of variances
+            try:
+                levene_stat, levene_p = stats.levene(trained_lengths, random_lengths)
+                serializable_results["statistical_tests"]["episode_length_variance_equality"] = {
+                    "test": "Levene",
+                    "statistic": float(levene_stat),
+                    "p_value": float(levene_p),
+                    "equal_variance": bool(levene_p >= 0.05),
+                    "interpretation": "Tests if variances are equal; p<0.05 indicates significantly different variances"
+                }
+            except Exception as e:
+                print(f"Warning: Couldn't perform Levene's test for episode lengths: {e}")
+            
+            # Permutation test for episode lengths
+            try:
+                def diff_of_means(x, y):
+                    return np.mean(x) - np.mean(y)
+                
+                observed_diff = diff_of_means(trained_lengths, random_lengths)
+                # Combine for permutation
+                combined = np.concatenate([trained_lengths, random_lengths])
+                n_perm = 10000  # Number of permutations
+                n1 = len(trained_lengths)
+                
+                # Run permutation test
+                perm_diffs = []
+                for _ in range(n_perm):
+                    np.random.shuffle(combined)
+                    perm_diffs.append(diff_of_means(combined[:n1], combined[n1:]))
+                
+                # Calculate permutation p-value
+                perm_p = np.sum(np.abs(perm_diffs) >= np.abs(observed_diff)) / n_perm
+                
+                serializable_results["statistical_tests"]["episode_length_permutation"] = {
+                    "test": "Permutation",
+                    "observed_difference": float(observed_diff),
+                    "p_value": float(perm_p),
+                    "significant_0.05": bool(perm_p < 0.05),
+                    "interpretation": "Randomization test of mean differences; p<0.05 suggests difference is not due to chance"
+                }
+            except Exception as e:
+                print(f"Warning: Couldn't perform permutation test for episode lengths: {e}")
         
         # Final reward comparison (Mann-Whitney U test)
         if len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
+            # Mann-Whitney U test
             u_stat, p_value = stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
             serializable_results["statistical_tests"]["final_reward"] = {
                 "test": "Mann-Whitney U",
@@ -580,8 +647,73 @@ def save_benchmark_results(
                 "p_value": float(p_value),
                 "significant_0.05": bool(p_value < 0.05),
                 "significant_0.01": bool(p_value < 0.01),
-                "significant_0.001": bool(p_value < 0.001)
+                "significant_0.001": bool(p_value < 0.001),
+                "interpretation": "Non-parametric test comparing distributions; p<0.05 indicates significantly different rewards"
             }
+            
+            # Shapiro-Wilk test for normality (for both trained and random final rewards)
+            if len(trained_final_rewards) >= 3:  # Shapiro-Wilk requires at least 3 samples
+                sw_stat_trained, sw_p_trained = stats.shapiro(trained_final_rewards)
+                serializable_results["statistical_tests"]["final_reward_normality_trained"] = {
+                    "test": "Shapiro-Wilk",
+                    "statistic": float(sw_stat_trained),
+                    "p_value": float(sw_p_trained),
+                    "is_normal": bool(sw_p_trained >= 0.05),
+                    "interpretation": "Tests if data is normally distributed; p<0.05 indicates non-normal distribution"
+                }
+            
+            if len(random_final_rewards) >= 3:
+                sw_stat_random, sw_p_random = stats.shapiro(random_final_rewards)
+                serializable_results["statistical_tests"]["final_reward_normality_random"] = {
+                    "test": "Shapiro-Wilk",
+                    "statistic": float(sw_stat_random),
+                    "p_value": float(sw_p_random),
+                    "is_normal": bool(sw_p_random >= 0.05),
+                    "interpretation": "Tests if data is normally distributed; p<0.05 indicates non-normal distribution"
+                }
+            
+            # Levene's test for equality of variances
+            try:
+                levene_stat, levene_p = stats.levene(trained_final_rewards, random_final_rewards)
+                serializable_results["statistical_tests"]["final_reward_variance_equality"] = {
+                    "test": "Levene",
+                    "statistic": float(levene_stat),
+                    "p_value": float(levene_p),
+                    "equal_variance": bool(levene_p >= 0.05),
+                    "interpretation": "Tests if variances are equal; p<0.05 indicates significantly different variances"
+                }
+            except Exception as e:
+                print(f"Warning: Couldn't perform Levene's test for final rewards: {e}")
+            
+            # Permutation test for final rewards
+            try:
+                def diff_of_means(x, y):
+                    return np.mean(x) - np.mean(y)
+                
+                observed_diff = diff_of_means(trained_final_rewards, random_final_rewards)
+                # Combine for permutation
+                combined = np.concatenate([trained_final_rewards, random_final_rewards])
+                n_perm = 10000  # Number of permutations
+                n1 = len(trained_final_rewards)
+                
+                # Run permutation test
+                perm_diffs = []
+                for _ in range(n_perm):
+                    np.random.shuffle(combined)
+                    perm_diffs.append(diff_of_means(combined[:n1], combined[n1:]))
+                
+                # Calculate permutation p-value
+                perm_p = np.sum(np.abs(perm_diffs) >= np.abs(observed_diff)) / n_perm
+                
+                serializable_results["statistical_tests"]["final_reward_permutation"] = {
+                    "test": "Permutation",
+                    "observed_difference": float(observed_diff),
+                    "p_value": float(perm_p),
+                    "significant_0.05": bool(perm_p < 0.05),
+                    "interpretation": "Randomization test of mean differences; p<0.05 suggests difference is not due to chance"
+                }
+            except Exception as e:
+                print(f"Warning: Couldn't perform permutation test for final rewards: {e}")
     
     # Add config info
     serializable_results["environment"] = {
