@@ -16,6 +16,49 @@ import imageio
 from environment import SIRSEnvironment
 from config import env_config, ppo_config, save_config
 
+# Add entropy coefficient scheduler
+class EntropyCoefCallback(BaseCallback):
+    """
+    Callback for updating the entropy coefficient during training.
+    Allows for scheduled entropy coefficient annealing.
+    """
+    def __init__(self, initial_value: float, final_value: float = 0.0, schedule_percentage: float = 0.75, verbose: int = 0):
+        super().__init__(verbose)
+        self.initial_value = initial_value
+        self.final_value = final_value
+        self.schedule_percentage = schedule_percentage
+        self.current_value = initial_value
+        
+    def _on_step(self) -> bool:
+        """
+        Update entropy coefficient based on training progress.
+        """
+        # Calculate progress elapsed (0 to 1)
+        if self.model.num_timesteps >= self.model._total_timesteps:
+            progress_elapsed = 1.0
+        else:
+            progress_elapsed = self.model.num_timesteps / self.model._total_timesteps
+            
+        # Apply scheduling only during the specified percentage of training
+        if progress_elapsed >= self.schedule_percentage:
+            new_value = self.final_value
+        else:
+            # Calculate what percentage of the schedule has elapsed
+            schedule_progress = min(progress_elapsed / self.schedule_percentage, 1.0)
+            
+            # Linear interpolation between initial and final values
+            new_value = self.initial_value + schedule_progress * (self.final_value - self.initial_value)
+        
+        # Update the entropy coefficient in the model
+        self.model.ent_coef = new_value
+        self.current_value = new_value
+        
+        # Log the current entropy coefficient value
+        if self.verbose > 0 and self.n_calls % 100_000 == 0:
+            print(f"Current entropy coefficient: {self.current_value:.6f}")
+            
+        return True
+
 def set_global_seeds(seed: int) -> None:
     """
     Set all seeds for reproducibility.
@@ -306,6 +349,22 @@ def main(args):
         save_ppo_config["policy_kwargs"] = save_ppo_config["policy_kwargs"].copy()
         if "activation_fn" in save_ppo_config["policy_kwargs"]:
             save_ppo_config["policy_kwargs"]["activation_fn"] = "relu"  # Save as string
+
+    # Create entropy coefficient schedule if ent_coef is specified
+    if "ent_coef" in model_ppo_config:
+        initial_ent_coef = model_ppo_config["ent_coef"]
+        # Save the original value in the serialized config
+        save_ppo_config["ent_coef_initial"] = initial_ent_coef
+        save_ppo_config["ent_coef"] = "scheduled"
+        
+        # Create entropy callback and add to callbacks list
+        ent_callback = EntropyCoefCallback(
+            initial_value=initial_ent_coef,
+            final_value=0.0,  # Target value of 0 by the end
+            schedule_percentage=0.75,  # Schedule over 75% of training
+            verbose=1  # Print updates
+        )
+        callbacks.append(ent_callback)
 
     # Save configs with seed information
     config_with_seed = {
