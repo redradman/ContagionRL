@@ -49,6 +49,7 @@ class SIRSEnvironment(gym.Env):
         rounding_digits: int = 2,
         reinfection_count: int = 3,
         safe_distance: float = 0,  # New parameter for minimum safe distance for reinfection
+        max_distance_for_beta_calculation: float = -1,  # New parameter: -1 means no limit, >0 means distance threshold
         reward_type: str = "stateBased",
         render_mode: Optional[str] = None,
     ):
@@ -187,6 +188,9 @@ class SIRSEnvironment(gym.Env):
 
         self.safe_distance = safe_distance  # Store the safe distance for reinfection
 
+        # New parameter
+        self.max_distance_for_beta_calculation = max_distance_for_beta_calculation
+
     ####### TRANSITION FUNCTIONS FOR MOVING BETWEEN S, I, R AND DEAD #######
 
     def _calculate_distance(self, human1: Human, human2: Human) -> float:
@@ -242,13 +246,20 @@ class SIRSEnvironment(gym.Env):
             return [h for h in neighbors if h.state == STATE_DICT['I']]
 
     def _calculate_total_exposure(self, susceptible: Human) -> float:
-        """ Return the total exposure"""
+        """ 
+        Return the total exposure from infected individuals.
+        If max_distance_for_beta_calculation is -1, all infected contribute to exposure.
+        If max_distance_for_beta_calculation > 0, only infected within this distance contribute.
+        """
         infected_list = self._get_infected_list(susceptible)
 
         total_exposure = 0
         for infected in infected_list:
             distance = self._calculate_distance(susceptible, infected)
-            total_exposure += math.exp(-self.distance_decay * distance)
+            
+            # Apply distance threshold if enabled (max_distance_for_beta_calculation > 0)
+            if self.max_distance_for_beta_calculation == -1 or distance <= self.max_distance_for_beta_calculation:
+                total_exposure += math.exp(-self.distance_decay * distance)
 
         return total_exposure
 
