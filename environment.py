@@ -1183,6 +1183,7 @@ class SIRSEnvironment(gym.Env):
             return 1
         else:
             return -5
+
     def _calculate_reduceInfectionProbwithConstant_reward(self):
         """
         Reward function that encourages the agent to reduce the infection probability of the population.
@@ -1198,6 +1199,73 @@ class SIRSEnvironment(gym.Env):
         )
         infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
         return  0.8 * (1-infection_prob)**2 + 0.2 * self.constant_reward()
+    
+    def _calculate_comprehensive_reward(self):
+        """
+        Calculate a comprehensive reward function with multiple components:
+        1. Base reward for being susceptible (alive_reward)
+        2. Reward for reducing infection probability (infection_reward)
+        3. Reward for maintaining distance from all people (max_distance_with_people_reward)
+        
+        Returns a weighted combination of these components.
+        """
+        # Return negative reward if infected
+        if self.agent_state != STATE_DICT['S']:
+            return -5
+            
+        # Create a temporary agent human for calculations
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+
+        # 1. Alive reward - base reward for being susceptible
+        alive_reward = 1.0  # reward for being in S state
+
+        # 2. Infection probability reward - reward for reducing infection risk
+        infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
+        infection_reward = (1 - infection_prob) ** 2  # Quadratic scaling for emphasis on low risk
+
+        # 3. Max distance with people reward - personal space implementation
+        # Get all humans (not just infected ones)
+        all_humans = self._get_neighbors_list(agent_human)
+        
+        # Parameters for personal space reward calculation
+        personal_space_radius = 10.0  # Fixed threshold distance - can be modified if needed
+        distance_decay = 1  # How quickly contribution falls off with distance
+        crowding_factor = 5  # How severely crowding affects the reward
+        
+        # Calculate crowding intensity based on people within personal space radius
+        crowding_intensity = 0
+        for human in all_humans:
+            distance = self._calculate_distance(agent_human, human)
+            
+            # Only consider humans within the personal space radius
+            if distance < personal_space_radius:
+                # Each human within radius contributes to crowding intensity based on proximity
+                # Closer humans contribute more to crowding
+                crowding_intensity += math.exp(-distance_decay * distance)
+        
+        # Calculate personal space reward - exponentially decreases with crowding
+        # If no humans within radius, crowding_intensity = 0, so reward = 1.0
+        # As more humans enter personal space, reward approaches 0
+        max_distance_with_people_reward = math.exp(-crowding_factor * crowding_intensity)
+        
+        # Combine all reward components with appropriate weights
+        # Weights can be adjusted based on the desired emphasis
+        final_reward = (
+            0.1 * alive_reward +               
+            0.45 * infection_reward +           
+            0.45 * max_distance_with_people_reward 
+        )
+
+        if self.counter >= self.simulation_time - 1:
+            final_reward += 10
+        
+        return final_reward
+
     def _calculate_reward(self):    
         """Calculate the reward based on the selected reward type"""
         reward_functions = {
@@ -1210,7 +1278,8 @@ class SIRSEnvironment(gym.Env):
             "reduceInfectionProb": self._calculate_reduceInfectionProb_reward,
             "enhancedInfectionAvoidance": self._calculate_enhanced_infection_avoidance_reward,
             "constant": self.constant_reward,
-            "reduceInfectionProbwithaliveBonus": self._calculate_reduceInfectionProbwithConstant_reward
+            "reduceInfectionProbwithConstant": self._calculate_reduceInfectionProbwithConstant_reward,
+            "comprehensive": self._calculate_comprehensive_reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
