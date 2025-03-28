@@ -360,8 +360,8 @@ def main(args):
         # Create entropy callback and add to callbacks list
         ent_callback = EntropyCoefCallback(
             initial_value=initial_ent_coef,
-            final_value=0.0,  # Target value of 0 by the end
-            schedule_percentage=0.75,  # Schedule over 75% of training
+            final_value=0.005,  # Target value of 0 by the end
+            schedule_percentage=0.4,  # Schedule over 40% of training
             verbose=1  # Print updates
         )
         callbacks.append(ent_callback)
