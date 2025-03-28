@@ -56,7 +56,7 @@ class MovementHandler:
         if movement_type not in valid_types:
             raise ValueError(f"Movement type must be one of {valid_types}")
 
-    def initialize_positions(self, n_humans: int, rng: np.random.Generator, n_infected: int = 0, safe_distance: float = 0) -> list:
+    def initialize_positions(self, n_humans: int, rng: np.random.Generator, n_infected: int = 0, safe_distance: float = 0, init_agent_distance: float = 0) -> list:
         """
         Initialize positions for all humans based on movement type
         
@@ -65,25 +65,72 @@ class MovementHandler:
             rng: Random number generator for reproducibility
             n_infected: Number of humans that will be infected (for safe distance initialization)
             safe_distance: Minimum distance required between agent and infected humans
+            init_agent_distance: Minimum distance ALL humans should be from the agent at initialization
             
         Returns:
             List of tuples (x, y) for each human's initial position
         """
         if self.movement_type == "circular_formation":
-            return self._initialize_circular_positions(n_humans)
+            return self._initialize_circular_positions(n_humans, init_agent_distance)
         else:
-            positions = self._initialize_random_positions(n_humans, rng)
+            # Get initial random positions
+            all_positions = self._initialize_random_positions(n_humans, rng)
+            agent_pos = (self.grid_size // 2, self.grid_size // 2)  # Agent starts at center
             
-            # If we need to ensure safe distance for infected humans
-            if n_infected > 0 and safe_distance > 0:
-                agent_pos = (self.grid_size // 2, self.grid_size // 2)  # Agent starts at center
+            # If init_agent_distance is specified, ensure all humans maintain that minimum distance
+            if init_agent_distance > 0:
+                valid_positions = []
                 
-                # Separate positions into infected and non-infected
+                # Filter positions to keep only those that maintain init_agent_distance
+                for pos in all_positions:
+                    # Calculate minimum distance considering periodic boundaries
+                    min_dist = float('inf')
+                    for dx in [-self.grid_size, 0, self.grid_size]:
+                        for dy in [-self.grid_size, 0, self.grid_size]:
+                            wrapped_pos = (pos[0] + dx, pos[1] + dy)
+                            dist = math.sqrt((wrapped_pos[0] - agent_pos[0])**2 + 
+                                           (wrapped_pos[1] - agent_pos[1])**2)
+                            min_dist = min(min_dist, dist)
+                    
+                    if min_dist >= init_agent_distance:
+                        valid_positions.append(pos)
+                
+                # Keep generating positions until we have enough valid ones
+                while len(valid_positions) < n_humans:
+                    # Generate a new batch of random positions
+                    new_batch_size = min(n_humans * 2, n_humans * 10)  # Generate more to increase chances
+                    new_positions = self._initialize_random_positions(new_batch_size, rng)
+                    
+                    # Filter for valid positions
+                    for pos in new_positions:
+                        min_dist = float('inf')
+                        for dx in [-self.grid_size, 0, self.grid_size]:
+                            for dy in [-self.grid_size, 0, self.grid_size]:
+                                wrapped_pos = (pos[0] + dx, pos[1] + dy)
+                                dist = math.sqrt((wrapped_pos[0] - agent_pos[0])**2 + 
+                                               (wrapped_pos[1] - agent_pos[1])**2)
+                                min_dist = min(min_dist, dist)
+                        
+                        if min_dist >= init_agent_distance:
+                            valid_positions.append(pos)
+                            
+                            # If we have enough, break out
+                            if len(valid_positions) >= n_humans:
+                                break
+                
+                # Take only what we need
+                all_positions = valid_positions[:n_humans]
+            
+            # Now handle the safe_distance requirement for infected humans if needed
+            positions = all_positions
+            if n_infected > 0 and safe_distance > 0:                
+                # Separate positions for infected and non-infected humans
                 infected_positions = []
                 non_infected_positions = []
                 
-                # Keep trying to find valid positions for infected humans
-                while len(infected_positions) < n_infected:
+                # Safe distance check is only needed if it's greater than init_agent_distance
+                if safe_distance > init_agent_distance:
+                    # Try to find enough positions for infected humans
                     for pos in positions:
                         # Calculate minimum distance considering periodic boundaries
                         min_dist = float('inf')
@@ -100,9 +147,27 @@ class MovementHandler:
                             non_infected_positions.append(pos)
                     
                     # If we don't have enough infected positions, generate more
-                    if len(infected_positions) < n_infected:
+                    while len(infected_positions) < n_infected:
                         new_positions = self._initialize_random_positions(n_infected - len(infected_positions), rng)
-                        positions.extend(new_positions)
+                        
+                        for pos in new_positions:
+                            min_dist = float('inf')
+                            for dx in [-self.grid_size, 0, self.grid_size]:
+                                for dy in [-self.grid_size, 0, self.grid_size]:
+                                    wrapped_pos = (pos[0] + dx, pos[1] + dy)
+                                    dist = math.sqrt((wrapped_pos[0] - agent_pos[0])**2 + 
+                                                   (wrapped_pos[1] - agent_pos[1])**2)
+                                    min_dist = min(min_dist, dist)
+                            
+                            if min_dist >= safe_distance:
+                                infected_positions.append(pos)
+                                if len(infected_positions) >= n_infected:
+                                    break
+                else:
+                    # If safe_distance <= init_agent_distance, all positions already satisfy the requirement
+                    # Just take the first n_infected positions for infected humans
+                    infected_positions = positions[:n_infected]
+                    non_infected_positions = positions[n_infected:]
                 
                 # Combine positions with infected first (to maintain order)
                 positions = infected_positions + non_infected_positions
@@ -138,16 +203,22 @@ class MovementHandler:
         
         return result
 
-    def _initialize_circular_positions(self, n_humans: int) -> list:
+    def _initialize_circular_positions(self, n_humans: int, init_agent_distance: float = 0) -> list:
         """
         Initialize positions in a circular formation with equal dispersion.
         Humans are placed at equal angles around the circle, with a random initial rotation
         to avoid always starting at the same positions.
+        
+        Args:
+            n_humans: Number of humans to place
+            init_agent_distance: Minimum distance from agent. If > 0, radius will be at least this value.
         """
         positions = []
         center_x = self.grid_size // 2
         center_y = self.grid_size // 2
-        radius = 20  # Fixed radius for consistent spacing
+        
+        # Use the larger of the default radius (20) or init_agent_distance
+        radius = max(20, init_agent_distance) if init_agent_distance > 0 else 20
         
         # Add a random initial rotation to avoid always starting at the same point
         initial_angle = np.random.uniform(0, 2 * np.pi)

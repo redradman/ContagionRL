@@ -49,6 +49,7 @@ class SIRSEnvironment(gym.Env):
         rounding_digits: int = 2,
         reinfection_count: int = 3,
         safe_distance: float = 0,  # New parameter for minimum safe distance for reinfection
+        init_agent_distance: float = 0,  # New parameter for initial distance all humans should be from agent
         max_distance_for_beta_calculation: float = -1,  # New parameter: -1 means no limit, >0 means distance threshold
         reward_type: str = "stateBased",
         render_mode: Optional[str] = None,
@@ -187,6 +188,7 @@ class SIRSEnvironment(gym.Env):
         self.reward_type = reward_type
 
         self.safe_distance = safe_distance  # Store the safe distance for reinfection
+        self.init_agent_distance = init_agent_distance  # Store the initial distance parameter
 
         # New parameter
         self.max_distance_for_beta_calculation = max_distance_for_beta_calculation
@@ -347,7 +349,8 @@ class SIRSEnvironment(gym.Env):
             self.n_humans, 
             self.np_random,
             n_infected=self.n_infected,
-            safe_distance=self.safe_distance
+            safe_distance=self.safe_distance,
+            init_agent_distance=self.init_agent_distance
         )
         
         # Create humans at the initialized positions
@@ -1211,7 +1214,7 @@ class SIRSEnvironment(gym.Env):
         """
         # Return negative reward if infected
         if self.agent_state != STATE_DICT['S']:
-            return -5
+            return 0
             
         # Create a temporary agent human for calculations
         agent_human = Human(
