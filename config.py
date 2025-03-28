@@ -18,7 +18,7 @@ env_config = {
     "visibility_radius": -1,       # DO NOT CHANGE THIS. Fully visilibty is required
     "reinfection_count": 5,        # Moderate reinfection count to maintain some infected presence
     "safe_distance": 10,            # Distance for infected humans at initialization and reinfection
-    "init_agent_distance": 7,     # Minimum starting distance ALL humans must be from agent
+    "init_agent_distance": 5,     # Minimum starting distance ALL humans must be from agent
     "max_distance_for_beta_calculation": 10,  # -1 means no limit (current behavior), >0 limits infection range
     "reward_type": "comprehensive",  # Using our new comprehensive reward function with distance-based crowding
     "render_mode": None            # No rendering during training
@@ -42,7 +42,7 @@ ppo_config = {
     "batch_size": 2048,            # Larger batch for more stable updates
     # "n_steps": 4096,               # Collect more steps before updating
     "n_epochs": 10,                # Fewer epochs to prevent overfitting
-    "learning_rate": 1e-4,         # Reduced learning rate for more stable learning
+    "learning_rate": 3e-4,         # Reduced learning rate for more stable learning
     "gamma": 0.98,                 # Higher discount factor to focus more on long-term rewards
     "gae_lambda": 0.95,            # Keep same lambda
     # "clip_range": 0.15,            # Reduced clip range for more stable updates
@@ -54,7 +54,7 @@ ppo_config = {
     "normalize_advantage": True,   # Normalize advantages for more stable training
 
     # Training parameters
-    "total_timesteps": 5_000_000,
+    "total_timesteps": 20_000_000,
     "n_envs": 8                    # Increased parallel environments for more diverse experience
 }
 
