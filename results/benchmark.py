@@ -3,13 +3,13 @@ import os
 import sys
 import argparse
 import datetime
+from scipy import stats as scipy_stats
 
 # Add the parent directory to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from result_utils import (
     run_benchmark,
-    plot_cumulative_rewards,
     plot_survival_boxplot,
     save_benchmark_results,
     get_summary_stats,
@@ -20,7 +20,7 @@ from result_utils import (
 def main():
     """
     Run benchmarks comparing a trained model against random actions.
-    Generates plots showing cumulative reward over time, episode duration, and exposure vs adherence.
+    Generates boxplots for episode duration and final rewards, and exposure vs adherence scatterplot.
     """
     parser = argparse.ArgumentParser(
         description="Benchmark a trained SIRS model against random actions"
@@ -64,7 +64,7 @@ def main():
         "--title",
         type=str,
         default=None,
-        help="Custom title for the plots (default: auto-generated based on model path)"
+        help="Custom title prefix for the plots (default: auto-generated based on model path)"
     )
     
     args = parser.parse_args()
@@ -94,29 +94,14 @@ def main():
         random_seed=args.seed
     )
     
-    # Generate title if not provided
-    title = args.title
-    if title is None:
-        title = f"Cumulative Reward: {model_name} vs Random Actions"
-    
-    # Add number of runs to title
-    title = f"{title} ({args.runs} runs)"
-    
-    # Generate and save reward plot
-    reward_plot_filename = f"{output_base}_rewards.png"
-    print(f"Generating reward plot: {reward_plot_filename}")
-    
-    plot_cumulative_rewards(
-        results,
-        title=title,
-        filename=reward_plot_filename,
-        save_dir=args.output_dir,
-        show_std=True
-    )
+    # Generate title prefix if not provided
+    title_prefix = args.title
+    if title_prefix is None:
+        title_prefix = f"{model_name}"
     
     # Generate and save survival boxplot
-    boxplot_filename = f"{output_base}_survival_boxplot.png"
-    boxplot_title = f"Episode Duration: {model_name} vs Random Actions ({args.runs} runs)"
+    boxplot_filename = f"{output_base}_episode_duration_boxplot.png"
+    boxplot_title = f"Episode Duration: {title_prefix} vs Random Actions ({args.runs} runs)"
     print(f"Generating episode duration boxplot: {boxplot_filename}")
     
     plot_survival_boxplot(
@@ -128,7 +113,7 @@ def main():
     
     # Generate exposure vs adherence scatterplot using data from the same benchmark run
     scatterplot_filename = f"{output_base}_exposure_adherence.png"
-    exp_title = f"Exposure vs Adherence: {model_name} ({args.runs} runs)"
+    exp_title = f"Exposure vs Adherence: {title_prefix} ({args.runs} runs)"
     print(f"Generating exposure vs adherence scatterplot: {scatterplot_filename}")
     
     plot_exposure_adherence_scatterplot(
@@ -141,7 +126,7 @@ def main():
     
     # Generate and save final reward boxplot
     final_reward_boxplot_filename = f"{output_base}_final_reward_boxplot.png"
-    final_reward_boxplot_title = f"Final Cumulative Reward: {model_name} vs Random Actions ({args.runs} runs)"
+    final_reward_boxplot_title = f"Final Cumulative Reward: {title_prefix} vs Random Actions ({args.runs} runs)"
     print(f"Generating final reward boxplot: {final_reward_boxplot_filename}")
     
     plot_final_reward_boxplot(
@@ -162,27 +147,52 @@ def main():
     )
     
     # Get and print summary statistics
-    stats = get_summary_stats(results)
+    summary_stats = get_summary_stats(results)
     
     print("\nBenchmark Summary:")
     print("  Trained Model:")
-    print(f"    Mean Episode Length: {stats['trained']['mean_episode_length']:.2f} steps (±{stats['trained']['std_episode_length']:.2f})")
-    print(f"    Mean Reward (all steps): {stats['trained']['mean_reward']:.4f} (±{stats['trained']['std_reward']:.4f})")
-    print(f"    Mean Cumulative Reward: {stats['trained']['mean_cumulative_reward']:.2f} (±{stats['trained']['std_cumulative_reward']:.2f})")
-    print(f"    Mean Final Reward: {stats['trained']['mean_final_reward']:.2f} (±{stats['trained']['std_final_reward']:.2f})")
+    print(f"    Mean Episode Duration: {summary_stats['trained']['mean_episode_length']:.2f} steps (±{summary_stats['trained']['std_episode_length']:.2f})")
+    print(f"    Mean Final Reward: {summary_stats['trained']['mean_final_reward']:.2f} (±{summary_stats['trained']['std_final_reward']:.2f})")
     
-    if not args.no_random and "random" in stats:
+    if not args.no_random and "random" in summary_stats:
         print("  Random Actions:")
-        print(f"    Mean Episode Length: {stats['random']['mean_episode_length']:.2f} steps (±{stats['random']['std_episode_length']:.2f})")
-        print(f"    Mean Reward (all steps): {stats['random']['mean_reward']:.4f} (±{stats['random']['std_reward']:.4f})")
-        print(f"    Mean Cumulative Reward: {stats['random']['mean_cumulative_reward']:.2f} (±{stats['random']['std_cumulative_reward']:.2f})")
-        print(f"    Mean Final Reward: {stats['random']['mean_final_reward']:.2f} (±{stats['random']['std_final_reward']:.2f})")
+        print(f"    Mean Episode Duration: {summary_stats['random']['mean_episode_length']:.2f} steps (±{summary_stats['random']['std_episode_length']:.2f})")
+        print(f"    Mean Final Reward: {summary_stats['random']['mean_final_reward']:.2f} (±{summary_stats['random']['std_final_reward']:.2f})")
+        
+        # Calculate and print statistical test results
+        trained_lengths = results["trained"]["episode_lengths"]
+        random_lengths = results["random"]["episode_lengths"]
+        if len(trained_lengths) > 0 and len(random_lengths) > 0:
+            u_stat, p_value = scipy_stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
+            print("\n  Statistical Tests (Mann-Whitney U):")
+            print(f"    Episode Duration: p = {p_value:.4f}", end="")
+            if p_value < 0.001:
+                print(" (***)")
+            elif p_value < 0.01:
+                print(" (**)")
+            elif p_value < 0.05:
+                print(" (*)")
+            else:
+                print(" (not significant)")
+        
+        trained_final_rewards = [rewards[-1] for rewards in results["trained"]["rewards_over_time"]]
+        random_final_rewards = [rewards[-1] for rewards in results["random"]["rewards_over_time"]]
+        if len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
+            u_stat, p_value = scipy_stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
+            print(f"    Final Reward: p = {p_value:.4f}", end="")
+            if p_value < 0.001:
+                print(" (***)")
+            elif p_value < 0.01:
+                print(" (**)")
+            elif p_value < 0.05:
+                print(" (*)")
+            else:
+                print(" (not significant)")
     
     print(f"\nResults saved to {args.output_dir}/")
-    print(f"Reward Plot: {os.path.join(args.output_dir, reward_plot_filename)}")
-    print(f"Survival Boxplot: {os.path.join(args.output_dir, boxplot_filename)}")
-    print(f"Exposure vs Adherence Plot: {os.path.join(args.output_dir, scatterplot_filename)}")
+    print(f"Episode Duration Boxplot: {os.path.join(args.output_dir, boxplot_filename)}")
     print(f"Final Reward Boxplot: {os.path.join(args.output_dir, final_reward_boxplot_filename)}")
+    print(f"Exposure vs Adherence Plot: {os.path.join(args.output_dir, scatterplot_filename)}")
     print(f"Data: {os.path.join(args.output_dir, data_filename)}")
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import pandas as pd
 import sys
 from tqdm import tqdm
 import seaborn as sns
+from scipy import stats  # Add this import for statistical tests
 
 # Add the parent directory to the path so we can import environment
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -272,84 +273,6 @@ def align_and_pad_rewards(rewards_list: List[List[float]], max_length: Optional[
     
     return np.array(padded_rewards)
 
-def plot_cumulative_rewards(
-    results: Dict[str, Any],
-    title: str = "Cumulative Reward Over Time",
-    filename: str = "cumulative_rewards.png",
-    save_dir: str = "results/graphs",
-    show_std: bool = True,
-    figsize: Tuple[int, int] = (10, 6)
-) -> None:
-    """
-    Plot cumulative rewards over time for trained and random agents.
-    
-    Args:
-        results: Results dictionary from run_benchmark
-        title: Plot title
-        filename: Filename to save the plot as
-        save_dir: Directory to save the plot in
-        show_std: Whether to show standard deviation bands
-        figsize: Figure size in inches
-    """
-    plt.figure(figsize=figsize)
-    
-    # Get the maximum length across all episodes
-    all_rewards = results["trained"]["rewards_over_time"]
-    if "random" in results:
-        all_rewards += results["random"]["rewards_over_time"]
-    max_length = max(len(rewards) for rewards in all_rewards)
-    
-    # Time steps for x-axis
-    time_steps = np.arange(max_length)
-    
-    # Process trained model results
-    trained_rewards = align_and_pad_rewards(results["trained"]["rewards_over_time"], max_length)
-    trained_mean = np.mean(trained_rewards, axis=0)
-    trained_std = np.std(trained_rewards, axis=0)
-    
-    # Plot trained model results
-    plt.plot(time_steps, trained_mean, label="Trained Model", color="#1f77b4", linewidth=2)
-    if show_std:
-        plt.fill_between(
-            time_steps, 
-            trained_mean - trained_std, 
-            trained_mean + trained_std, 
-            alpha=0.2, 
-            color="#1f77b4"
-        )
-    
-    # Process random model results if available
-    if "random" in results:
-        random_rewards = align_and_pad_rewards(results["random"]["rewards_over_time"], max_length)
-        random_mean = np.mean(random_rewards, axis=0)
-        random_std = np.std(random_rewards, axis=0)
-        
-        # Plot random model results
-        plt.plot(time_steps, random_mean, label="Random Actions", color="#ff7f0e", linewidth=2)
-        if show_std:
-            plt.fill_between(
-                time_steps, 
-                random_mean - random_std, 
-                random_mean + random_std, 
-                alpha=0.2, 
-                color="#ff7f0e"
-            )
-    
-    # Set up plot styling
-    plt.grid(True, alpha=0.3)
-    plt.title(title, fontsize=14)
-    plt.xlabel("Time Steps", fontsize=12)
-    plt.ylabel("Cumulative Reward", fontsize=12)
-    plt.legend(fontsize=10)
-    
-    # Ensure save directory exists
-    os.makedirs(save_dir, exist_ok=True)
-    
-    # Save the figure
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, filename), dpi=300)
-    plt.close()
-
 def plot_survival_boxplot(
     results: Dict[str, Any],
     title: str = "Episode Duration Comparison",
@@ -360,6 +283,7 @@ def plot_survival_boxplot(
     """
     Create a boxplot comparing the episode durations (time survived) between agents.
     Saves two versions: one with individual data points and one without.
+    Includes Mann-Whitney U test p-value on the plot.
     
     Args:
         results: Results dictionary from run_benchmark
@@ -381,6 +305,7 @@ def plot_survival_boxplot(
         categories.append("Trained Model")
     
     # Add random agent data if available
+    random_lengths = []
     if "random" in results:
         random_lengths = results["random"]["episode_lengths"]
         for length in random_lengths:
@@ -450,6 +375,26 @@ def plot_survival_boxplot(
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax1.xaxis.grid(False)
     
+    # Perform Mann-Whitney U test if both trained and random data are available
+    if "random" in results and len(trained_lengths) > 0 and len(random_lengths) > 0:
+        u_stat, p_value = stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
+        
+        # Add statistical test annotation
+        significance = ''
+        if p_value < 0.001:
+            significance = '***'  # p < 0.001
+        elif p_value < 0.01:
+            significance = '**'   # p < 0.01
+        elif p_value < 0.05:
+            significance = '*'    # p < 0.05
+            
+        # Add the p-value text to the plot
+        plt.text(0.5, 0.01, f'Mann-Whitney U Test: p = {p_value:.4f} {significance}', 
+                 horizontalalignment='center', 
+                 fontsize=10, 
+                 transform=plt.gca().transAxes,
+                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+    
     # Customize plot
     plt.title(title, fontsize=14, pad=10)
     plt.xlabel("")  # Remove x-label as it's redundant
@@ -492,6 +437,26 @@ def plot_survival_boxplot(
     ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax2.xaxis.grid(False)
     
+    # Perform Mann-Whitney U test if both trained and random data are available
+    if "random" in results and len(trained_lengths) > 0 and len(random_lengths) > 0:
+        u_stat, p_value = stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
+        
+        # Add statistical test annotation
+        significance = ''
+        if p_value < 0.001:
+            significance = '***'  # p < 0.001
+        elif p_value < 0.01:
+            significance = '**'   # p < 0.01
+        elif p_value < 0.05:
+            significance = '*'    # p < 0.05
+            
+        # Add the p-value text to the plot
+        plt.text(0.5, 0.01, f'Mann-Whitney U Test: p = {p_value:.4f} {significance}', 
+                 horizontalalignment='center', 
+                 fontsize=10, 
+                 transform=plt.gca().transAxes,
+                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+    
     # Customize plot
     plt.title(title, fontsize=14, pad=10)
     plt.xlabel("")  # Remove x-label as it's redundant
@@ -516,51 +481,18 @@ def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
     summary = {}
     
     # Calculate stats for trained model
-    # Flatten all rewards across all episodes for overall statistics
-    all_trained_rewards = [reward for rewards_list in results["trained"]["rewards_over_time"] for reward in rewards_list]
-    
-    # Get cumulative rewards for statistical analysis
-    # Note: rewards_over_time already contains cumulative rewards
-    trained_cumulative_rewards = align_and_pad_rewards(results["trained"]["rewards_over_time"])
-    trained_mean_cumulative = np.mean(trained_cumulative_rewards, axis=0)
-    trained_std_cumulative = np.std(trained_cumulative_rewards, axis=0, ddof=1)
-    
-    # Calculate average of mean cumulative and average of std cumulative
-    avg_mean_cumulative = float(np.mean(trained_mean_cumulative))
-    avg_std_cumulative = float(np.mean(trained_std_cumulative))
-    
     summary["trained"] = {
         "mean_episode_length": float(np.mean(results["trained"]["episode_lengths"])),
         "std_episode_length": float(np.std(results["trained"]["episode_lengths"], ddof=1)),
-        "mean_reward": float(np.mean(all_trained_rewards)),
-        "std_reward": float(np.std(all_trained_rewards, ddof=1)),
-        "mean_cumulative_reward": avg_mean_cumulative,
-        "std_cumulative_reward": avg_std_cumulative,
         "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["trained"]["rewards_over_time"]])),
         "std_final_reward": float(np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"]], ddof=1))
     }
     
     # Calculate stats for random agent if available
     if "random" in results:
-        # Flatten all rewards across all episodes for overall statistics
-        all_random_rewards = [reward for rewards_list in results["random"]["rewards_over_time"] for reward in rewards_list]
-        
-        # Get cumulative rewards for statistical analysis
-        random_cumulative_rewards = align_and_pad_rewards(results["random"]["rewards_over_time"])
-        random_mean_cumulative = np.mean(random_cumulative_rewards, axis=0)
-        random_std_cumulative = np.std(random_cumulative_rewards, axis=0, ddof=1)
-        
-        # Calculate average of mean cumulative and average of std cumulative
-        avg_mean_cumulative = float(np.mean(random_mean_cumulative))
-        avg_std_cumulative = float(np.mean(random_std_cumulative))
-        
         summary["random"] = {
             "mean_episode_length": float(np.mean(results["random"]["episode_lengths"])),
             "std_episode_length": float(np.std(results["random"]["episode_lengths"], ddof=1)),
-            "mean_reward": float(np.mean(all_random_rewards)),
-            "std_reward": float(np.std(all_random_rewards, ddof=1)),
-            "mean_cumulative_reward": avg_mean_cumulative,
-            "std_cumulative_reward": avg_std_cumulative,
             "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"]])),
             "std_final_reward": float(np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"]], ddof=1))
         }
@@ -574,6 +506,7 @@ def save_benchmark_results(
 ) -> None:
     """
     Save benchmark results to a JSON file.
+    Includes statistical test results for comparisons between trained and random models.
     
     Args:
         results: Results dictionary from run_benchmark
@@ -583,72 +516,104 @@ def save_benchmark_results(
     # Create a copy of results that's JSON serializable
     serializable_results = {}
     
-    # Flatten all rewards across all episodes for trained model
-    all_trained_rewards = [reward for rewards_list in results["trained"]["rewards_over_time"] for reward in rewards_list]
+    # Define conversion function for NumPy types
+    def convert_to_serializable(obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, (list, tuple)):
+            return [convert_to_serializable(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {key: convert_to_serializable(value) for key, value in obj.items()}
+        else:
+            return obj
     
-    # Get cumulative rewards for statistical analysis
-    trained_cumulative_rewards = align_and_pad_rewards(results["trained"]["rewards_over_time"])
-    trained_mean_cumulative = np.mean(trained_cumulative_rewards, axis=0)
-    trained_std_cumulative = np.std(trained_cumulative_rewards, axis=0, ddof=1)
-    
-    # Calculate average of mean cumulative and average of std cumulative
-    avg_mean_cumulative = float(np.mean(trained_mean_cumulative))
-    avg_std_cumulative = float(np.mean(trained_std_cumulative))
+    # Extract trained model data for statistical tests
+    trained_lengths = results["trained"]["episode_lengths"]
+    trained_final_rewards = [rewards[-1] for rewards in results["trained"]["rewards_over_time"]]
     
     # Handle trained model results
     serializable_results["trained"] = {
-        "mean_episode_length": np.mean(results["trained"]["episode_lengths"]).item(),
-        "std_episode_length": np.std(results["trained"]["episode_lengths"], ddof=1).item(),
-        "mean_reward": np.mean(all_trained_rewards).item(),
-        "std_reward": np.std(all_trained_rewards, ddof=1).item(),
-        "mean_cumulative_reward": avg_mean_cumulative,
-        "std_cumulative_reward": avg_std_cumulative,
-        # Keep the final reward stats for backward compatibility
-        "mean_final_reward": np.mean([rewards[-1] for rewards in results["trained"]["rewards_over_time"]]).item(),
-        "std_final_reward": np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"]], ddof=1).item()
+        "mean_episode_length": float(np.mean(results["trained"]["episode_lengths"])),
+        "std_episode_length": float(np.std(results["trained"]["episode_lengths"], ddof=1)),
+        "mean_final_reward": float(np.mean(trained_final_rewards)),
+        "std_final_reward": float(np.std(trained_final_rewards, ddof=1))
     }
     
     # Handle random model results if available
     if "random" in results:
-        # Flatten all rewards across all episodes for random model
-        all_random_rewards = [reward for rewards_list in results["random"]["rewards_over_time"] for reward in rewards_list]
-        
-        # Get cumulative rewards for statistical analysis
-        random_cumulative_rewards = align_and_pad_rewards(results["random"]["rewards_over_time"])
-        random_mean_cumulative = np.mean(random_cumulative_rewards, axis=0)
-        random_std_cumulative = np.std(random_cumulative_rewards, axis=0, ddof=1)
-        
-        # Calculate average of mean cumulative and average of std cumulative
-        avg_mean_cumulative = float(np.mean(random_mean_cumulative))
-        avg_std_cumulative = float(np.mean(random_std_cumulative))
+        # Extract random model data for statistical tests
+        random_lengths = results["random"]["episode_lengths"]
+        random_final_rewards = [rewards[-1] for rewards in results["random"]["rewards_over_time"]]
         
         serializable_results["random"] = {
-            "mean_episode_length": np.mean(results["random"]["episode_lengths"]).item(),
-            "std_episode_length": np.std(results["random"]["episode_lengths"], ddof=1).item(),
-            "mean_reward": np.mean(all_random_rewards).item(),
-            "std_reward": np.std(all_random_rewards, ddof=1).item(),
-            "mean_cumulative_reward": avg_mean_cumulative,
-            "std_cumulative_reward": avg_std_cumulative,
-            # Keep the final reward stats for backward compatibility
-            "mean_final_reward": np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"]]).item(),
-            "std_final_reward": np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"]], ddof=1).item()
+            "mean_episode_length": float(np.mean(results["random"]["episode_lengths"])),
+            "std_episode_length": float(np.std(results["random"]["episode_lengths"], ddof=1)),
+            "mean_final_reward": float(np.mean(random_final_rewards)),
+            "std_final_reward": float(np.std(random_final_rewards, ddof=1))
         }
+        
+        # Add statistical tests comparing trained vs. random
+        serializable_results["statistical_tests"] = {}
+        
+        # Episode length comparison (Mann-Whitney U test)
+        if len(trained_lengths) > 0 and len(random_lengths) > 0:
+            u_stat, p_value = stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
+            serializable_results["statistical_tests"]["episode_length"] = {
+                "test": "Mann-Whitney U",
+                "u_statistic": float(u_stat),
+                "p_value": float(p_value),
+                "significant_0.05": bool(p_value < 0.05),
+                "significant_0.01": bool(p_value < 0.01),
+                "significant_0.001": bool(p_value < 0.001)
+            }
+        
+        # Final reward comparison (Mann-Whitney U test)
+        if len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
+            u_stat, p_value = stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
+            serializable_results["statistical_tests"]["final_reward"] = {
+                "test": "Mann-Whitney U",
+                "u_statistic": float(u_stat),
+                "p_value": float(p_value),
+                "significant_0.05": bool(p_value < 0.05),
+                "significant_0.01": bool(p_value < 0.01),
+                "significant_0.001": bool(p_value < 0.001)
+            }
     
     # Add config info
     serializable_results["environment"] = {
-        "grid_size": results["config"]["environment"]["grid_size"],
-        "n_humans": results["config"]["environment"]["n_humans"],
-        "n_infected": results["config"]["environment"]["n_infected"],
-        "simulation_time": results["config"]["environment"]["simulation_time"],
-        "reward_type": results["config"]["environment"]["reward_type"]
+        "grid_size": int(results["config"]["environment"]["grid_size"]),
+        "n_humans": int(results["config"]["environment"]["n_humans"]),
+        "n_infected": int(results["config"]["environment"]["n_infected"]),
+        "simulation_time": int(results["config"]["environment"]["simulation_time"]),
+        "reward_type": str(results["config"]["environment"]["reward_type"])
     }
     
     # Ensure save directory exists
     os.makedirs(save_dir, exist_ok=True)
     
-    # Save to JSON file
-    with open(os.path.join(save_dir, filename), 'w') as f:
-        json.dump(serializable_results, f, indent=4) 
+    # Save to JSON file with error handling
+    try:
+        with open(os.path.join(save_dir, filename), 'w') as f:
+            json.dump(serializable_results, f, indent=4, sort_keys=False)
+        print(f"Successfully saved benchmark results to {os.path.join(save_dir, filename)}")
+    except Exception as e:
+        print(f"Error saving JSON file: {e}")
+        # Try saving with a simpler approach as a fallback
+        try:
+            # Apply the conversion function to the entire results structure
+            serializable_results = convert_to_serializable(serializable_results)
+            
+            # Save with a different name to avoid corrupting the original file
+            fallback_filename = "fallback_" + filename
+            with open(os.path.join(save_dir, fallback_filename), 'w') as f:
+                json.dump(serializable_results, f, indent=4)
+            print(f"Saved fallback results to {os.path.join(save_dir, fallback_filename)}")
+        except Exception as e2:
+            print(f"Failed to save fallback JSON file: {e2}")
 
 def run_exposure_adherence_benchmark(
     model_path: str, 
@@ -987,6 +952,7 @@ def plot_final_reward_boxplot(
     """
     Create a boxplot comparing the final cumulative rewards between agents.
     Saves two versions: one with individual data points and one without.
+    Includes Mann-Whitney U test p-value on the plot.
     
     Args:
         results: Results dictionary from run_benchmark
@@ -1008,6 +974,7 @@ def plot_final_reward_boxplot(
         categories.append("Trained Model")
     
     # Add random agent data if available
+    random_final_rewards = []
     if "random" in results:
         random_final_rewards = [rewards[-1] for rewards in results["random"]["rewards_over_time"]]
         for reward in random_final_rewards:
@@ -1077,6 +1044,26 @@ def plot_final_reward_boxplot(
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax1.xaxis.grid(False)
     
+    # Perform Mann-Whitney U test if both trained and random data are available
+    if "random" in results and len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
+        u_stat, p_value = stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
+        
+        # Add statistical test annotation
+        significance = ''
+        if p_value < 0.001:
+            significance = '***'  # p < 0.001
+        elif p_value < 0.01:
+            significance = '**'   # p < 0.01
+        elif p_value < 0.05:
+            significance = '*'    # p < 0.05
+            
+        # Add the p-value text to the plot
+        plt.text(0.5, 0.01, f'Mann-Whitney U Test: p = {p_value:.4f} {significance}', 
+                 horizontalalignment='center', 
+                 fontsize=10, 
+                 transform=plt.gca().transAxes,
+                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+    
     # Customize plot
     plt.title(title, fontsize=14, pad=10)
     plt.xlabel("")  # Remove x-label as it's redundant
@@ -1118,6 +1105,26 @@ def plot_final_reward_boxplot(
     # Add a discrete grid on the y-axis only
     ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax2.xaxis.grid(False)
+    
+    # Perform Mann-Whitney U test if both trained and random data are available
+    if "random" in results and len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
+        u_stat, p_value = stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
+        
+        # Add statistical test annotation
+        significance = ''
+        if p_value < 0.001:
+            significance = '***'  # p < 0.001
+        elif p_value < 0.01:
+            significance = '**'   # p < 0.01
+        elif p_value < 0.05:
+            significance = '*'    # p < 0.05
+            
+        # Add the p-value text to the plot
+        plt.text(0.5, 0.01, f'Mann-Whitney U Test: p = {p_value:.4f} {significance}', 
+                 horizontalalignment='center', 
+                 fontsize=10, 
+                 transform=plt.gca().transAxes,
+                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
     
     # Customize plot
     plt.title(title, fontsize=14, pad=10)
