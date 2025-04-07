@@ -166,6 +166,11 @@ def main():
         print(f"    Mean Episode Duration: {summary_stats['stationary']['mean_episode_length']:.2f} steps (±{summary_stats['stationary']['std_episode_length']:.2f})")
         print(f"    Mean Final Reward: {summary_stats['stationary']['mean_final_reward']:.2f} (±{summary_stats['stationary']['std_final_reward']:.2f})")
         
+    if "greedy" in summary_stats:
+        print("  Greedy Maximizer:")
+        print(f"    Mean Episode Duration: {summary_stats['greedy']['mean_episode_length']:.2f} steps (±{summary_stats['greedy']['std_episode_length']:.2f})")
+        print(f"    Mean Final Reward: {summary_stats['greedy']['mean_final_reward']:.2f} (±{summary_stats['greedy']['std_final_reward']:.2f})")
+        
     # Load the detailed results from the JSON for statistical tests
     full_results_path = os.path.join(args.output_dir, data_filename)
     statistical_tests = None
@@ -184,7 +189,10 @@ def main():
         agent_pairs = [
             ("Trained", "Random"),
             ("Trained", "Stationary"),
-            ("Random", "Stationary")
+            ("Random", "Stationary"),
+            ("Trained", "Greedy"),
+            ("Random", "Greedy"),
+            ("Stationary", "Greedy")
         ]
         metrics = [
             ("episode_length", "Episode Duration"), 
@@ -236,7 +244,7 @@ def main():
             if metric_key in directional_tests_results:
                 metric_directional = directional_tests_results[metric_key]
                 displayed_directional = False
-                for baseline_agent in ["Random", "Stationary"]:
+                for baseline_agent in ["Random", "Stationary", "Greedy"]:
                     comparison_key = f"Trained_vs_{baseline_agent}"
                     if comparison_key in metric_directional:
                         comp_data = metric_directional[comparison_key]
