@@ -1282,7 +1282,8 @@ class SIRSEnvironment(gym.Env):
             "enhancedInfectionAvoidance": self._calculate_enhanced_infection_avoidance_reward,
             "constant": self.constant_reward,
             "reduceInfectionProbwithConstant": self._calculate_reduceInfectionProbwithConstant_reward,
-            "comprehensive": self._calculate_comprehensive_reward
+            "comprehensive": self._calculate_comprehensive_reward,
+            "greedyDistanceIncrease": self._calculate_greedy_distance_increase_reward # Add new reward
         }
         if self.reward_type not in reward_functions:  
             raise ValueError(f"Invalid reward type: {self.reward_type}")
@@ -1310,6 +1311,20 @@ class SIRSEnvironment(gym.Env):
         # Store current state before update for terminal reward calculation
         previous_state = self.agent_state
         
+        # --- Calculate distance to nearest infected BEFORE stepping --- 
+        self.dist_before_step = self.max_distance # Default if no infected
+        agent_human_before = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        infected_list_before = self._get_infected_list(agent_human_before)
+        if infected_list_before:
+            distances_before = [self._calculate_distance(agent_human_before, h) for h in infected_list_before]
+            self.dist_before_step = min(distances_before)
+        # --- End distance calculation --- 
+            
         self._update_agent(action) 
         self._handle_human_stepping()
 
@@ -1617,3 +1632,48 @@ class SIRSEnvironment(gym.Env):
     def close(self):
         """Close the environment and cleanup resources."""
         self.fig = None
+
+    def _calculate_greedy_distance_increase_reward(self):
+        """
+        Reward function that encourages the agent to maximize the immediate increase
+        in distance to the nearest infected individual, mimicking the greedy baseline.
+        Reward = (distance_after_step - distance_before_step)
+        """
+        # Only provide reward if the agent is susceptible
+        if self.agent_state != STATE_DICT['S']:
+            return -1.0 # No reward/penalty if not susceptible
+            
+        # Calculate distance to nearest infected AFTER stepping
+        dist_after_step = self.max_distance # Default if no infected after step
+        agent_human_after = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        infected_list_after = self._get_infected_list(agent_human_after)
+        if infected_list_after:
+            distances_after = [self._calculate_distance(agent_human_after, h) for h in infected_list_after]
+            dist_after_step = min(distances_after)
+        
+        # Retrieve distance before step (calculated in the step function)
+        dist_before = self.dist_before_step
+        
+        # Calculate the change in distance
+        delta_distance = dist_after_step - dist_before
+        
+        # The reward is the change in distance. 
+        # A positive delta means the agent moved further away.
+        # A negative delta means the agent moved closer.
+        # Max possible positive delta in one step is roughly agent max speed (1.0)
+        # Max possible negative delta is also roughly 1.0
+        # Normalize reward slightly to keep it within a reasonable range (e.g., [-1, 1])
+        # Since max step size is 1, delta_distance is naturally bounded around [-1, 1]
+        
+        # Optional: Scale the reward if needed, but raw delta might be fine.
+        reward_scale = 0.9 
+        reward = reward_scale * delta_distance
+        reward += 0.1 # alive bonus
+
+        
+        return reward
