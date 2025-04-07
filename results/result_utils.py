@@ -9,6 +9,8 @@ import sys
 from tqdm import tqdm
 import seaborn as sns
 from scipy import stats  # Add this import for statistical tests
+import itertools # for pairwise comparisons
+import statsmodels.stats.multitest as smm # for multiple comparisons correction
 
 # Add the parent directory to the path so we can import environment
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -222,16 +224,79 @@ def run_benchmark(
             random_exposure_data.append(episode_exposures)
             random_adherence_data.append(episode_adherences)
     
+    # Run stationary (0 adherence) episodes
+    stationary_rewards_over_time = []
+    stationary_episode_lengths = []
+    stationary_exposure_data = []
+    stationary_adherence_data = []
+    
+    print("Running episodes with stationary (0 adherence) actions...")
+    for i in tqdm(range(n_runs), desc="Stationary (0 Adherence) Episodes", unit="episode"):
+        # Use different seeds for each run
+        seed = random_seed + i if random_seed is not None else None
+        
+        # Reset environment
+        obs = env.reset(seed=seed)[0]
+        done = False
+        cumulative_rewards = [0]  # Start with 0 reward
+        
+        # Lists to store exposure and adherence data for this episode
+        episode_exposures = []
+        episode_adherences = []
+        
+        # Fixed action [0, 0, 0]
+        stationary_action = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        
+        while not done:
+            action = stationary_action
+            adherence = action[2]  # Adherence is always 0
+            
+            # Get agent exposure before taking the step (if susceptible)
+            if env.agent_state == 0:  # If agent is susceptible
+                agent_human = Human(
+                    x=env.agent_position[0],
+                    y=env.agent_position[1],
+                    state=env.agent_state,
+                    id=-1
+                )
+                exposure = env._calculate_total_exposure(agent_human)
+            else:
+                exposure = 0.0  # Not susceptible, so no exposure
+            
+            # Store exposure and adherence data
+            episode_exposures.append(exposure)
+            episode_adherences.append(adherence)
+            
+            # Take a step in the environment
+            obs, reward, terminated, truncated, info = env.step(action)
+            
+            # Update cumulative reward
+            cumulative_rewards.append(cumulative_rewards[-1] + reward)
+            
+            done = terminated or truncated
+        
+        # Save episode data
+        stationary_rewards_over_time.append(cumulative_rewards)
+        stationary_episode_lengths.append(len(cumulative_rewards) - 1) # -1 because we start with 0
+        stationary_exposure_data.append(episode_exposures)
+        stationary_adherence_data.append(episode_adherences)
+
     # Close environment
     env.close()
     
-    # Return results with both reward and exposure/adherence data
+    # Return results with reward and exposure/adherence data
     results = {
         "trained": {
             "rewards_over_time": trained_rewards_over_time,
             "episode_lengths": trained_episode_lengths,
             "exposure_data": trained_exposure_data,
             "adherence_data": trained_adherence_data
+        },
+        "stationary": { # Renamed from "stationary_zero_adherence" for brevity
+            "rewards_over_time": stationary_rewards_over_time,
+            "episode_lengths": stationary_episode_lengths,
+            "exposure_data": stationary_exposure_data,
+            "adherence_data": stationary_adherence_data
         }
     }
     
@@ -283,7 +348,7 @@ def plot_survival_boxplot(
     """
     Create a boxplot comparing the episode durations (time survived) between agents.
     Saves two versions: one with individual data points and one without.
-    Includes Mann-Whitney U test p-value on the plot.
+    Includes Mann-Whitney U test p-value on the plot for pairwise comparisons.
     
     Args:
         results: Results dictionary from run_benchmark
@@ -292,25 +357,30 @@ def plot_survival_boxplot(
         save_dir: Directory to save the plot in
         figsize: Figure size in inches
     """
-    # Extract episode lengths for trained model
-    trained_lengths = results["trained"]["episode_lengths"]
+    agent_types = list(results.keys())
+    if "config" in agent_types: agent_types.remove("config") # Remove config key
     
-    # Prepare data for boxplot
     data = []
     categories = []
+    agent_labels = {
+        "trained": "Trained Model",
+        "random": "Random Actions",
+        "stationary": "Stationary (0 Adherence)"
+    }
     
-    # Add trained model data
-    for length in trained_lengths:
-        data.append(length)
-        categories.append("Trained Model")
+    # Extract episode lengths and map categories
+    category_data = {}
+    for agent_type in agent_types:
+        if agent_type in results:
+            lengths = results[agent_type]["episode_lengths"]
+            label = agent_labels.get(agent_type, agent_type.capitalize())
+            category_data[label] = lengths
+            for length in lengths:
+                data.append(length)
+                categories.append(label)
     
-    # Add random agent data if available
-    random_lengths = []
-    if "random" in results:
-        random_lengths = results["random"]["episode_lengths"]
-        for length in random_lengths:
-            data.append(length)
-            categories.append("Random Actions")
+    # Order categories for consistent plotting
+    ordered_categories = [agent_labels[k] for k in ["trained", "stationary", "random"] if k in agent_labels and agent_labels[k] in category_data]
     
     # Create DataFrame for seaborn
     df = pd.DataFrame({
@@ -333,7 +403,92 @@ def plot_survival_boxplot(
         'ytick.labelsize': 10
     })
     
-    # FIRST PLOT: Boxplot with individual data points
+    # Perform pairwise Mann-Whitney U tests
+    pairwise_results = {}
+    p_values = []
+    comparisons = []
+    if len(ordered_categories) > 1:
+        for cat1, cat2 in itertools.combinations(ordered_categories, 2):
+            data1 = category_data[cat1]
+            data2 = category_data[cat2]
+            if len(data1) > 0 and len(data2) > 0:
+                try:
+                    u_stat, p_value = stats.mannwhitneyu(data1, data2, alternative='two-sided')
+                    pairwise_results[(cat1, cat2)] = p_value
+                    p_values.append(p_value)
+                    comparisons.append((cat1, cat2))
+                except ValueError as e:
+                    print(f"Warning: Mann-Whitney U test failed for {cat1} vs {cat2}: {e}")
+                    pairwise_results[(cat1, cat2)] = np.nan
+                    p_values.append(np.nan)
+                    comparisons.append((cat1, cat2))
+            else:
+                pairwise_results[(cat1, cat2)] = np.nan
+                p_values.append(np.nan)
+                comparisons.append((cat1, cat2))
+                
+        # Apply multiple comparison correction (Bonferroni)
+        if p_values:
+             # Filter out NaN p-values before correction if necessary
+            valid_p_values = [p for p in p_values if not np.isnan(p)]
+            valid_comparisons = [comp for p, comp in zip(p_values, comparisons) if not np.isnan(p)]
+            if valid_p_values: # Proceed only if there are valid p-values
+                reject, pvals_corrected, _, _ = smm.multipletests(valid_p_values, alpha=0.05, method='bonferroni')
+                corrected_results = dict(zip(valid_comparisons, pvals_corrected))
+                 # Add back NaN results for comparisons that couldn't be tested
+                for comp, p_val in zip(comparisons, p_values):
+                    if np.isnan(p_val):
+                        corrected_results[comp] = np.nan
+            else:
+                corrected_results = {comp: np.nan for comp in comparisons} # All NaN if no valid p-values
+        else:
+            corrected_results = {}
+
+    # --- Function to add annotations --- 
+    def add_stats_annotations(ax, plot_type):
+        if not corrected_results: return
+        
+        y_max = df["Episode Duration (steps)"].max()
+        y_range = y_max - df["Episode Duration (steps)"].min()
+         # Handle cases where y_range is zero or very small
+        if y_range <= 0:
+            increment = 0.1 # Default small increment
+        else:
+            increment = y_range * 0.08
+            
+        current_y = y_max + increment * 0.5
+        
+        # Define positions for annotations based on ordered categories
+        cat_pos = {cat: i for i, cat in enumerate(ordered_categories)}
+        
+        for (cat1, cat2), p_corrected in corrected_results.items():
+            if np.isnan(p_corrected): continue
+            
+            pos1 = cat_pos[cat1]
+            pos2 = cat_pos[cat2]
+            
+            # Draw connecting line
+            line_x = [pos1, pos1, pos2, pos2]
+            line_y = [current_y, current_y + increment * 0.2, current_y + increment * 0.2, current_y]
+            ax.plot(line_x, line_y, lw=1.5, c='black')
+            
+            # Determine significance level
+            significance = 'ns' # not significant
+            if p_corrected < 0.001: significance = '***'
+            elif p_corrected < 0.01: significance = '**'
+            elif p_corrected < 0.05: significance = '*'
+            
+            # Add text annotation
+            text_x = (pos1 + pos2) / 2
+            text_y = current_y + increment * 0.3
+            ax.text(text_x, text_y, significance, ha='center', va='bottom', fontsize=10)
+            
+            current_y += increment # Move up for the next annotation
+
+        # Adjust y-limit to make space for annotations
+        ax.set_ylim(top=current_y)
+
+    # --- FIRST PLOT: Boxplot with individual data points --- 
     plt.figure(figsize=figsize, dpi=120)
     
     # Create a clean boxplot with minimal design
@@ -341,6 +496,7 @@ def plot_survival_boxplot(
         x="Agent Type", 
         y="Episode Duration (steps)", 
         data=df,
+        order=ordered_categories, # Use defined order
         width=0.5,
         color='white',
         fliersize=3
@@ -351,6 +507,7 @@ def plot_survival_boxplot(
         x="Agent Type", 
         y="Episode Duration (steps)", 
         data=df,
+        order=ordered_categories,
         color='black',
         size=5,  
         alpha=0.5,
@@ -360,44 +517,24 @@ def plot_survival_boxplot(
     # Remove colors and simplify
     for i, box in enumerate(ax1.artists):
         box.set_edgecolor('black')
-        
-        # Each box has 6 associated Line2D objects (whiskers, caps, and median)
         for j in range(6*i, 6*(i+1)):
-            ax1.lines[j].set_color('black')
+             if j < len(ax1.lines): # Check if line index is valid
+                ax1.lines[j].set_color('black')
     
     # Customize appearance
     ax1.spines['top'].set_visible(False)
     ax1.spines['right'].set_visible(False)
     ax1.spines['left'].set_linewidth(0.5)
     ax1.spines['bottom'].set_linewidth(0.5)
-    
-    # Add a discrete grid on the y-axis only
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax1.xaxis.grid(False)
     
-    # Perform Mann-Whitney U test if both trained and random data are available
-    if "random" in results and len(trained_lengths) > 0 and len(random_lengths) > 0:
-        u_stat, p_value = stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
-        
-        # Add statistical test annotation
-        significance = ''
-        if p_value < 0.001:
-            significance = '***'  # p < 0.001
-        elif p_value < 0.01:
-            significance = '**'   # p < 0.01
-        elif p_value < 0.05:
-            significance = '*'    # p < 0.05
-            
-        # Add the p-value text to the plot
-        plt.text(0.5, 0.01, f'Mann-Whitney U Test: p = {p_value:.4f} {significance}', 
-                 horizontalalignment='center', 
-                 fontsize=10, 
-                 transform=plt.gca().transAxes,
-                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+    # Add statistical annotations
+    add_stats_annotations(ax1, "with_points")
     
-    # Customize plot
-    plt.title(title, fontsize=14, pad=10)
-    plt.xlabel("")  # Remove x-label as it's redundant
+    # Customize plot labels
+    plt.title(title, fontsize=14, pad=20) # Increased pad
+    plt.xlabel("")  
     plt.ylabel("Episode Duration (steps)", fontsize=12, labelpad=10)
     
     # Save the figure with points
@@ -406,14 +543,15 @@ def plot_survival_boxplot(
     plt.savefig(os.path.join(save_dir, points_filename), dpi=300, bbox_inches='tight')
     plt.close()
     
-    # SECOND PLOT: Boxplot without individual data points
+    # --- SECOND PLOT: Boxplot without individual data points --- 
     plt.figure(figsize=figsize, dpi=120)
     
-    # Create a clean boxplot with minimal design (without stripplot)
+    # Create a clean boxplot without stripplot
     ax2 = sns.boxplot(
         x="Agent Type", 
         y="Episode Duration (steps)", 
         data=df,
+        order=ordered_categories,
         width=0.5,
         color='white',
         fliersize=3
@@ -422,51 +560,31 @@ def plot_survival_boxplot(
     # Remove colors and simplify
     for i, box in enumerate(ax2.artists):
         box.set_edgecolor('black')
-        
-        # Each box has 6 associated Line2D objects (whiskers, caps, and median)
         for j in range(6*i, 6*(i+1)):
-            ax2.lines[j].set_color('black')
+            if j < len(ax2.lines):
+                ax2.lines[j].set_color('black')
     
     # Customize appearance
     ax2.spines['top'].set_visible(False)
     ax2.spines['right'].set_visible(False)
     ax2.spines['left'].set_linewidth(0.5)
     ax2.spines['bottom'].set_linewidth(0.5)
-    
-    # Add a discrete grid on the y-axis only
     ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax2.xaxis.grid(False)
     
-    # Perform Mann-Whitney U test if both trained and random data are available
-    if "random" in results and len(trained_lengths) > 0 and len(random_lengths) > 0:
-        u_stat, p_value = stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
-        
-        # Add statistical test annotation
-        significance = ''
-        if p_value < 0.001:
-            significance = '***'  # p < 0.001
-        elif p_value < 0.01:
-            significance = '**'   # p < 0.01
-        elif p_value < 0.05:
-            significance = '*'    # p < 0.05
-            
-        # Add the p-value text to the plot
-        plt.text(0.5, 0.01, f'Mann-Whitney U Test: p = {p_value:.4f} {significance}', 
-                 horizontalalignment='center', 
-                 fontsize=10, 
-                 transform=plt.gca().transAxes,
-                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
-    
-    # Customize plot
-    plt.title(title, fontsize=14, pad=10)
-    plt.xlabel("")  # Remove x-label as it's redundant
+    # Add statistical annotations
+    add_stats_annotations(ax2, "no_points")
+
+    # Customize plot labels
+    plt.title(title, fontsize=14, pad=20)
+    plt.xlabel("")  
     plt.ylabel("Episode Duration (steps)", fontsize=12, labelpad=10)
     
     # Save the figure without points
     plt.tight_layout()
     no_points_filename = os.path.splitext(filename)[0] + "_no_points" + os.path.splitext(filename)[1]
     plt.savefig(os.path.join(save_dir, no_points_filename), dpi=300, bbox_inches='tight')
-    plt.close()
+    plt.close() 
 
 def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
     """
@@ -484,8 +602,8 @@ def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
     summary["trained"] = {
         "mean_episode_length": float(np.mean(results["trained"]["episode_lengths"])),
         "std_episode_length": float(np.std(results["trained"]["episode_lengths"], ddof=1)),
-        "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["trained"]["rewards_over_time"]])),
-        "std_final_reward": float(np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"]], ddof=1))
+        "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["trained"]["rewards_over_time"] if rewards])),
+        "std_final_reward": float(np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"] if rewards], ddof=1))
     }
     
     # Calculate stats for random agent if available
@@ -493,8 +611,17 @@ def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         summary["random"] = {
             "mean_episode_length": float(np.mean(results["random"]["episode_lengths"])),
             "std_episode_length": float(np.std(results["random"]["episode_lengths"], ddof=1)),
-            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"]])),
-            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"]], ddof=1))
+            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"] if rewards])),
+            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"] if rewards], ddof=1))
+        }
+    
+    # Calculate stats for stationary agent if available
+    if "stationary" in results:
+        summary["stationary"] = {
+            "mean_episode_length": float(np.mean(results["stationary"]["episode_lengths"])),
+            "std_episode_length": float(np.std(results["stationary"]["episode_lengths"], ddof=1)),
+            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["stationary"]["rewards_over_time"] if rewards])),
+            "std_final_reward": float(np.std([rewards[-1] for rewards in results["stationary"]["rewards_over_time"] if rewards], ddof=1))
         }
     
     return summary 
@@ -523,229 +650,241 @@ def save_benchmark_results(
         elif isinstance(obj, np.integer):
             return int(obj)
         elif isinstance(obj, np.floating):
+            # Handle NaN specifically for JSON compatibility
+            if np.isnan(obj):
+                return None # Represent NaN as null in JSON
             return float(obj)
         elif isinstance(obj, (list, tuple)):
             return [convert_to_serializable(item) for item in obj]
         elif isinstance(obj, dict):
             return {key: convert_to_serializable(value) for key, value in obj.items()}
+        # Handle boolean types explicitly if they come from numpy
+        elif isinstance(obj, np.bool_):
+             return bool(obj)
+        # Handle None explicitly
+        elif obj is None:
+             return None
         else:
+            # Attempt basic types, raise error otherwise?
+            # For now, assume other types are directly serializable
             return obj
     
-    # Extract trained model data for statistical tests
-    trained_lengths = results["trained"]["episode_lengths"]
-    trained_final_rewards = [rewards[-1] for rewards in results["trained"]["rewards_over_time"]]
+    # Get summary stats first
+    summary_stats = get_summary_stats(results)
+    # Use the conversion function immediately for the summary
+    serializable_results["summary"] = convert_to_serializable(summary_stats)
     
-    # Handle trained model results
-    serializable_results["trained"] = {
-        "mean_episode_length": float(np.mean(results["trained"]["episode_lengths"])),
-        "std_episode_length": float(np.std(results["trained"]["episode_lengths"], ddof=1)),
-        "mean_final_reward": float(np.mean(trained_final_rewards)),
-        "std_final_reward": float(np.std(trained_final_rewards, ddof=1))
+    # Prepare data for statistical tests
+    data_for_tests = {}
+    agent_labels = {
+        "trained": "Trained",
+        "random": "Random",
+        "stationary": "Stationary"
     }
     
-    # Handle random model results if available
-    if "random" in results:
-        # Extract random model data for statistical tests
-        random_lengths = results["random"]["episode_lengths"]
-        random_final_rewards = [rewards[-1] for rewards in results["random"]["rewards_over_time"]]
-        
-        serializable_results["random"] = {
-            "mean_episode_length": float(np.mean(results["random"]["episode_lengths"])),
-            "std_episode_length": float(np.std(results["random"]["episode_lengths"], ddof=1)),
-            "mean_final_reward": float(np.mean(random_final_rewards)),
-            "std_final_reward": float(np.std(random_final_rewards, ddof=1))
-        }
-        
-        # Add statistical tests comparing trained vs. random
-        serializable_results["statistical_tests"] = {}
-        
-        # Episode length comparison (Mann-Whitney U test)
-        if len(trained_lengths) > 0 and len(random_lengths) > 0:
-            # Mann-Whitney U test
-            u_stat, p_value = stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
-            serializable_results["statistical_tests"]["episode_length"] = {
-                "test": "Mann-Whitney U",
-                "u_statistic": float(u_stat),
-                "p_value": float(p_value),
-                "significant_0.05": bool(p_value < 0.05),
-                "significant_0.01": bool(p_value < 0.01),
-                "significant_0.001": bool(p_value < 0.001),
-                "interpretation": "Non-parametric test comparing distributions; p<0.05 indicates significantly different episode lengths"
+    for agent_type, label in agent_labels.items():
+        if agent_type in results:
+            data_for_tests[label] = {
+                "lengths": results[agent_type]["episode_lengths"],
+                "rewards": [rewards[-1] for rewards in results[agent_type]["rewards_over_time"] if rewards]
             }
-            
-            # Shapiro-Wilk test for normality (for both trained and random episode lengths)
-            if len(trained_lengths) >= 3:  # Shapiro-Wilk requires at least 3 samples
-                sw_stat_trained, sw_p_trained = stats.shapiro(trained_lengths)
-                serializable_results["statistical_tests"]["episode_length_normality_trained"] = {
-                    "test": "Shapiro-Wilk",
-                    "statistic": float(sw_stat_trained),
-                    "p_value": float(sw_p_trained),
-                    "is_normal": bool(sw_p_trained >= 0.05),
-                    "interpretation": "Tests if data is normally distributed; p<0.05 indicates non-normal distribution"
-                }
-            
-            if len(random_lengths) >= 3:
-                sw_stat_random, sw_p_random = stats.shapiro(random_lengths)
-                serializable_results["statistical_tests"]["episode_length_normality_random"] = {
-                    "test": "Shapiro-Wilk",
-                    "statistic": float(sw_stat_random),
-                    "p_value": float(sw_p_random),
-                    "is_normal": bool(sw_p_random >= 0.05),
-                    "interpretation": "Tests if data is normally distributed; p<0.05 indicates non-normal distribution"
-                }
-            
-            # Levene's test for equality of variances
-            try:
-                levene_stat, levene_p = stats.levene(trained_lengths, random_lengths)
-                serializable_results["statistical_tests"]["episode_length_variance_equality"] = {
-                    "test": "Levene",
-                    "statistic": float(levene_stat),
-                    "p_value": float(levene_p),
-                    "equal_variance": bool(levene_p >= 0.05),
-                    "interpretation": "Tests if variances are equal; p<0.05 indicates significantly different variances"
-                }
-            except Exception as e:
-                print(f"Warning: Couldn't perform Levene's test for episode lengths: {e}")
-            
-            # Permutation test for episode lengths
-            try:
-                def diff_of_means(x, y):
-                    return np.mean(x) - np.mean(y)
-                
-                observed_diff = diff_of_means(trained_lengths, random_lengths)
-                # Combine for permutation
-                combined = np.concatenate([trained_lengths, random_lengths])
-                n_perm = 10000  # Number of permutations
-                n1 = len(trained_lengths)
-                
-                # Run permutation test
-                perm_diffs = []
-                for _ in range(n_perm):
-                    np.random.shuffle(combined)
-                    perm_diffs.append(diff_of_means(combined[:n1], combined[n1:]))
-                
-                # Calculate permutation p-value
-                perm_p = np.sum(np.abs(perm_diffs) >= np.abs(observed_diff)) / n_perm
-                
-                serializable_results["statistical_tests"]["episode_length_permutation"] = {
-                    "test": "Permutation",
-                    "observed_difference": float(observed_diff),
-                    "p_value": float(perm_p),
-                    "significant_0.05": bool(perm_p < 0.05),
-                    "interpretation": "Randomization test of mean differences; p<0.05 suggests difference is not due to chance"
-                }
-            except Exception as e:
-                print(f"Warning: Couldn't perform permutation test for episode lengths: {e}")
-        
-        # Final reward comparison (Mann-Whitney U test)
-        if len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
-            # Mann-Whitney U test
-            u_stat, p_value = stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
-            serializable_results["statistical_tests"]["final_reward"] = {
-                "test": "Mann-Whitney U",
-                "u_statistic": float(u_stat),
-                "p_value": float(p_value),
-                "significant_0.05": bool(p_value < 0.05),
-                "significant_0.01": bool(p_value < 0.01),
-                "significant_0.001": bool(p_value < 0.001),
-                "interpretation": "Non-parametric test comparing distributions; p<0.05 indicates significantly different rewards"
-            }
-            
-            # Shapiro-Wilk test for normality (for both trained and random final rewards)
-            if len(trained_final_rewards) >= 3:  # Shapiro-Wilk requires at least 3 samples
-                sw_stat_trained, sw_p_trained = stats.shapiro(trained_final_rewards)
-                serializable_results["statistical_tests"]["final_reward_normality_trained"] = {
-                    "test": "Shapiro-Wilk",
-                    "statistic": float(sw_stat_trained),
-                    "p_value": float(sw_p_trained),
-                    "is_normal": bool(sw_p_trained >= 0.05),
-                    "interpretation": "Tests if data is normally distributed; p<0.05 indicates non-normal distribution"
-                }
-            
-            if len(random_final_rewards) >= 3:
-                sw_stat_random, sw_p_random = stats.shapiro(random_final_rewards)
-                serializable_results["statistical_tests"]["final_reward_normality_random"] = {
-                    "test": "Shapiro-Wilk",
-                    "statistic": float(sw_stat_random),
-                    "p_value": float(sw_p_random),
-                    "is_normal": bool(sw_p_random >= 0.05),
-                    "interpretation": "Tests if data is normally distributed; p<0.05 indicates non-normal distribution"
-                }
-            
-            # Levene's test for equality of variances
-            try:
-                levene_stat, levene_p = stats.levene(trained_final_rewards, random_final_rewards)
-                serializable_results["statistical_tests"]["final_reward_variance_equality"] = {
-                    "test": "Levene",
-                    "statistic": float(levene_stat),
-                    "p_value": float(levene_p),
-                    "equal_variance": bool(levene_p >= 0.05),
-                    "interpretation": "Tests if variances are equal; p<0.05 indicates significantly different variances"
-                }
-            except Exception as e:
-                print(f"Warning: Couldn't perform Levene's test for final rewards: {e}")
-            
-            # Permutation test for final rewards
-            try:
-                def diff_of_means(x, y):
-                    return np.mean(x) - np.mean(y)
-                
-                observed_diff = diff_of_means(trained_final_rewards, random_final_rewards)
-                # Combine for permutation
-                combined = np.concatenate([trained_final_rewards, random_final_rewards])
-                n_perm = 10000  # Number of permutations
-                n1 = len(trained_final_rewards)
-                
-                # Run permutation test
-                perm_diffs = []
-                for _ in range(n_perm):
-                    np.random.shuffle(combined)
-                    perm_diffs.append(diff_of_means(combined[:n1], combined[n1:]))
-                
-                # Calculate permutation p-value
-                perm_p = np.sum(np.abs(perm_diffs) >= np.abs(observed_diff)) / n_perm
-                
-                serializable_results["statistical_tests"]["final_reward_permutation"] = {
-                    "test": "Permutation",
-                    "observed_difference": float(observed_diff),
-                    "p_value": float(perm_p),
-                    "significant_0.05": bool(perm_p < 0.05),
-                    "interpretation": "Randomization test of mean differences; p<0.05 suggests difference is not due to chance"
-                }
-            except Exception as e:
-                print(f"Warning: Couldn't perform permutation test for final rewards: {e}")
+
+    # Perform pairwise statistical tests
+    serializable_results["statistical_tests"] = {}
+    agent_keys = list(data_for_tests.keys())
     
+    if len(agent_keys) > 1:
+        for metric in ["lengths", "rewards"]:
+            metric_key = "episode_length" if metric == "lengths" else "final_reward"
+            serializable_results["statistical_tests"][metric_key] = {}
+            
+            p_values = []
+            comparisons = []
+            test_results = {}
+            
+            for agent1, agent2 in itertools.combinations(agent_keys, 2):
+                data1 = data_for_tests[agent1][metric]
+                data2 = data_for_tests[agent2][metric]
+                comparison_key = f"{agent1}_vs_{agent2}"
+                
+                test_data = {
+                    "comparison": comparison_key,
+                    "test_type": "Mann-Whitney U",
+                    "u_statistic": None,
+                    "p_value_uncorrected": None,
+                    "p_value_bonferroni": None,
+                    "significant_0.05_bonferroni": None,
+                    "normality_agent1": { "test": "Shapiro-Wilk", "statistic": None, "p_value": None, "is_normal": None },
+                    "normality_agent2": { "test": "Shapiro-Wilk", "statistic": None, "p_value": None, "is_normal": None },
+                    "variance_equality": { "test": "Levene", "statistic": None, "p_value": None, "equal_variance": None },
+                    "permutation": { "test": "Permutation", "observed_difference": None, "p_value": None, "significant_0.05": None }
+                }
+
+                if len(data1) > 0 and len(data2) > 0:
+                    # Mann-Whitney U
+                    try:
+                        u_stat, p_uncorrected = stats.mannwhitneyu(data1, data2, alternative='two-sided')
+                        test_data["u_statistic"] = u_stat
+                        test_data["p_value_uncorrected"] = p_uncorrected
+                        p_values.append(p_uncorrected)
+                        comparisons.append(comparison_key)
+                    except ValueError as e:
+                         print(f"Warning: Mann-Whitney U test failed for {comparison_key} ({metric}): {e}")
+                         p_values.append(np.nan)
+                         comparisons.append(comparison_key)
+                    
+                    # Shapiro-Wilk for Normality
+                    if len(data1) >= 3:
+                        sw_stat, sw_p = stats.shapiro(data1)
+                        test_data["normality_agent1"]["statistic"] = sw_stat
+                        test_data["normality_agent1"]["p_value"] = sw_p
+                        test_data["normality_agent1"]["is_normal"] = sw_p >= 0.05
+                    if len(data2) >= 3:
+                        sw_stat, sw_p = stats.shapiro(data2)
+                        test_data["normality_agent2"]["statistic"] = sw_stat
+                        test_data["normality_agent2"]["p_value"] = sw_p
+                        test_data["normality_agent2"]["is_normal"] = sw_p >= 0.05
+                        
+                    # Levene's Test for Variance Equality
+                    try:
+                        levene_stat, levene_p = stats.levene(data1, data2)
+                        test_data["variance_equality"]["statistic"] = levene_stat
+                        test_data["variance_equality"]["p_value"] = levene_p
+                        test_data["variance_equality"]["equal_variance"] = levene_p >= 0.05
+                    except Exception as e:
+                        print(f"Warning: Levene's test failed for {comparison_key} ({metric}): {e}")
+
+                    # Permutation Test
+                    try:
+                        def diff_of_means(x, y): return np.mean(x) - np.mean(y)
+                        observed_diff = diff_of_means(data1, data2)
+                        combined = np.concatenate([data1, data2])
+                        n_perm = 10000
+                        n1 = len(data1)
+                        perm_diffs = [diff_of_means(combined_shuffled[:n1], combined_shuffled[n1:]) 
+                                      for combined_shuffled in [np.random.permutation(combined) for _ in range(n_perm)]]
+                        perm_p = np.sum(np.abs(perm_diffs) >= np.abs(observed_diff)) / n_perm
+                        test_data["permutation"]["observed_difference"] = observed_diff
+                        test_data["permutation"]["p_value"] = perm_p
+                        test_data["permutation"]["significant_0.05"] = perm_p < 0.05
+                    except Exception as e:
+                        print(f"Warning: Permutation test failed for {comparison_key} ({metric}): {e}")
+
+                else: # Handle case with insufficient data for testing
+                    p_values.append(np.nan)
+                    comparisons.append(comparison_key)
+
+                test_results[comparison_key] = test_data
+                
+            # Apply Bonferroni correction
+            valid_indices = [i for i, p in enumerate(p_values) if not np.isnan(p)]
+            if valid_indices:
+                valid_p_values = [p_values[i] for i in valid_indices]
+                valid_comparisons = [comparisons[i] for i in valid_indices]
+                reject, pvals_corrected, _, _ = smm.multipletests(valid_p_values, alpha=0.05, method='bonferroni')
+                
+                for i, comparison_key in enumerate(valid_comparisons):
+                    test_results[comparison_key]["p_value_bonferroni"] = pvals_corrected[i]
+                    test_results[comparison_key]["significant_0.05_bonferroni"] = reject[i]
+            
+            # Store results
+            # Apply conversion immediately to the test_data dict before storing
+            serializable_results["statistical_tests"][metric_key] = convert_to_serializable(test_results)
+
+    # Add directional tests (Trained vs Baselines)
+    if "Trained" in agent_keys:
+        baseline_keys = [k for k in ["Random", "Stationary"] if k in agent_keys]
+        if baseline_keys:
+            serializable_results["statistical_tests"]["trained_vs_baselines"] = {}
+            for metric in ["lengths", "rewards"]:
+                metric_key = "episode_length" if metric == "lengths" else "final_reward"
+                directional_results = {}
+                p_values_directional = []
+                comparisons_directional = []
+                
+                data_trained = data_for_tests["Trained"][metric]
+                
+                for baseline in baseline_keys:
+                    data_baseline = data_for_tests[baseline][metric]
+                    comparison_key = f"Trained_vs_{baseline}"
+                    
+                    test_data_directional = {
+                        "comparison": comparison_key,
+                        "test_type": "Mann-Whitney U (one-sided, greater)",
+                        "u_statistic": None,
+                        "p_value_uncorrected": None,
+                        "p_value_bonferroni": None,
+                        "significant_0.05_bonferroni": None
+                    }
+                    
+                    if len(data_trained) > 0 and len(data_baseline) > 0:
+                        try:
+                            # Use alternative='greater' for one-sided test (Trained > Baseline)
+                            u_stat, p_uncorrected = stats.mannwhitneyu(data_trained, data_baseline, alternative='greater')
+                            test_data_directional["u_statistic"] = u_stat
+                            test_data_directional["p_value_uncorrected"] = p_uncorrected
+                            p_values_directional.append(p_uncorrected)
+                            comparisons_directional.append(comparison_key)
+                        except ValueError as e:
+                            print(f"Warning: One-sided Mann-Whitney U test failed for {comparison_key} ({metric}): {e}")
+                            p_values_directional.append(np.nan)
+                            comparisons_directional.append(comparison_key)
+                    else:
+                        p_values_directional.append(np.nan)
+                        comparisons_directional.append(comparison_key)
+                        
+                    directional_results[comparison_key] = test_data_directional
+                    
+                # Apply Bonferroni correction specifically to these directional tests
+                valid_indices_dir = [i for i, p in enumerate(p_values_directional) if not np.isnan(p)]
+                if valid_indices_dir:
+                    valid_p_values_dir = [p_values_directional[i] for i in valid_indices_dir]
+                    valid_comparisons_dir = [comparisons_directional[i] for i in valid_indices_dir]
+                    # Correct across the number of baselines being compared (usually 2)
+                    reject_dir, pvals_corrected_dir, _, _ = smm.multipletests(valid_p_values_dir, alpha=0.05, method='bonferroni')
+                    
+                    for i, comparison_key in enumerate(valid_comparisons_dir):
+                        directional_results[comparison_key]["p_value_bonferroni"] = pvals_corrected_dir[i]
+                        directional_results[comparison_key]["significant_0.05_bonferroni"] = reject_dir[i]
+                        
+                # Store results for this metric
+                serializable_results["statistical_tests"]["trained_vs_baselines"][metric_key] = convert_to_serializable(directional_results)
+
     # Add config info
-    serializable_results["environment"] = {
-        "grid_size": int(results["config"]["environment"]["grid_size"]),
-        "n_humans": int(results["config"]["environment"]["n_humans"]),
-        "n_infected": int(results["config"]["environment"]["n_infected"]),
-        "simulation_time": int(results["config"]["environment"]["simulation_time"]),
-        "reward_type": str(results["config"]["environment"]["reward_type"])
-    }
+    if "config" in results:
+        env_conf = results["config"].get("environment", {})
+        serializable_results["environment_config"] = {
+            "grid_size": int(env_conf.get("grid_size", 0)),
+            "n_humans": int(env_conf.get("n_humans", 0)),
+            "n_infected": int(env_conf.get("n_infected", 0)),
+            "simulation_time": int(env_conf.get("simulation_time", 0)),
+            "reward_type": str(env_conf.get("reward_type", "N/A"))
+        }
     
     # Ensure save directory exists
     os.makedirs(save_dir, exist_ok=True)
     
     # Save to JSON file with error handling
     try:
+        # The main dictionary should now be fully serializable
+        # No need to call convert_to_serializable again here if applied correctly above
         with open(os.path.join(save_dir, filename), 'w') as f:
             json.dump(serializable_results, f, indent=4, sort_keys=False)
         print(f"Successfully saved benchmark results to {os.path.join(save_dir, filename)}")
-    except Exception as e:
-        print(f"Error saving JSON file: {e}")
-        # Try saving with a simpler approach as a fallback
+    except TypeError as e:
+        print(f"Error saving JSON file due to TypeError: {e}")
+        print("Attempting fallback serialization...")
+        # Fallback: Apply conversion one more time on the entire structure
         try:
-            # Apply the conversion function to the entire results structure
-            serializable_results = convert_to_serializable(serializable_results)
-            
-            # Save with a different name to avoid corrupting the original file
+            serializable_results_fallback = convert_to_serializable(serializable_results)
             fallback_filename = "fallback_" + filename
             with open(os.path.join(save_dir, fallback_filename), 'w') as f:
-                json.dump(serializable_results, f, indent=4)
+                json.dump(serializable_results_fallback, f, indent=4)
             print(f"Saved fallback results to {os.path.join(save_dir, fallback_filename)}")
         except Exception as e2:
             print(f"Failed to save fallback JSON file: {e2}")
+    except Exception as e:
+         print(f"An unexpected error occurred during JSON saving: {e}")
 
 def run_exposure_adherence_benchmark(
     model_path: str, 
@@ -925,141 +1064,140 @@ def plot_exposure_adherence_scatterplot(
         include_random: Whether to include random model data
         jitter_amount: Amount of jitter to add to adherence values for better visibility
     """
-    # Create figure with gridspec for main plots and histograms
-    fig = plt.figure(figsize=figsize)
-    
-    if include_random:
-        # Adjust the height ratios to accommodate titles and increase spacing between plots
-        gs = fig.add_gridspec(3, 4, height_ratios=[0.5, 1, 4], width_ratios=[4, 1, 4, 1],
-                            hspace=0.05, wspace=0.3)  # Increased wspace from 0.05 to 0.3
-        
-        # Title areas
+    # Determine the number of agents to plot
+    agent_types_present = [agent for agent in ["trained", "stationary", "random"] if agent in results]
+    num_agents = len(agent_types_present)
+    include_random_plot = "random" in agent_types_present and include_random
+    include_stationary_plot = "stationary" in agent_types_present
+
+    # Create figure with gridspec based on the number of agents
+    if num_agents == 3 and include_random_plot and include_stationary_plot:
+        # Layout for Trained, Stationary, Random
+        fig = plt.figure(figsize=(figsize[0] * 1.5, figsize[1])) # Wider figure for 3 plots
+        gs = fig.add_gridspec(3, 6, height_ratios=[0.5, 1, 4], width_ratios=[4, 1, 4, 1, 4, 1],
+                            hspace=0.05, wspace=0.15) 
         ax_title1 = fig.add_subplot(gs[0, 0])
         ax_title2 = fig.add_subplot(gs[0, 2])
-        
-        # Main scatter plots
-        ax_scatter1 = fig.add_subplot(gs[2, 0])
-        ax_scatter2 = fig.add_subplot(gs[2, 2])
-        
-        # Histogram for x-axis (middle row)
+        ax_title3 = fig.add_subplot(gs[0, 4])
+        ax_scatter1 = fig.add_subplot(gs[2, 0]) # Trained
+        ax_scatter2 = fig.add_subplot(gs[2, 2]) # Stationary
+        ax_scatter3 = fig.add_subplot(gs[2, 4]) # Random
         ax_histx1 = fig.add_subplot(gs[1, 0], sharex=ax_scatter1)
         ax_histx2 = fig.add_subplot(gs[1, 2], sharex=ax_scatter2)
-        
-        # Histogram for y-axis (right)
+        ax_histx3 = fig.add_subplot(gs[1, 4], sharex=ax_scatter3)
         ax_histy1 = fig.add_subplot(gs[2, 1], sharey=ax_scatter1)
         ax_histy2 = fig.add_subplot(gs[2, 3], sharey=ax_scatter2)
+        ax_histy3 = fig.add_subplot(gs[2, 5], sharey=ax_scatter3)
+        titles = [ax_title1, ax_title2, ax_title3]
+        scatters = [ax_scatter1, ax_scatter2, ax_scatter3]
+        histx = [ax_histx1, ax_histx2, ax_histx3]
+        histy = [ax_histy1, ax_histy2, ax_histy3]
+        agent_order = ["trained", "stationary", "random"]
+        colors = ['blue', 'green', 'orange']
+        plot_labels = ["Trained Model", "Stationary (0 Adherence)", "Random Actions"]
+
+    elif num_agents == 2 and include_stationary_plot and not include_random_plot:
+         # Layout for Trained, Stationary
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(3, 4, height_ratios=[0.5, 1, 4], width_ratios=[4, 1, 4, 1],
+                            hspace=0.05, wspace=0.15) 
+        ax_title1 = fig.add_subplot(gs[0, 0])
+        ax_title2 = fig.add_subplot(gs[0, 2])
+        ax_scatter1 = fig.add_subplot(gs[2, 0]) # Trained
+        ax_scatter2 = fig.add_subplot(gs[2, 2]) # Stationary
+        ax_histx1 = fig.add_subplot(gs[1, 0], sharex=ax_scatter1)
+        ax_histx2 = fig.add_subplot(gs[1, 2], sharex=ax_scatter2)
+        ax_histy1 = fig.add_subplot(gs[2, 1], sharey=ax_scatter1)
+        ax_histy2 = fig.add_subplot(gs[2, 3], sharey=ax_scatter2)
+        titles = [ax_title1, ax_title2]
+        scatters = [ax_scatter1, ax_scatter2]
+        histx = [ax_histx1, ax_histx2]
+        histy = [ax_histy1, ax_histy2]
+        agent_order = ["trained", "stationary"]
+        colors = ['blue', 'green']
+        plot_labels = ["Trained Model", "Stationary (0 Adherence)"]
+
+    elif num_agents == 2 and include_random_plot and not include_stationary_plot:
+         # Layout for Trained, Random
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(3, 4, height_ratios=[0.5, 1, 4], width_ratios=[4, 1, 4, 1],
+                            hspace=0.05, wspace=0.15) 
+        ax_title1 = fig.add_subplot(gs[0, 0])
+        ax_title2 = fig.add_subplot(gs[0, 2])
+        ax_scatter1 = fig.add_subplot(gs[2, 0]) # Trained
+        ax_scatter2 = fig.add_subplot(gs[2, 2]) # Random
+        ax_histx1 = fig.add_subplot(gs[1, 0], sharex=ax_scatter1)
+        ax_histx2 = fig.add_subplot(gs[1, 2], sharex=ax_scatter2)
+        ax_histy1 = fig.add_subplot(gs[2, 1], sharey=ax_scatter1)
+        ax_histy2 = fig.add_subplot(gs[2, 3], sharey=ax_scatter2)
+        titles = [ax_title1, ax_title2]
+        scatters = [ax_scatter1, ax_scatter2]
+        histx = [ax_histx1, ax_histx2]
+        histy = [ax_histy1, ax_histy2]
+        agent_order = ["trained", "random"]
+        colors = ['blue', 'orange']
+        plot_labels = ["Trained Model", "Random Actions"]
         
-        # Turn off axis labels for histograms and title areas
-        ax_histx1.tick_params(axis="x", labelbottom=False)
-        ax_histx2.tick_params(axis="x", labelbottom=False)
-        ax_histy1.tick_params(axis="y", labelleft=False)
-        ax_histy2.tick_params(axis="y", labelleft=False)
-        
-        # Turn off all spines and ticks for title areas
-        for ax in [ax_title1, ax_title2]:
-            ax.axis('off')
-        
-        # Set the titles in the title areas
-        ax_title1.text(0.5, 0.5, "Trained Model", fontsize=14, ha='center', va='center')
-        ax_title2.text(0.5, 0.5, "Random Actions", fontsize=14, ha='center', va='center')
-        
-        axes_scatter = [ax_scatter1, ax_scatter2]
-        axes_histx = [ax_histx1, ax_histx2]
-        axes_histy = [ax_histy1, ax_histy2]
-    else:
-        # Adjust the height ratios to accommodate title
+    elif num_agents == 1 and "trained" in agent_types_present:
+        # Layout for Trained only
+        fig = plt.figure(figsize=(figsize[0] * 0.6, figsize[1])) # Smaller figure for 1 plot
         gs = fig.add_gridspec(3, 2, height_ratios=[0.5, 1, 4], width_ratios=[4, 1],
-                           hspace=0.05, wspace=0.15)  # Slightly increased wspace
-        
-        # Title area
+                            hspace=0.05, wspace=0.15)
         ax_title = fig.add_subplot(gs[0, 0])
-        
-        # Main scatter plot
-        ax_scatter = fig.add_subplot(gs[2, 0])
-        
-        # Histogram for x-axis (middle row)
+        ax_scatter = fig.add_subplot(gs[2, 0]) # Trained
         ax_histx = fig.add_subplot(gs[1, 0], sharex=ax_scatter)
-        
-        # Histogram for y-axis (right)
         ax_histy = fig.add_subplot(gs[2, 1], sharey=ax_scatter)
+        titles = [ax_title]
+        scatters = [ax_scatter]
+        histx = [ax_histx]
+        histy = [ax_histy]
+        agent_order = ["trained"]
+        colors = ['blue']
+        plot_labels = ["Trained Model"]
         
-        # Turn off axis labels for histograms
-        ax_histx.tick_params(axis="x", labelbottom=False)
-        ax_histy.tick_params(axis="y", labelleft=False)
-        
-        # Turn off all spines and ticks for title area
-        ax_title.axis('off')
-        
-        # Set the title in the title area
-        ax_title.text(0.5, 0.5, "Trained Model", fontsize=14, ha='center', va='center')
-        
-        axes_scatter = [ax_scatter]
-        axes_histx = [ax_histx]
-        axes_histy = [ax_histy]
-    
-    # Plot trained model data
-    trained_exposures = [item for sublist in results["trained"]["exposure_data"] for item in sublist]
-    trained_adherences = [item for sublist in results["trained"]["adherence_data"] for item in sublist]
-    
-    # Add jitter to adherence values to better visualize points at 0 and 1
-    trained_adherences_jittered = [a + np.random.uniform(-jitter_amount, jitter_amount) for a in trained_adherences]
-    
-    # Plot scatter for trained model
-    axes_scatter[0].scatter(trained_exposures, trained_adherences_jittered, alpha=alpha, c='blue', s=20)
-    # Remove the title from scatter plot since we now have a dedicated title area
-    axes_scatter[0].set_xlabel("Total Exposure", fontsize=12)
-    axes_scatter[0].set_ylabel("Agent Adherence", fontsize=12)
-    axes_scatter[0].grid(True, alpha=0.3)
-    
-    # Slightly expand y-axis to show points at 0 and 1 more clearly
-    axes_scatter[0].set_ylim(-0.05, 1.05)
-    
-    # Set x limits based on exposure range
-    x_max = max(trained_exposures) * 1.1 if trained_exposures else 1.0
-    axes_scatter[0].set_xlim(0, x_max)
-    
-    # Plot histograms for trained model
-    # Use more bins for a finer-grained view of the distribution
+    else:
+        print("Warning: Cannot generate exposure/adherence plot. No suitable agent data found.")
+        plt.close()
+        return # Exit if no valid configuration
+
+    # Turn off axis labels for histograms and title areas
+    for ax in histx: ax.tick_params(axis="x", labelbottom=False)
+    for ax in histy: ax.tick_params(axis="y", labelleft=False)
+    for ax in titles: ax.axis('off')
+
+    # Plot data for each agent
+    all_exposures = [] # To determine shared x-axis limits
     bin_count = 30
     
-    # X-axis histogram
-    axes_histx[0].hist(trained_exposures, bins=bin_count, alpha=0.7, color='blue')
-    axes_histx[0].set_ylabel('Count', fontsize=10)
-    
-    # Y-axis histogram - rotated for horizontal orientation
-    axes_histy[0].hist(trained_adherences, bins=bin_count, alpha=0.7, color='blue', 
-                     orientation='horizontal')
-    axes_histy[0].set_xlabel('Count', fontsize=10)
-    
-    # Add random model data if requested
-    if include_random and "random" in results:
-        random_exposures = [item for sublist in results["random"]["exposure_data"] for item in sublist]
-        random_adherences = [item for sublist in results["random"]["adherence_data"] for item in sublist]
+    for i, agent_type in enumerate(agent_order):
+        exposures = [item for sublist in results[agent_type]["exposure_data"] for item in sublist]
+        adherences = [item for sublist in results[agent_type]["adherence_data"] for item in sublist]
+        all_exposures.extend(exposures)
         
         # Add jitter to adherence values
-        random_adherences_jittered = [a + np.random.uniform(-jitter_amount, jitter_amount) for a in random_adherences]
+        adherences_jittered = [a + np.random.uniform(-jitter_amount, jitter_amount) for a in adherences]
         
-        # Plot scatter for random model
-        axes_scatter[1].scatter(random_exposures, random_adherences_jittered, alpha=alpha, c='orange', s=20)
-        # Remove the title from scatter plot since we now have a dedicated title area
-        axes_scatter[1].set_xlabel("Total Exposure", fontsize=12)
-        axes_scatter[1].set_ylabel("Agent Adherence", fontsize=12)
-        axes_scatter[1].grid(True, alpha=0.3)
+        # Plot scatter
+        scatters[i].scatter(exposures, adherences_jittered, alpha=alpha, c=colors[i], s=20)
+        scatters[i].set_xlabel("Total Exposure", fontsize=12)
+        scatters[i].set_ylabel("Agent Adherence" if i == 0 else "", fontsize=12) # Only label first y-axis
+        scatters[i].grid(True, alpha=0.3)
+        scatters[i].set_ylim(-0.05, 1.05) # Slightly expand y-axis
         
-        # Slightly expand y-axis to show points at 0 and 1 more clearly
-        axes_scatter[1].set_ylim(-0.05, 1.05)
+        # Plot histograms
+        histx[i].hist(exposures, bins=bin_count, alpha=0.7, color=colors[i])
+        histx[i].set_ylabel('Count', fontsize=10)
         
-        # Set x limits based on exposure range
-        x_max_random = max(random_exposures) * 1.1 if random_exposures else 1.0
-        axes_scatter[1].set_xlim(0, x_max_random)
+        histy[i].hist(adherences, bins=bin_count, alpha=0.7, color=colors[i], orientation='horizontal')
+        histy[i].set_xlabel('Count', fontsize=10)
         
-        # Plot histograms for random model
-        axes_histx[1].hist(random_exposures, bins=bin_count, alpha=0.7, color='orange')
-        axes_histx[1].set_ylabel('Count', fontsize=10)
-        
-        axes_histy[1].hist(random_adherences, bins=bin_count, alpha=0.7, color='orange',
-                         orientation='horizontal')
-        axes_histy[1].set_xlabel('Count', fontsize=10)
+        # Set title
+        titles[i].text(0.5, 0.5, plot_labels[i], fontsize=14, ha='center', va='center')
+
+    # Set shared x-axis limits based on the max exposure across all plotted agents
+    x_max = max(all_exposures) * 1.1 if all_exposures else 1.0
+    for ax in scatters: ax.set_xlim(0, x_max)
+    for ax in histx: ax.set_xlim(0, x_max)
     
     # Set overall title
     fig.suptitle(title, fontsize=16, y=0.98)
@@ -1068,7 +1206,7 @@ def plot_exposure_adherence_scatterplot(
     os.makedirs(save_dir, exist_ok=True)
     
     # Use figure-level tight layout but with padding to prevent overlap
-    plt.tight_layout(pad=2.0, h_pad=0.5, w_pad=1.0)
+    plt.tight_layout(pad=2.0, h_pad=1.0, w_pad=1.5) # Adjust padding as needed
     
     # Save the figure
     plt.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
@@ -1084,7 +1222,7 @@ def plot_final_reward_boxplot(
     """
     Create a boxplot comparing the final cumulative rewards between agents.
     Saves two versions: one with individual data points and one without.
-    Includes Mann-Whitney U test p-value on the plot.
+    Includes Mann-Whitney U test p-value on the plot for pairwise comparisons.
     
     Args:
         results: Results dictionary from run_benchmark
@@ -1093,25 +1231,36 @@ def plot_final_reward_boxplot(
         save_dir: Directory to save the plot in
         figsize: Figure size in inches
     """
-    # Extract final rewards for trained model
-    trained_final_rewards = [rewards[-1] for rewards in results["trained"]["rewards_over_time"]]
+    agent_types = list(results.keys())
+    if "config" in agent_types: agent_types.remove("config") # Remove config key
     
-    # Prepare data for boxplot
     data = []
     categories = []
+    agent_labels = {
+        "trained": "Trained Model",
+        "random": "Random Actions",
+        "stationary": "Stationary (0 Adherence)"
+    }
     
-    # Add trained model data
-    for reward in trained_final_rewards:
-        data.append(reward)
-        categories.append("Trained Model")
+    # Extract final rewards and map categories
+    category_data = {}
+    for agent_type in agent_types:
+        if agent_type in results:
+            # Ensure rewards_over_time exists and is not empty
+            if "rewards_over_time" in results[agent_type] and results[agent_type]["rewards_over_time"]:
+                final_rewards = [rewards[-1] for rewards in results[agent_type]["rewards_over_time"] if rewards] # Check if reward list is not empty
+                label = agent_labels.get(agent_type, agent_type.capitalize())
+                category_data[label] = final_rewards
+                for reward_val in final_rewards:
+                    data.append(reward_val)
+                    categories.append(label)
+            else:
+                 print(f"Warning: No reward data found for agent type '{agent_type}'")
+                 category_data[agent_labels.get(agent_type, agent_type.capitalize())] = [] # Add empty list if no data
+
     
-    # Add random agent data if available
-    random_final_rewards = []
-    if "random" in results:
-        random_final_rewards = [rewards[-1] for rewards in results["random"]["rewards_over_time"]]
-        for reward in random_final_rewards:
-            data.append(reward)
-            categories.append("Random Actions")
+    # Order categories for consistent plotting
+    ordered_categories = [agent_labels[k] for k in ["trained", "stationary", "random"] if k in agent_labels and agent_labels[k] in category_data]
     
     # Create DataFrame for seaborn
     df = pd.DataFrame({
@@ -1134,7 +1283,93 @@ def plot_final_reward_boxplot(
         'ytick.labelsize': 10
     })
     
-    # FIRST PLOT: Boxplot with individual data points
+    # Perform pairwise Mann-Whitney U tests
+    pairwise_results = {}
+    p_values = []
+    comparisons = []
+    if len(ordered_categories) > 1:
+        for cat1, cat2 in itertools.combinations(ordered_categories, 2):
+            data1 = category_data[cat1]
+            data2 = category_data[cat2]
+            if len(data1) > 0 and len(data2) > 0:
+                try:
+                    u_stat, p_value = stats.mannwhitneyu(data1, data2, alternative='two-sided')
+                    pairwise_results[(cat1, cat2)] = p_value
+                    p_values.append(p_value)
+                    comparisons.append((cat1, cat2))
+                except ValueError as e:
+                    print(f"Warning: Mann-Whitney U test failed for {cat1} vs {cat2}: {e}")
+                    pairwise_results[(cat1, cat2)] = np.nan
+                    p_values.append(np.nan)
+                    comparisons.append((cat1, cat2))
+            else:
+                pairwise_results[(cat1, cat2)] = np.nan
+                p_values.append(np.nan)
+                comparisons.append((cat1, cat2))
+                
+        # Apply multiple comparison correction (Bonferroni)
+        if p_values:
+             # Filter out NaN p-values before correction if necessary
+            valid_p_values = [p for p in p_values if not np.isnan(p)]
+            valid_comparisons = [comp for p, comp in zip(p_values, comparisons) if not np.isnan(p)]
+            if valid_p_values: # Proceed only if there are valid p-values
+                reject, pvals_corrected, _, _ = smm.multipletests(valid_p_values, alpha=0.05, method='bonferroni')
+                corrected_results = dict(zip(valid_comparisons, pvals_corrected))
+                 # Add back NaN results for comparisons that couldn't be tested
+                for comp, p_val in zip(comparisons, p_values):
+                    if np.isnan(p_val):
+                        corrected_results[comp] = np.nan
+            else:
+                corrected_results = {comp: np.nan for comp in comparisons} # All NaN if no valid p-values
+        else:
+            corrected_results = {}
+
+    # --- Function to add annotations --- 
+    def add_stats_annotations(ax, plot_type):
+        if not corrected_results: return
+        
+        y_max = df["Final Cumulative Reward"].max()
+        y_min = df["Final Cumulative Reward"].min()
+        y_range = y_max - y_min
+         # Handle cases where y_range is zero or very small
+        if y_range <= 0:
+            increment = 0.1 # Default small increment
+        else:
+            increment = y_range * 0.08
+            
+        current_y = y_max + increment * 0.5
+        
+        # Define positions for annotations based on ordered categories
+        cat_pos = {cat: i for i, cat in enumerate(ordered_categories)}
+        
+        for (cat1, cat2), p_corrected in corrected_results.items():
+            if np.isnan(p_corrected): continue
+            
+            pos1 = cat_pos[cat1]
+            pos2 = cat_pos[cat2]
+            
+            # Draw connecting line
+            line_x = [pos1, pos1, pos2, pos2]
+            line_y = [current_y, current_y + increment * 0.2, current_y + increment * 0.2, current_y]
+            ax.plot(line_x, line_y, lw=1.5, c='black')
+            
+            # Determine significance level
+            significance = 'ns' # not significant
+            if p_corrected < 0.001: significance = '***'
+            elif p_corrected < 0.01: significance = '**'
+            elif p_corrected < 0.05: significance = '*'
+            
+            # Add text annotation
+            text_x = (pos1 + pos2) / 2
+            text_y = current_y + increment * 0.3
+            ax.text(text_x, text_y, significance, ha='center', va='bottom', fontsize=10)
+            
+            current_y += increment # Move up for the next annotation
+
+        # Adjust y-limit to make space for annotations
+        ax.set_ylim(top=current_y)
+
+    # --- FIRST PLOT: Boxplot with individual data points --- 
     plt.figure(figsize=figsize, dpi=120)
     
     # Create a clean boxplot with minimal design
@@ -1142,6 +1377,7 @@ def plot_final_reward_boxplot(
         x="Agent Type", 
         y="Final Cumulative Reward", 
         data=df,
+        order=ordered_categories, # Use defined order
         width=0.5,
         color='white',
         fliersize=3
@@ -1152,6 +1388,7 @@ def plot_final_reward_boxplot(
         x="Agent Type", 
         y="Final Cumulative Reward", 
         data=df,
+        order=ordered_categories,
         color='black',
         size=5,  
         alpha=0.5,
@@ -1161,44 +1398,24 @@ def plot_final_reward_boxplot(
     # Remove colors and simplify
     for i, box in enumerate(ax1.artists):
         box.set_edgecolor('black')
-        
-        # Each box has 6 associated Line2D objects (whiskers, caps, and median)
         for j in range(6*i, 6*(i+1)):
-            ax1.lines[j].set_color('black')
+             if j < len(ax1.lines): # Check if line index is valid
+                ax1.lines[j].set_color('black')
     
     # Customize appearance
     ax1.spines['top'].set_visible(False)
     ax1.spines['right'].set_visible(False)
     ax1.spines['left'].set_linewidth(0.5)
     ax1.spines['bottom'].set_linewidth(0.5)
-    
-    # Add a discrete grid on the y-axis only
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax1.xaxis.grid(False)
     
-    # Perform Mann-Whitney U test if both trained and random data are available
-    if "random" in results and len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
-        u_stat, p_value = stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
-        
-        # Add statistical test annotation
-        significance = ''
-        if p_value < 0.001:
-            significance = '***'  # p < 0.001
-        elif p_value < 0.01:
-            significance = '**'   # p < 0.01
-        elif p_value < 0.05:
-            significance = '*'    # p < 0.05
-            
-        # Add the p-value text to the plot
-        plt.text(0.5, 0.01, f'Mann-Whitney U Test: p = {p_value:.4f} {significance}', 
-                 horizontalalignment='center', 
-                 fontsize=10, 
-                 transform=plt.gca().transAxes,
-                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+    # Add statistical annotations
+    add_stats_annotations(ax1, "with_points")
     
-    # Customize plot
-    plt.title(title, fontsize=14, pad=10)
-    plt.xlabel("")  # Remove x-label as it's redundant
+    # Customize plot labels
+    plt.title(title, fontsize=14, pad=20) # Increased pad
+    plt.xlabel("")  
     plt.ylabel("Final Cumulative Reward", fontsize=12, labelpad=10)
     
     # Save the figure with points
@@ -1207,14 +1424,15 @@ def plot_final_reward_boxplot(
     plt.savefig(os.path.join(save_dir, points_filename), dpi=300, bbox_inches='tight')
     plt.close()
     
-    # SECOND PLOT: Boxplot without individual data points
+    # --- SECOND PLOT: Boxplot without individual data points --- 
     plt.figure(figsize=figsize, dpi=120)
     
-    # Create a clean boxplot with minimal design (without stripplot)
+    # Create a clean boxplot without stripplot
     ax2 = sns.boxplot(
         x="Agent Type", 
         y="Final Cumulative Reward", 
         data=df,
+        order=ordered_categories,
         width=0.5,
         color='white',
         fliersize=3
@@ -1223,44 +1441,24 @@ def plot_final_reward_boxplot(
     # Remove colors and simplify
     for i, box in enumerate(ax2.artists):
         box.set_edgecolor('black')
-        
-        # Each box has 6 associated Line2D objects (whiskers, caps, and median)
         for j in range(6*i, 6*(i+1)):
-            ax2.lines[j].set_color('black')
+            if j < len(ax2.lines):
+                ax2.lines[j].set_color('black')
     
     # Customize appearance
     ax2.spines['top'].set_visible(False)
     ax2.spines['right'].set_visible(False)
     ax2.spines['left'].set_linewidth(0.5)
     ax2.spines['bottom'].set_linewidth(0.5)
-    
-    # Add a discrete grid on the y-axis only
     ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax2.xaxis.grid(False)
     
-    # Perform Mann-Whitney U test if both trained and random data are available
-    if "random" in results and len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
-        u_stat, p_value = stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
-        
-        # Add statistical test annotation
-        significance = ''
-        if p_value < 0.001:
-            significance = '***'  # p < 0.001
-        elif p_value < 0.01:
-            significance = '**'   # p < 0.01
-        elif p_value < 0.05:
-            significance = '*'    # p < 0.05
-            
-        # Add the p-value text to the plot
-        plt.text(0.5, 0.01, f'Mann-Whitney U Test: p = {p_value:.4f} {significance}', 
-                 horizontalalignment='center', 
-                 fontsize=10, 
-                 transform=plt.gca().transAxes,
-                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
-    
-    # Customize plot
-    plt.title(title, fontsize=14, pad=10)
-    plt.xlabel("")  # Remove x-label as it's redundant
+    # Add statistical annotations
+    add_stats_annotations(ax2, "no_points")
+
+    # Customize plot labels
+    plt.title(title, fontsize=14, pad=20)
+    plt.xlabel("")  
     plt.ylabel("Final Cumulative Reward", fontsize=12, labelpad=10)
     
     # Save the figure without points

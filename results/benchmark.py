@@ -5,6 +5,7 @@ import argparse
 import datetime
 from scipy import stats as scipy_stats
 import numpy as np
+import json
 
 # Add the parent directory to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -160,134 +161,102 @@ def main():
         print(f"    Mean Episode Duration: {summary_stats['random']['mean_episode_length']:.2f} steps (±{summary_stats['random']['std_episode_length']:.2f})")
         print(f"    Mean Final Reward: {summary_stats['random']['mean_final_reward']:.2f} (±{summary_stats['random']['std_final_reward']:.2f})")
         
-        print("\n  Statistical Tests:")
-        print("  -----------------")
+    if "stationary" in summary_stats:
+        print("  Stationary (0 Adherence):")
+        print(f"    Mean Episode Duration: {summary_stats['stationary']['mean_episode_length']:.2f} steps (±{summary_stats['stationary']['std_episode_length']:.2f})")
+        print(f"    Mean Final Reward: {summary_stats['stationary']['mean_final_reward']:.2f} (±{summary_stats['stationary']['std_final_reward']:.2f})")
         
-        # Calculate and print statistical test results
-        trained_lengths = results["trained"]["episode_lengths"]
-        random_lengths = results["random"]["episode_lengths"]
-        if len(trained_lengths) > 0 and len(random_lengths) > 0:
-            # Mann-Whitney U test for episode duration
-            u_stat, p_value = scipy_stats.mannwhitneyu(trained_lengths, random_lengths, alternative='two-sided')
-            print("  Episode Duration:")
-            print(f"    Mann-Whitney U: p = {p_value:.4f}", end="")
-            if p_value < 0.001:
-                print(" (***)")
-            elif p_value < 0.01:
-                print(" (**)")
-            elif p_value < 0.05:
-                print(" (*)")
-            else:
-                print(" (not significant)")
-            print(f"      Interpretation: {'Distributions differ significantly' if p_value < 0.05 else 'No significant difference in distributions'}")
-            
-            # Shapiro-Wilk test for normality
-            if len(trained_lengths) >= 3:
-                sw_stat_trained, sw_p_trained = scipy_stats.shapiro(trained_lengths)
-                print(f"    Shapiro-Wilk (Trained): p = {sw_p_trained:.4f}")
-                print(f"      Interpretation: {'Non-normal distribution' if sw_p_trained < 0.05 else 'Normal distribution'}")
-            
-            if len(random_lengths) >= 3:
-                sw_stat_random, sw_p_random = scipy_stats.shapiro(random_lengths)
-                print(f"    Shapiro-Wilk (Random): p = {sw_p_random:.4f}")
-                print(f"      Interpretation: {'Non-normal distribution' if sw_p_random < 0.05 else 'Normal distribution'}")
-            
-            # Levene's test for equality of variances
-            try:
-                levene_stat, levene_p = scipy_stats.levene(trained_lengths, random_lengths)
-                print(f"    Levene's Test: p = {levene_p:.4f}")
-                print(f"      Interpretation: {'Variances differ significantly' if levene_p < 0.05 else 'Equal variances'}")
-            except Exception as e:
-                print(f"    Levene's Test: Could not perform test - {e}")
-            
-            # Permutation test
-            try:
-                def diff_of_means(x, y):
-                    return np.mean(x) - np.mean(y)
-                
-                observed_diff = diff_of_means(trained_lengths, random_lengths)
-                # Combine for permutation
-                combined = np.concatenate([trained_lengths, random_lengths])
-                n_perm = 10000  # Number of permutations
-                n1 = len(trained_lengths)
-                
-                # Run permutation test
-                perm_diffs = []
-                for _ in range(n_perm):
-                    np.random.shuffle(combined)
-                    perm_diffs.append(diff_of_means(combined[:n1], combined[n1:]))
-                
-                # Calculate permutation p-value
-                perm_p = np.sum(np.abs(perm_diffs) >= np.abs(observed_diff)) / n_perm
-                
-                print(f"    Permutation Test: p = {perm_p:.4f}")
-                print(f"      Mean Difference: {observed_diff:.2f}")
-                print(f"      Interpretation: {'Difference is unlikely due to chance' if perm_p < 0.05 else 'Difference could be due to chance'}")
-            except Exception as e:
-                print(f"    Permutation Test: Could not perform test - {e}")
+    # Load the detailed results from the JSON for statistical tests
+    full_results_path = os.path.join(args.output_dir, data_filename)
+    statistical_tests = None
+    if os.path.exists(full_results_path):
+        try:
+            with open(full_results_path, 'r') as f:
+                full_results = json.load(f)
+            statistical_tests = full_results.get("statistical_tests", None)
+        except Exception as e:
+            print(f"\nWarning: Could not load or parse {data_filename} for detailed stats: {e}")
+
+    if statistical_tests:
+        print("\n  Statistical Comparisons (Mann-Whitney U with Bonferroni Correction):")
+        print("  -------------------------------------------------------------------")
         
-        # Final reward statistical tests
-        trained_final_rewards = [rewards[-1] for rewards in results["trained"]["rewards_over_time"]]
-        random_final_rewards = [rewards[-1] for rewards in results["random"]["rewards_over_time"]]
-        if len(trained_final_rewards) > 0 and len(random_final_rewards) > 0:
-            # Mann-Whitney U test for final reward
-            u_stat, p_value = scipy_stats.mannwhitneyu(trained_final_rewards, random_final_rewards, alternative='two-sided')
-            print("\n  Final Reward:")
-            print(f"    Mann-Whitney U: p = {p_value:.4f}", end="")
-            if p_value < 0.001:
-                print(" (***)")
-            elif p_value < 0.01:
-                print(" (**)")
-            elif p_value < 0.05:
-                print(" (*)")
+        agent_pairs = [
+            ("Trained", "Random"),
+            ("Trained", "Stationary"),
+            ("Random", "Stationary")
+        ]
+        metrics = [
+            ("episode_length", "Episode Duration"), 
+            ("final_reward", "Final Reward")
+        ]
+        
+        for metric_key, metric_name in metrics:
+            print(f"\n  {metric_name}:")
+            if metric_key in statistical_tests:
+                metric_tests = statistical_tests[metric_key]
+                displayed_comparison = False
+                for agent1, agent2 in agent_pairs:
+                    comparison_key = f"{agent1}_vs_{agent2}"
+                    alt_comparison_key = f"{agent2}_vs_{agent1}"
+                    
+                    comp_data = None
+                    if comparison_key in metric_tests:
+                        comp_data = metric_tests[comparison_key]
+                    elif alt_comparison_key in metric_tests:
+                         comp_data = metric_tests[alt_comparison_key]
+                         
+                    if comp_data:
+                        p_corrected = comp_data.get("p_value_bonferroni")
+                        u_stat = comp_data.get("u_statistic")
+                        
+                        if p_corrected is not None:
+                            displayed_comparison = True
+                            significance = " (not significant)"
+                            if p_corrected < 0.001: significance = " (*** p < 0.001)"
+                            elif p_corrected < 0.01: significance = " (** p < 0.01)"
+                            elif p_corrected < 0.05: significance = " (* p < 0.05)"
+                            
+                            print(f"    {comparison_key.replace('_', ' ')}: p = {p_corrected:.4f}{significance}")
+                        else:
+                            pass
+                if not displayed_comparison:
+                    print(f"    No valid comparisons found for {metric_name}.")
             else:
-                print(" (not significant)")
-            print(f"      Interpretation: {'Distributions differ significantly' if p_value < 0.05 else 'No significant difference in distributions'}")
-            
-            # Shapiro-Wilk test for normality
-            if len(trained_final_rewards) >= 3:
-                sw_stat_trained, sw_p_trained = scipy_stats.shapiro(trained_final_rewards)
-                print(f"    Shapiro-Wilk (Trained): p = {sw_p_trained:.4f}")
-                print(f"      Interpretation: {'Non-normal distribution' if sw_p_trained < 0.05 else 'Normal distribution'}")
-            
-            if len(random_final_rewards) >= 3:
-                sw_stat_random, sw_p_random = scipy_stats.shapiro(random_final_rewards)
-                print(f"    Shapiro-Wilk (Random): p = {sw_p_random:.4f}")
-                print(f"      Interpretation: {'Non-normal distribution' if sw_p_random < 0.05 else 'Normal distribution'}")
-            
-            # Levene's test for equality of variances
-            try:
-                levene_stat, levene_p = scipy_stats.levene(trained_final_rewards, random_final_rewards)
-                print(f"    Levene's Test: p = {levene_p:.4f}")
-                print(f"      Interpretation: {'Variances differ significantly' if levene_p < 0.05 else 'Equal variances'}")
-            except Exception as e:
-                print(f"    Levene's Test: Could not perform test - {e}")
-            
-            # Permutation test
-            try:
-                def diff_of_means(x, y):
-                    return np.mean(x) - np.mean(y)
+                print(f"    No statistical tests found for {metric_name}.")
                 
-                observed_diff = diff_of_means(trained_final_rewards, random_final_rewards)
-                # Combine for permutation
-                combined = np.concatenate([trained_final_rewards, random_final_rewards])
-                n_perm = 10000  # Number of permutations
-                n1 = len(trained_final_rewards)
-                
-                # Run permutation test
-                perm_diffs = []
-                for _ in range(n_perm):
-                    np.random.shuffle(combined)
-                    perm_diffs.append(diff_of_means(combined[:n1], combined[n1:]))
-                
-                # Calculate permutation p-value
-                perm_p = np.sum(np.abs(perm_diffs) >= np.abs(observed_diff)) / n_perm
-                
-                print(f"    Permutation Test: p = {perm_p:.4f}")
-                print(f"      Mean Difference: {observed_diff:.2f}")
-                print(f"      Interpretation: {'Difference is unlikely due to chance' if perm_p < 0.05 else 'Difference could be due to chance'}")
-            except Exception as e:
-                print(f"    Permutation Test: Could not perform test - {e}")
+    # --- Print Directional Test Results (Trained vs Baselines) --- 
+    if statistical_tests and "trained_vs_baselines" in statistical_tests:
+        print("\n  Directional Comparisons (Trained > Baseline):")
+        print("  ---------------------------------------------")
+        directional_tests_results = statistical_tests["trained_vs_baselines"]
+        
+        for metric_key, metric_name in metrics:
+            print(f"\n  {metric_name}:")
+            if metric_key in directional_tests_results:
+                metric_directional = directional_tests_results[metric_key]
+                displayed_directional = False
+                for baseline_agent in ["Random", "Stationary"]:
+                    comparison_key = f"Trained_vs_{baseline_agent}"
+                    if comparison_key in metric_directional:
+                        comp_data = metric_directional[comparison_key]
+                        p_corrected = comp_data.get("p_value_bonferroni")
+                        
+                        if p_corrected is not None:
+                            displayed_directional = True
+                            significance = " (not significantly better)"
+                            if comp_data.get("significant_0.05_bonferroni"): # Check the boolean flag
+                                 # Determine significance level based on p-value for display
+                                if p_corrected < 0.001: significance = " (*** significantly better, p < 0.001)"
+                                elif p_corrected < 0.01: significance = " (** significantly better, p < 0.01)"
+                                elif p_corrected < 0.05: significance = " (* significantly better, p < 0.05)"
+                                else: significance = " (significantly better, p < 0.05)" # Fallback if flag is true but p isn't <0.05 (unlikely with Bonferroni)
+                            
+                            print(f"    {comparison_key.replace('_', ' ')}: p = {p_corrected:.4f}{significance}")
+                if not displayed_directional:
+                     print(f"    No valid directional comparisons found for {metric_name}.")
+            else:
+                 print(f"    No directional tests found for {metric_name}.")
     
     print(f"\nResults saved to {args.output_dir}/")
     print(f"Episode Duration Boxplot: {os.path.join(args.output_dir, boxplot_filename)}")
