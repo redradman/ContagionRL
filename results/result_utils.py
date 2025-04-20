@@ -17,6 +17,19 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment import SIRSEnvironment
 from utils import Human
 
+# Centralized agent labels dictionary
+AGENT_LABELS = {
+    "trained": "Trained",
+    "random_reckless": "Random-0",
+    "random_cautious": "Random-1",
+    "stationary": "Stationary-0",
+    "static_cautious": "Stationary-1",
+    "greedy": "Greedy-1"
+}
+
+# Order of agents for plotting
+AGENT_PLOT_ORDER = ["stationary", "static_cautious", "random_reckless", "random_cautious", "greedy", "trained"]
+
 def load_config(model_path: str) -> Dict[str, Any]:
     """Load the configuration file associated with the model."""
     config_path = os.path.join(os.path.dirname(model_path), "config.json")
@@ -81,16 +94,16 @@ def run_benchmark(
 ) -> Dict[str, Any]:
     """
     Run a benchmark comparing a trained model to random actions.
-    Collects reward data, episode lengths, and exposure/adherence data.
+    Collects reward data and episode lengths.
     
     Args:
         model_path: Path to the trained model
         n_runs: Number of runs to evaluate
-        include_random: Whether to include a random agent benchmark
+        include_random: Whether to include random agent benchmarks
         random_seed: Base seed for reproducibility
         
     Returns:
-        Dictionary with benchmark results including exposure and adherence data
+        Dictionary with benchmark results
     """
     # Load model config
     config = load_config(model_path)
@@ -108,8 +121,6 @@ def run_benchmark(
     # Run trained model episodes
     trained_rewards_over_time = []
     trained_episode_lengths = []
-    trained_exposure_data = []
-    trained_adherence_data = []
     
     print("Running episodes with trained model...")
     for i in tqdm(range(n_runs), desc="Trained Model Episodes", unit="episode"):
@@ -121,32 +132,9 @@ def run_benchmark(
         done = False
         cumulative_rewards = [0]  # Start with 0 reward
         
-        # Lists to store exposure and adherence data for this episode
-        episode_exposures = []
-        episode_adherences = []
-        
         while not done:
             # Use the trained model
             action, _ = model.predict(obs, deterministic=True)
-            
-            # Get the agent's adherence from the action
-            adherence = action[2]  # Assuming action[2] is the adherence value
-            
-            # Get agent exposure before taking the step (if susceptible)
-            if env.agent_state == 0:  # If agent is susceptible
-                agent_human = Human(
-                    x=env.agent_position[0],
-                    y=env.agent_position[1],
-                    state=env.agent_state,
-                    id=-1
-                )
-                exposure = env._calculate_total_exposure(agent_human)
-            else:
-                exposure = 0.0  # Not susceptible, so no exposure
-            
-            # Store exposure and adherence data
-            episode_exposures.append(exposure)
-            episode_adherences.append(adherence)
             
             # Take a step in the environment
             obs, reward, terminated, truncated, info = env.step(action)
@@ -159,18 +147,18 @@ def run_benchmark(
         # Save episode data
         trained_rewards_over_time.append(cumulative_rewards)
         trained_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
-        trained_exposure_data.append(episode_exposures)
-        trained_adherence_data.append(episode_adherences)
     
     # Run random action episodes if requested
-    random_rewards_over_time = []
-    random_episode_lengths = []
-    random_exposure_data = []
-    random_adherence_data = []
+    random_reckless_rewards_over_time = []
+    random_reckless_episode_lengths = []
+    
+    random_cautious_rewards_over_time = []
+    random_cautious_episode_lengths = []
     
     if include_random:
-        print("Running episodes with random actions...")
-        for i in tqdm(range(n_runs), desc="Random Action Episodes", unit="episode"):
+        # Random Walk Reckless: samples (dx, dy) uniformly from [‑1,1]² and fixes adherence at 0.0
+        print("Running episodes with Random Walk Reckless actions...")
+        for i in tqdm(range(n_runs), desc="Random Walk Reckless Episodes", unit="episode"):
             # Use different seeds for each run
             seed = random_seed + i if random_seed is not None else None
             
@@ -179,36 +167,13 @@ def run_benchmark(
             done = False
             cumulative_rewards = [0]  # Start with 0 reward
             
-            # Lists to store exposure and adherence data for this episode
-            episode_exposures = []
-            episode_adherences = []
-            
             while not done:
-                # Use random actions
+                # Use random actions with adherence=0.0
                 action = np.array([
                     env.np_random.uniform(-1, 1),  # delta_x
                     env.np_random.uniform(-1, 1),  # delta_y
-                    env.np_random.uniform(0, 1)    # adherence
+                    0.0    # adherence fixed at 0.0
                 ], dtype=np.float32)
-                
-                # Get the agent's adherence from the action
-                adherence = action[2]  # Random adherence value
-                
-                # Get agent exposure before taking the step (if susceptible)
-                if env.agent_state == 0:  # If agent is susceptible
-                    agent_human = Human(
-                        x=env.agent_position[0],
-                        y=env.agent_position[1],
-                        state=env.agent_state,
-                        id=-1
-                    )
-                    exposure = env._calculate_total_exposure(agent_human)
-                else:
-                    exposure = 0.0  # Not susceptible, so no exposure
-                
-                # Store exposure and adherence data
-                episode_exposures.append(exposure)
-                episode_adherences.append(adherence)
                 
                 # Take a step in the environment
                 obs, reward, terminated, truncated, info = env.step(action)
@@ -219,16 +184,43 @@ def run_benchmark(
                 done = terminated or truncated
             
             # Save episode data
-            random_rewards_over_time.append(cumulative_rewards)
-            random_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
-            random_exposure_data.append(episode_exposures)
-            random_adherence_data.append(episode_adherences)
+            random_reckless_rewards_over_time.append(cumulative_rewards)
+            random_reckless_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
+            
+        # Random Walk Cautious: samples (dx, dy) uniformly from [‑1,1]² and fixes adherence at 1.0
+        print("Running episodes with Random Walk Cautious actions...")
+        for i in tqdm(range(n_runs), desc="Random Walk Cautious Episodes", unit="episode"):
+            # Use different seeds for each run
+            seed = random_seed + i if random_seed is not None else None
+            
+            # Reset environment
+            obs = env.reset(seed=seed)[0]
+            done = False
+            cumulative_rewards = [0]  # Start with 0 reward
+            
+            while not done:
+                # Use random actions with adherence=1.0
+                action = np.array([
+                    env.np_random.uniform(-1, 1),  # delta_x
+                    env.np_random.uniform(-1, 1),  # delta_y
+                    1.0    # adherence fixed at 1.0
+                ], dtype=np.float32)
+                
+                # Take a step in the environment
+                obs, reward, terminated, truncated, info = env.step(action)
+                
+                # Update cumulative reward
+                cumulative_rewards.append(cumulative_rewards[-1] + reward)
+                
+                done = terminated or truncated
+            
+            # Save episode data
+            random_cautious_rewards_over_time.append(cumulative_rewards)
+            random_cautious_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
     
     # Run stationary (0 adherence) episodes
     stationary_rewards_over_time = []
     stationary_episode_lengths = []
-    stationary_exposure_data = []
-    stationary_adherence_data = []
     
     print("Running episodes with stationary (0 adherence) actions...")
     for i in tqdm(range(n_runs), desc="Stationary (0 Adherence) Episodes", unit="episode"):
@@ -240,32 +232,11 @@ def run_benchmark(
         done = False
         cumulative_rewards = [0]  # Start with 0 reward
         
-        # Lists to store exposure and adherence data for this episode
-        episode_exposures = []
-        episode_adherences = []
-        
         # Fixed action [0, 0, 0]
         stationary_action = np.array([0.0, 0.0, 0.0], dtype=np.float32)
         
         while not done:
             action = stationary_action
-            adherence = action[2]  # Adherence is always 0
-            
-            # Get agent exposure before taking the step (if susceptible)
-            if env.agent_state == 0:  # If agent is susceptible
-                agent_human = Human(
-                    x=env.agent_position[0],
-                    y=env.agent_position[1],
-                    state=env.agent_state,
-                    id=-1
-                )
-                exposure = env._calculate_total_exposure(agent_human)
-            else:
-                exposure = 0.0  # Not susceptible, so no exposure
-            
-            # Store exposure and adherence data
-            episode_exposures.append(exposure)
-            episode_adherences.append(adherence)
             
             # Take a step in the environment
             obs, reward, terminated, truncated, info = env.step(action)
@@ -278,14 +249,42 @@ def run_benchmark(
         # Save episode data
         stationary_rewards_over_time.append(cumulative_rewards)
         stationary_episode_lengths.append(len(cumulative_rewards) - 1) # -1 because we start with 0
-        stationary_exposure_data.append(episode_exposures)
-        stationary_adherence_data.append(episode_adherences)
+
+    # Run Static Cautious (1 adherence) episodes
+    static_cautious_rewards_over_time = []
+    static_cautious_episode_lengths = []
+    
+    print("Running episodes with Static Cautious (1 adherence) actions...")
+    for i in tqdm(range(n_runs), desc="Static Cautious (1 Adherence) Episodes", unit="episode"):
+        # Use different seeds for each run
+        seed = random_seed + i if random_seed is not None else None
+        
+        # Reset environment
+        obs = env.reset(seed=seed)[0]
+        done = False
+        cumulative_rewards = [0]  # Start with 0 reward
+        
+        # Fixed action [0, 0, 1]
+        static_cautious_action = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        
+        while not done:
+            action = static_cautious_action
+            
+            # Take a step in the environment
+            obs, reward, terminated, truncated, info = env.step(action)
+            
+            # Update cumulative reward
+            cumulative_rewards.append(cumulative_rewards[-1] + reward)
+            
+            done = terminated or truncated
+        
+        # Save episode data
+        static_cautious_rewards_over_time.append(cumulative_rewards)
+        static_cautious_episode_lengths.append(len(cumulative_rewards) - 1) # -1 because we start with 0
 
     # --- Greedy Distance Maximizer Agent --- 
     greedy_rewards_over_time = []
     greedy_episode_lengths = []
-    greedy_exposure_data = []
-    greedy_adherence_data = []
 
     print("Running episodes with Greedy Distance Maximizer actions...")
     for i in tqdm(range(n_runs), desc="Greedy Maximizer Episodes", unit="episode"):
@@ -293,8 +292,6 @@ def run_benchmark(
         obs = env.reset(seed=seed)[0]
         done = False
         cumulative_rewards = [0]
-        episode_exposures = []
-        episode_adherences = []
         adherence = 0.0 # Greedy agent uses 0 adherence
 
         while not done:
@@ -342,57 +339,45 @@ def run_benchmark(
             action = np.array([dx, dy, adherence], dtype=np.float32)
             # --- End Greedy Action Logic ---
             
-            # Get agent exposure before taking the step
-            if env.agent_state == 0: 
-                agent_human = Human(agent_pos[0], agent_pos[1], env.agent_state, -1)
-                exposure = env._calculate_total_exposure(agent_human)
-            else:
-                exposure = 0.0
-            
-            episode_exposures.append(exposure)
-            episode_adherences.append(adherence) # Always 0 for greedy
-            
             obs, reward, terminated, truncated, info = env.step(action)
             cumulative_rewards.append(cumulative_rewards[-1] + reward)
             done = terminated or truncated
 
         greedy_rewards_over_time.append(cumulative_rewards)
         greedy_episode_lengths.append(len(cumulative_rewards) - 1)
-        greedy_exposure_data.append(episode_exposures)
-        greedy_adherence_data.append(episode_adherences)
     # --- End Greedy Agent --- 
     
     # Close environment
     env.close()
     
-    # Return results with reward and exposure/adherence data
+    # Return results
     results = {
         "trained": {
             "rewards_over_time": trained_rewards_over_time,
-            "episode_lengths": trained_episode_lengths,
-            "exposure_data": trained_exposure_data,
-            "adherence_data": trained_adherence_data
+            "episode_lengths": trained_episode_lengths
         },
         "stationary": { 
             "rewards_over_time": stationary_rewards_over_time,
-            "episode_lengths": stationary_episode_lengths,
-            "exposure_data": stationary_exposure_data,
-            "adherence_data": stationary_adherence_data
+            "episode_lengths": stationary_episode_lengths
+        },
+        "static_cautious": { 
+            "rewards_over_time": static_cautious_rewards_over_time,
+            "episode_lengths": static_cautious_episode_lengths
         },
         "greedy": { # Add greedy agent results
              "rewards_over_time": greedy_rewards_over_time,
-             "episode_lengths": greedy_episode_lengths,
-             "exposure_data": greedy_exposure_data,
-             "adherence_data": greedy_adherence_data
+             "episode_lengths": greedy_episode_lengths
         }
     }
     
     if include_random:
-        results["random"] = {
-            "rewards_over_time": random_rewards_over_time,
-            "episode_lengths": random_episode_lengths,
-            "exposure_data": random_exposure_data,
-            "adherence_data": random_adherence_data
+        results["random_reckless"] = {
+            "rewards_over_time": random_reckless_rewards_over_time,
+            "episode_lengths": random_reckless_episode_lengths
+        }
+        results["random_cautious"] = {
+            "rewards_over_time": random_cautious_rewards_over_time,
+            "episode_lengths": random_cautious_episode_lengths
         }
         
     results["config"] = config
@@ -430,7 +415,7 @@ def plot_survival_boxplot(
     title: str = "Episode Duration Comparison",
     filename: str = "survival_boxplot.png",
     save_dir: str = "results/graphs",
-    figsize: Tuple[int, int] = (8, 6)
+    figsize: Tuple[int, int] = (10, 6)  # Increased width
 ) -> None:
     """
     Create a boxplot comparing the episode durations (time survived) between agents.
@@ -449,26 +434,20 @@ def plot_survival_boxplot(
     
     data = []
     categories = []
-    agent_labels = {
-        "trained": "Trained Model",
-        "random": "Random Actions",
-        "stationary": "Stationary (0 Adherence)",
-        "greedy": "Greedy Maximizer"
-    }
     
     # Extract episode lengths and map categories
     category_data = {}
     for agent_type in agent_types:
         if agent_type in results:
             lengths = results[agent_type]["episode_lengths"]
-            label = agent_labels.get(agent_type, agent_type.capitalize())
+            label = AGENT_LABELS.get(agent_type, agent_type.capitalize())
             category_data[label] = lengths
             for length in lengths:
                 data.append(length)
                 categories.append(label)
     
     # Order categories for consistent plotting
-    ordered_categories = [agent_labels[k] for k in ["trained", "greedy", "stationary", "random"] if k in agent_labels and agent_labels[k] in category_data]
+    ordered_categories = [AGENT_LABELS[k] for k in AGENT_PLOT_ORDER if k in AGENT_LABELS and AGENT_LABELS[k] in category_data]
     
     # Create DataFrame for seaborn
     df = pd.DataFrame({
@@ -553,8 +532,18 @@ def plot_survival_boxplot(
         # Define positions for annotations based on ordered categories
         cat_pos = {cat: i for i, cat in enumerate(ordered_categories)}
         
+        # Get the trained agent label
+        trained_label = AGENT_LABELS.get('trained', 'Trained')
+        
+        # Only show comparisons between trained agent and others
         for (cat1, cat2), p_corrected in corrected_results.items():
-            if np.isnan(p_corrected): continue
+            # Skip if neither is the trained agent or if p-value is NaN
+            if trained_label not in (cat1, cat2) or np.isnan(p_corrected):
+                continue
+            
+            # Ensure trained agent is always cat1 for consistency
+            if cat2 == trained_label:
+                cat1, cat2 = cat2, cat1
             
             pos1 = cat_pos[cat1]
             pos2 = cat_pos[cat2]
@@ -621,6 +610,9 @@ def plot_survival_boxplot(
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax1.xaxis.grid(False)
     
+    # Rotate x-axis labels to prevent overlap
+    plt.xticks(rotation=45, ha='right')
+    
     # Add statistical annotations
     add_stats_annotations(ax1, "with_points")
     
@@ -664,6 +656,9 @@ def plot_survival_boxplot(
     ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax2.xaxis.grid(False)
     
+    # Rotate x-axis labels to prevent overlap
+    plt.xticks(rotation=45, ha='right')
+    
     # Add statistical annotations
     add_stats_annotations(ax2, "no_points")
 
@@ -698,13 +693,22 @@ def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         "std_final_reward": float(np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"] if rewards], ddof=1))
     }
     
-    # Calculate stats for random agent if available
-    if "random" in results:
-        summary["random"] = {
-            "mean_episode_length": float(np.mean(results["random"]["episode_lengths"])),
-            "std_episode_length": float(np.std(results["random"]["episode_lengths"], ddof=1)),
-            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"] if rewards])),
-            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"] if rewards], ddof=1))
+    # Calculate stats for random_reckless agent if available
+    if "random_reckless" in results:
+        summary["random_reckless"] = {
+            "mean_episode_length": float(np.mean(results["random_reckless"]["episode_lengths"])),
+            "std_episode_length": float(np.std(results["random_reckless"]["episode_lengths"], ddof=1)),
+            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random_reckless"]["rewards_over_time"] if rewards])),
+            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random_reckless"]["rewards_over_time"] if rewards], ddof=1))
+        }
+    
+    # Calculate stats for random_cautious agent if available
+    if "random_cautious" in results:
+        summary["random_cautious"] = {
+            "mean_episode_length": float(np.mean(results["random_cautious"]["episode_lengths"])),
+            "std_episode_length": float(np.std(results["random_cautious"]["episode_lengths"], ddof=1)),
+            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random_cautious"]["rewards_over_time"] if rewards])),
+            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random_cautious"]["rewards_over_time"] if rewards], ddof=1))
         }
     
     # Calculate stats for stationary agent if available
@@ -714,6 +718,15 @@ def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
             "std_episode_length": float(np.std(results["stationary"]["episode_lengths"], ddof=1)),
             "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["stationary"]["rewards_over_time"] if rewards])),
             "std_final_reward": float(np.std([rewards[-1] for rewards in results["stationary"]["rewards_over_time"] if rewards], ddof=1))
+        }
+    
+    # Calculate stats for static cautious agent if available
+    if "static_cautious" in results:
+        summary["static_cautious"] = {
+            "mean_episode_length": float(np.mean(results["static_cautious"]["episode_lengths"])),
+            "std_episode_length": float(np.std(results["static_cautious"]["episode_lengths"], ddof=1)),
+            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["static_cautious"]["rewards_over_time"] if rewards])),
+            "std_final_reward": float(np.std([rewards[-1] for rewards in results["static_cautious"]["rewards_over_time"] if rewards], ddof=1))
         }
     
     # Calculate stats for greedy agent if available
@@ -777,18 +790,12 @@ def save_benchmark_results(
     
     # Prepare data for statistical tests
     data_for_tests = {}
-    agent_labels = {
-        "trained": "Trained",
-        "random": "Random",
-        "stationary": "Stationary",
-        "greedy": "Greedy"
-    }
     
     # Use the actual agent types present in the results
-    agent_keys_present = [k for k in agent_labels if k in results]
+    agent_keys_present = [k for k in AGENT_LABELS if k in results]
     
     for agent_type in agent_keys_present: # Iterate only over present agents
-        label = agent_labels[agent_type]
+        label = AGENT_LABELS[agent_type]
         # Check if data exists and is not empty
         lengths_data = results[agent_type].get("episode_lengths", [])
         rewards_data_raw = results[agent_type].get("rewards_over_time", [])
@@ -922,7 +929,7 @@ def save_benchmark_results(
 
     # Add directional tests (Trained vs Baselines)
     if "Trained" in agent_keys_for_test: # Use filtered keys
-        baseline_keys = [k for k in ["Random", "Stationary", "Greedy"] if k in agent_keys_for_test]
+        baseline_keys = [k for k in ["Rand-0", "Rand-1", "Stat-0", "Stat-1", "Greedy"] if k in agent_keys_for_test]
         if baseline_keys:
             serializable_results["statistical_tests"]["trained_vs_baselines"] = {}
             for metric in ["lengths", "rewards"]:
@@ -1023,392 +1030,12 @@ def save_benchmark_results(
     except Exception as e:
          print(f"An unexpected error occurred during JSON saving: {e}")
 
-def run_exposure_adherence_benchmark(
-    model_path: str, 
-    n_runs: int, 
-    include_random: bool = True,
-    random_seed: Optional[int] = 42
-) -> Dict[str, Any]:
-    """
-    Run a benchmark collecting exposure and adherence data for each step.
-    
-    Args:
-        model_path: Path to the trained model
-        n_runs: Number of runs to evaluate
-        include_random: Whether to include a random agent benchmark
-        random_seed: Base seed for reproducibility
-        
-    Returns:
-        Dictionary with benchmark results containing exposure and adherence data
-    """
-    # Load model config
-    config = load_config(model_path)
-    env_config = config["environment"]
-    
-    # Set render mode to None for faster execution
-    env_config["render_mode"] = None
-    
-    # Create environment
-    env = create_env_from_config(env_config, seed=random_seed)
-    
-    # Load the trained model
-    model = PPO.load(model_path)
-    
-    # Run trained model episodes
-    trained_exposure_data = []
-    trained_adherence_data = []
-    
-    print("Running episodes with trained model...")
-    for i in tqdm(range(n_runs), desc="Trained Model Episodes", unit="episode"):
-        # Use different seeds for each run
-        seed = random_seed + i if random_seed is not None else None
-        # Reset environment
-        obs = env.reset(seed=seed)[0]
-        done = False
-        
-        # Create a list to store data for this episode
-        episode_exposures = []
-        episode_adherences = []
-        
-        while not done:
-            # Use the trained model
-            action, _ = model.predict(obs, deterministic=True)
-            
-            # Get the agent's adherence from the action
-            adherence = action[2]  # Assuming action[2] is the adherence value
-            
-            # Get agent exposure before taking the step
-            # Create a temporary Human object for the agent
-            agent_human = None
-            if env.agent_state == 0:  # If agent is susceptible
-                agent_human = Human(
-                    x=env.agent_position[0],
-                    y=env.agent_position[1],
-                    state=env.agent_state,
-                    id=-1
-                )
-                exposure = env._calculate_total_exposure(agent_human)
-            else:
-                exposure = 0.0  # Not susceptible, so no exposure
-                
-            # Store data
-            episode_exposures.append(exposure)
-            episode_adherences.append(adherence)
-            
-            # Take a step in the environment
-            obs, _, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
-        
-        # Save episode data
-        trained_exposure_data.append(episode_exposures)
-        trained_adherence_data.append(episode_adherences)
-    
-    # Run random action episodes if requested
-    random_exposure_data = []
-    random_adherence_data = []
-    
-    if include_random:
-        print("Running episodes with random actions...")
-        for i in tqdm(range(n_runs), desc="Random Action Episodes", unit="episode"):
-            # Use different seeds for each run
-            seed = random_seed + i if random_seed is not None else None
-            # Reset environment
-            obs = env.reset(seed=seed)[0]
-            done = False
-            
-            # Create a list to store data for this episode
-            episode_exposures = []
-            episode_adherences = []
-            
-            while not done:
-                # Use random actions
-                action = np.array([
-                    env.np_random.uniform(-1, 1),  # delta_x
-                    env.np_random.uniform(-1, 1),  # delta_y
-                    env.np_random.uniform(0, 1)    # adherence
-                ], dtype=np.float32)
-                
-                # Get the agent's adherence from the action
-                adherence = action[2]  # Random adherence value
-                
-                # Get agent exposure before taking the step
-                # Create a temporary Human object for the agent
-                agent_human = None
-                if env.agent_state == 0:  # If agent is susceptible
-                    agent_human = Human(
-                        x=env.agent_position[0],
-                        y=env.agent_position[1],
-                        state=env.agent_state,
-                        id=-1
-                    )
-                    exposure = env._calculate_total_exposure(agent_human)
-                else:
-                    exposure = 0.0  # Not susceptible, so no exposure
-                    
-                # Store data
-                episode_exposures.append(exposure)
-                episode_adherences.append(adherence)
-                
-                # Take a step in the environment
-                obs, _, terminated, truncated, _ = env.step(action)
-                done = terminated or truncated
-            
-            # Save episode data
-            random_exposure_data.append(episode_exposures)
-            random_adherence_data.append(episode_adherences)
-    
-    # Close environment
-    env.close()
-    
-    # Return results
-    results = {
-        "trained": {
-            "exposure_data": trained_exposure_data,
-            "adherence_data": trained_adherence_data
-        }
-    }
-    
-    if include_random:
-        results["random"] = {
-            "exposure_data": random_exposure_data,
-            "adherence_data": random_adherence_data
-        }
-    
-    results["config"] = config
-    return results
-
-def plot_exposure_adherence_scatterplot(
-    results: Dict[str, Any],
-    title: str = "Exposure vs. Adherence Comparison",
-    filename: str = "exposure_adherence_scatterplot.png",
-    save_dir: str = "results/graphs",
-    figsize: Tuple[int, int] = (16, 8),
-    alpha: float = 0.4,
-    include_random: bool = True,
-    jitter_amount: float = 0.05
-) -> None:
-    """
-    Create a scatterplot comparing total exposure vs agent adherence for
-    trained and random models.
-    
-    Args:
-        results: Results dictionary from run_exposure_adherence_benchmark
-        title: Overall plot title
-        filename: Filename to save the plot as
-        save_dir: Directory to save the plot in
-        figsize: Figure size in inches
-        alpha: Transparency level for scatter points
-        include_random: Whether to include random model data (note: will be ignored if random data not present)
-        jitter_amount: Amount of jitter to add to adherence values for better visibility
-    """
-    # Determine the agents present in the results
-    agent_labels = {
-        "trained": "Trained Model",
-        "greedy": "Greedy Maximizer",
-        "stationary": "Stationary (0 Adherence)",
-        "random": "Random Actions"
-    }
-    # Define the desired plot order
-    plot_order = ["trained", "greedy", "stationary", "random"]
-    
-    # Filter agents present in results AND maintain plot order
-    # NOTE: This exposure benchmark currently only runs trained/random
-    #       Need to update `run_exposure_adherence_benchmark` if we want
-    #       stationary/greedy exposure data plotted here.
-    agents_to_plot = [agent for agent in plot_order if agent in results]
-    num_agents = len(agents_to_plot)
-
-    if num_agents == 0:
-        print("Warning: No agent data found in results. Cannot generate exposure/adherence plot.")
-        return
-
-    # --- Dynamically create figure layout --- 
-    if num_agents == 4:
-        # Layout for Trained, Greedy, Stationary, Random (2x2 grid)
-        fig = plt.figure(figsize=(figsize[0], figsize[1] * 1.1)) # Slightly taller figure
-        gs = fig.add_gridspec(4, 4, height_ratios=[0.25, 1, 0.25, 1], width_ratios=[4, 1, 4, 1],
-                            hspace=0.1, wspace=0.15) 
-        # Top row plots
-        ax_title1 = fig.add_subplot(gs[0, 0])
-        ax_scatter1 = fig.add_subplot(gs[1, 0]) # Trained
-        ax_histx1 = fig.add_subplot(gs[0, 0], sharex=ax_scatter1) # Title/HistX combo
-        ax_histy1 = fig.add_subplot(gs[1, 1], sharey=ax_scatter1)
-        ax_title2 = fig.add_subplot(gs[0, 2])
-        ax_scatter2 = fig.add_subplot(gs[1, 2]) # Greedy
-        ax_histx2 = fig.add_subplot(gs[0, 2], sharex=ax_scatter2) # Title/HistX combo
-        ax_histy2 = fig.add_subplot(gs[1, 3], sharey=ax_scatter2)
-        # Bottom row plots
-        ax_title3 = fig.add_subplot(gs[2, 0])
-        ax_scatter3 = fig.add_subplot(gs[3, 0]) # Stationary
-        ax_histx3 = fig.add_subplot(gs[2, 0], sharex=ax_scatter3) # Title/HistX combo
-        ax_histy3 = fig.add_subplot(gs[3, 1], sharey=ax_scatter3)
-        ax_title4 = fig.add_subplot(gs[2, 2])
-        ax_scatter4 = fig.add_subplot(gs[3, 2]) # Random
-        ax_histx4 = fig.add_subplot(gs[2, 2], sharex=ax_scatter4) # Title/HistX combo
-        ax_histy4 = fig.add_subplot(gs[3, 3], sharey=ax_scatter4)
-        
-        titles = [ax_title1, ax_title2, ax_title3, ax_title4]
-        scatters = [ax_scatter1, ax_scatter2, ax_scatter3, ax_scatter4]
-        histx = [ax_histx1, ax_histx2, ax_histx3, ax_histx4]
-        histy = [ax_histy1, ax_histy2, ax_histy3, ax_histy4]
-        # colors = ['blue', 'purple', 'green', 'orange'] # Colors assigned later
-
-    elif num_agents == 3:
-        # Layout for 3 agents (e.g., Trained, Greedy, Stationary)
-        fig = plt.figure(figsize=(figsize[0] * 1.5, figsize[1] * 0.8)) # Wider, shorter
-        gs = fig.add_gridspec(3, 6, height_ratios=[0.5, 1, 4], width_ratios=[4, 1, 4, 1, 4, 1],
-                            hspace=0.05, wspace=0.15) 
-        ax_title1 = fig.add_subplot(gs[0, 0])
-        ax_title2 = fig.add_subplot(gs[0, 2])
-        ax_title3 = fig.add_subplot(gs[0, 4])
-        ax_scatter1 = fig.add_subplot(gs[2, 0]) 
-        ax_scatter2 = fig.add_subplot(gs[2, 2])
-        ax_scatter3 = fig.add_subplot(gs[2, 4])
-        ax_histx1 = fig.add_subplot(gs[1, 0], sharex=ax_scatter1)
-        ax_histx2 = fig.add_subplot(gs[1, 2], sharex=ax_scatter2)
-        ax_histx3 = fig.add_subplot(gs[1, 4], sharex=ax_scatter3)
-        ax_histy1 = fig.add_subplot(gs[2, 1], sharey=ax_scatter1)
-        ax_histy2 = fig.add_subplot(gs[2, 3], sharey=ax_scatter2)
-        ax_histy3 = fig.add_subplot(gs[2, 5], sharey=ax_scatter3)
-        titles = [ax_title1, ax_title2, ax_title3]
-        scatters = [ax_scatter1, ax_scatter2, ax_scatter3]
-        histx = [ax_histx1, ax_histx2, ax_histx3]
-        histy = [ax_histy1, ax_histy2, ax_histy3]
-        # colors = ['blue', 'purple', 'green'] # Colors assigned later
-
-    elif num_agents == 2:
-        # Layout for 2 agents
-        fig = plt.figure(figsize=figsize)
-        gs = fig.add_gridspec(3, 4, height_ratios=[0.5, 1, 4], width_ratios=[4, 1, 4, 1],
-                            hspace=0.05, wspace=0.15) 
-        ax_title1 = fig.add_subplot(gs[0, 0])
-        ax_title2 = fig.add_subplot(gs[0, 2])
-        ax_scatter1 = fig.add_subplot(gs[2, 0])
-        ax_scatter2 = fig.add_subplot(gs[2, 2])
-        ax_histx1 = fig.add_subplot(gs[1, 0], sharex=ax_scatter1)
-        ax_histx2 = fig.add_subplot(gs[1, 2], sharex=ax_scatter2)
-        ax_histy1 = fig.add_subplot(gs[2, 1], sharey=ax_scatter1)
-        ax_histy2 = fig.add_subplot(gs[2, 3], sharey=ax_scatter2)
-        titles = [ax_title1, ax_title2]
-        scatters = [ax_scatter1, ax_scatter2]
-        histx = [ax_histx1, ax_histx2]
-        histy = [ax_histy1, ax_histy2]
-        # colors = ['blue', 'purple'] # Colors assigned later
-        
-    elif num_agents == 1:
-        # Layout for 1 agent
-        fig = plt.figure(figsize=(figsize[0] * 0.6, figsize[1])) # Smaller figure
-        gs = fig.add_gridspec(3, 2, height_ratios=[0.5, 1, 4], width_ratios=[4, 1],
-                            hspace=0.05, wspace=0.15)
-        ax_title = fig.add_subplot(gs[0, 0])
-        ax_scatter = fig.add_subplot(gs[2, 0])
-        ax_histx = fig.add_subplot(gs[1, 0], sharex=ax_scatter)
-        ax_histy = fig.add_subplot(gs[2, 1], sharey=ax_scatter)
-        titles = [ax_title]
-        scatters = [ax_scatter]
-        histx = [ax_histx]
-        histy = [ax_histy]
-        # colors = ['blue'] # Colors assigned later
-        
-    # --- Common plot setup --- 
-    # Use specific colors based on the actual agents being plotted
-    color_map = {"trained": 'blue', "greedy": 'purple', "stationary": 'green', "random": 'orange'}
-    plot_colors = [color_map[agent] for agent in agents_to_plot]
-    plot_labels = [agent_labels[agent] for agent in agents_to_plot]
-
-    # Turn off axis labels for histograms and title areas
-    for ax_h in histx: ax_h.tick_params(axis="x", labelbottom=False)
-    for ax_h in histy: ax_h.tick_params(axis="y", labelleft=False)
-    for ax_t in titles: ax_t.axis('off')
-
-    # Plot data for each agent present
-    all_exposures = [] # To determine shared x-axis limits
-    bin_count = 30
-    
-    for i, agent_type in enumerate(agents_to_plot):
-        # Safely get data, defaulting to empty list
-        exposures_raw = results[agent_type].get("exposure_data", [])
-        adherences_raw = results[agent_type].get("adherence_data", [])
-        
-        # Flatten the lists
-        exposures = [item for sublist in exposures_raw for item in sublist if isinstance(item, (float, int))]
-        adherences = [item for sublist in adherences_raw for item in sublist if isinstance(item, (float, int))]
-        
-        # Check if data is available after flattening
-        if not exposures or not adherences:
-            print(f"Warning: No valid exposure/adherence data for {agent_type}. Skipping plot section.")
-            # Optionally hide the corresponding axes if data is missing
-            scatters[i].set_visible(False)
-            histx[i].set_visible(False)
-            histy[i].set_visible(False)
-            titles[i].set_visible(False)
-            continue # Skip to next agent
-            
-        all_exposures.extend(exposures)
-        
-        # Add jitter to adherence values
-        adherences_jittered = [a + np.random.uniform(-jitter_amount, jitter_amount) for a in adherences]
-        
-        # Plot scatter
-        scatters[i].scatter(exposures, adherences_jittered, alpha=alpha, c=plot_colors[i], s=20)
-        scatters[i].set_xlabel("Total Exposure", fontsize=12)
-        # Only label the y-axis for the first column plots
-        if num_agents == 4 and i % 2 == 0: # First column in 2x2 grid
-             scatters[i].set_ylabel("Agent Adherence", fontsize=12)
-        elif num_agents < 4 and i == 0: # First plot otherwise
-             scatters[i].set_ylabel("Agent Adherence", fontsize=12)
-        else:
-             scatters[i].set_ylabel("")
-             
-        scatters[i].grid(True, alpha=0.3)
-        scatters[i].set_ylim(-0.05, 1.05) # Slightly expand y-axis
-        
-        # Plot histograms
-        histx[i].hist(exposures, bins=bin_count, alpha=0.7, color=plot_colors[i])
-        # Only label count on the first histx plot in each row
-        if num_agents == 4 and i % 2 == 0: 
-            histx[i].set_ylabel('Count', fontsize=10)
-        elif num_agents < 4 and i == 0:
-             histx[i].set_ylabel('Count', fontsize=10)
-        else:
-             histx[i].set_ylabel("")
-             
-        histy[i].hist(adherences, bins=bin_count, alpha=0.7, color=plot_colors[i], orientation='horizontal')
-        histy[i].set_xlabel('Count', fontsize=10)
-        
-        # Set title in the title axes
-        titles[i].text(0.5, 0.5, plot_labels[i], fontsize=14, ha='center', va='center')
-
-    # Set shared x-axis limits based on the max exposure across all plotted agents
-    x_max = max(all_exposures) * 1.1 if all_exposures else 1.0
-    # Check if x_max is valid before setting limits
-    if not np.isnan(x_max) and x_max > 0:
-        for ax_s in scatters: 
-            if ax_s.get_visible(): ax_s.set_xlim(0, x_max)
-        for ax_h in histx: 
-            if ax_h.get_visible(): ax_h.set_xlim(0, x_max)
-    else:
-        print("Warning: Could not determine valid x-axis limits for exposure plot.")
-    
-    # Set overall title
-    fig.suptitle(title, fontsize=16, y=0.98)
-    
-    # Ensure save directory exists
-    os.makedirs(save_dir, exist_ok=True)
-    
-    # Use figure-level tight layout but with padding to prevent overlap
-    plt.tight_layout(pad=2.0, h_pad=1.0, w_pad=1.5) # Adjust padding as needed
-    
-    # Save the figure
-    plt.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
-    plt.close() 
-
 def plot_final_reward_boxplot(
     results: Dict[str, Any],
     title: str = "Final Cumulative Reward Comparison",
     filename: str = "final_reward_boxplot.png",
     save_dir: str = "results/graphs",
-    figsize: Tuple[int, int] = (8, 6)
+    figsize: Tuple[int, int] = (10, 6)  # Increased width
 ) -> None:
     """
     Create a boxplot comparing the final cumulative rewards between agents.
@@ -1427,12 +1054,6 @@ def plot_final_reward_boxplot(
     
     data = []
     categories = []
-    agent_labels = {
-        "trained": "Trained Model",
-        "random": "Random Actions",
-        "stationary": "Stationary (0 Adherence)",
-        "greedy": "Greedy Maximizer"
-    }
     
     # Extract final rewards and map categories
     category_data = {}
@@ -1441,18 +1062,18 @@ def plot_final_reward_boxplot(
             # Ensure rewards_over_time exists and is not empty
             if "rewards_over_time" in results[agent_type] and results[agent_type]["rewards_over_time"]:
                 final_rewards = [rewards[-1] for rewards in results[agent_type]["rewards_over_time"] if rewards] # Check if reward list is not empty
-                label = agent_labels.get(agent_type, agent_type.capitalize())
+                label = AGENT_LABELS.get(agent_type, agent_type.capitalize())
                 category_data[label] = final_rewards
                 for reward_val in final_rewards:
                     data.append(reward_val)
                     categories.append(label)
             else:
                  print(f"Warning: No reward data found for agent type '{agent_type}'")
-                 category_data[agent_labels.get(agent_type, agent_type.capitalize())] = [] # Add empty list if no data
+                 category_data[AGENT_LABELS.get(agent_type, agent_type.capitalize())] = [] # Add empty list if no data
 
     
     # Order categories for consistent plotting
-    ordered_categories = [agent_labels[k] for k in ["trained", "greedy", "stationary", "random"] if k in agent_labels and agent_labels[k] in category_data]
+    ordered_categories = [AGENT_LABELS[k] for k in AGENT_PLOT_ORDER if k in AGENT_LABELS and AGENT_LABELS[k] in category_data]
     
     # Create DataFrame for seaborn
     df = pd.DataFrame({
@@ -1553,17 +1174,19 @@ def plot_final_reward_boxplot(
         # Define positions for annotations based on ordered categories
         cat_pos = {cat: i for i, cat in enumerate(ordered_categories)}
         
-        # Use the corrected_results dictionary which now includes NaNs
+        # Get the trained agent label
+        trained_label = AGENT_LABELS.get('trained', 'Trained')
+        
+        # Only show comparisons between trained agent and others
         for (cat1, cat2), p_corrected in corrected_results.items():
-            # Skip drawing if p-value is NaN (test failed or wasn't performed)
-            if np.isnan(p_corrected):
+            # Skip if neither is the trained agent or if p-value is NaN
+            if trained_label not in (cat1, cat2) or np.isnan(p_corrected):
                 continue
-                
-            # Ensure categories are in the plot order
-            if cat1 not in cat_pos or cat2 not in cat_pos:
-                 print(f"Warning: Skipping annotation for {cat1} vs {cat2}, category not found in plot.")
-                 continue
-                 
+            
+            # Ensure trained agent is always cat1 for consistency
+            if cat2 == trained_label:
+                cat1, cat2 = cat2, cat1
+            
             pos1 = cat_pos[cat1]
             pos2 = cat_pos[cat2]
             
@@ -1586,11 +1209,7 @@ def plot_final_reward_boxplot(
             current_y += increment # Move up for the next annotation
 
         # Adjust y-limit to make space for annotations
-        # Check if current_y is valid before setting ylim
-        if not np.isnan(current_y):
-            ax.set_ylim(top=current_y + increment * 0.5) # Add a bit more padding at the top
-        else: # Fallback if current_y calculation failed
-             ax.set_ylim(top=y_max * 1.1 if y_max > 0 else 0.1) # Basic padding
+        ax.set_ylim(top=current_y + increment * 0.5) # Add a bit more padding at the top
 
     # --- FIRST PLOT: Boxplot with individual data points --- 
     plt.figure(figsize=figsize, dpi=120)
@@ -1632,6 +1251,9 @@ def plot_final_reward_boxplot(
     ax1.spines['bottom'].set_linewidth(0.5)
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax1.xaxis.grid(False)
+    
+    # Rotate x-axis labels to prevent overlap
+    plt.xticks(rotation=45, ha='right')
     
     # Add statistical annotations
     add_stats_annotations(ax1, "with_points")
@@ -1675,6 +1297,9 @@ def plot_final_reward_boxplot(
     ax2.spines['bottom'].set_linewidth(0.5)
     ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax2.xaxis.grid(False)
+    
+    # Rotate x-axis labels to prevent overlap
+    plt.xticks(rotation=45, ha='right')
     
     # Add statistical annotations
     add_stats_annotations(ax2, "no_points")

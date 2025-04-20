@@ -15,14 +15,14 @@ from result_utils import (
     plot_survival_boxplot,
     save_benchmark_results,
     get_summary_stats,
-    plot_exposure_adherence_scatterplot,
-    plot_final_reward_boxplot
+    plot_final_reward_boxplot,
+    AGENT_LABELS
 )
 
 def main():
     """
     Run benchmarks comparing a trained model against random actions.
-    Generates boxplots for episode duration and final rewards, and exposure vs adherence scatterplot.
+    Generates boxplots for episode duration and final rewards.
     """
     parser = argparse.ArgumentParser(
         description="Benchmark a trained SIRS model against random actions"
@@ -45,7 +45,7 @@ def main():
     parser.add_argument(
         "--no-random",
         action="store_true",
-        help="Skip running the random agent benchmark"
+        help="Skip running the random agent benchmarks"
     )
     
     parser.add_argument(
@@ -103,7 +103,7 @@ def main():
     
     # Generate and save survival boxplot
     boxplot_filename = f"{output_base}_episode_duration_boxplot.png"
-    boxplot_title = f"Episode Duration: {title_prefix} vs Random Actions ({args.runs} runs)"
+    boxplot_title = f"Episode Duration: {title_prefix} vs Baseline Agents ({args.runs} runs)"
     print(f"Generating episode duration boxplot: {boxplot_filename}")
     
     plot_survival_boxplot(
@@ -113,22 +113,9 @@ def main():
         save_dir=args.output_dir
     )
     
-    # Generate exposure vs adherence scatterplot using data from the same benchmark run
-    scatterplot_filename = f"{output_base}_exposure_adherence.png"
-    exp_title = f"Exposure vs Adherence: {title_prefix} ({args.runs} runs)"
-    print(f"Generating exposure vs adherence scatterplot: {scatterplot_filename}")
-    
-    plot_exposure_adherence_scatterplot(
-        results,
-        title=exp_title,
-        filename=scatterplot_filename,
-        save_dir=args.output_dir,
-        include_random=not args.no_random
-    )
-    
     # Generate and save final reward boxplot
     final_reward_boxplot_filename = f"{output_base}_final_reward_boxplot.png"
-    final_reward_boxplot_title = f"Final Cumulative Reward: {title_prefix} vs Random Actions ({args.runs} runs)"
+    final_reward_boxplot_title = f"Final Cumulative Reward: {title_prefix} vs Baseline Agents ({args.runs} runs)"
     print(f"Generating final reward boxplot: {final_reward_boxplot_filename}")
     
     plot_final_reward_boxplot(
@@ -152,22 +139,33 @@ def main():
     summary_stats = get_summary_stats(results)
     
     print("\nBenchmark Summary:")
-    print("  Trained Model:")
+    print(f"  {AGENT_LABELS['trained']}:")
     print(f"    Mean Episode Duration: {summary_stats['trained']['mean_episode_length']:.2f} steps (±{summary_stats['trained']['std_episode_length']:.2f})")
     print(f"    Mean Final Reward: {summary_stats['trained']['mean_final_reward']:.2f} (±{summary_stats['trained']['std_final_reward']:.2f})")
     
-    if not args.no_random and "random" in summary_stats:
-        print("  Random Actions:")
-        print(f"    Mean Episode Duration: {summary_stats['random']['mean_episode_length']:.2f} steps (±{summary_stats['random']['std_episode_length']:.2f})")
-        print(f"    Mean Final Reward: {summary_stats['random']['mean_final_reward']:.2f} (±{summary_stats['random']['std_final_reward']:.2f})")
+    if not args.no_random:
+        if "random_reckless" in summary_stats:
+            print(f"  {AGENT_LABELS['random_reckless']}:")
+            print(f"    Mean Episode Duration: {summary_stats['random_reckless']['mean_episode_length']:.2f} steps (±{summary_stats['random_reckless']['std_episode_length']:.2f})")
+            print(f"    Mean Final Reward: {summary_stats['random_reckless']['mean_final_reward']:.2f} (±{summary_stats['random_reckless']['std_final_reward']:.2f})")
+        
+        if "random_cautious" in summary_stats:
+            print(f"  {AGENT_LABELS['random_cautious']}:")
+            print(f"    Mean Episode Duration: {summary_stats['random_cautious']['mean_episode_length']:.2f} steps (±{summary_stats['random_cautious']['std_episode_length']:.2f})")
+            print(f"    Mean Final Reward: {summary_stats['random_cautious']['mean_final_reward']:.2f} (±{summary_stats['random_cautious']['std_final_reward']:.2f})")
         
     if "stationary" in summary_stats:
-        print("  Stationary (0 Adherence):")
+        print(f"  {AGENT_LABELS['stationary']}:")
         print(f"    Mean Episode Duration: {summary_stats['stationary']['mean_episode_length']:.2f} steps (±{summary_stats['stationary']['std_episode_length']:.2f})")
         print(f"    Mean Final Reward: {summary_stats['stationary']['mean_final_reward']:.2f} (±{summary_stats['stationary']['std_final_reward']:.2f})")
         
+    if "static_cautious" in summary_stats:
+        print(f"  {AGENT_LABELS['static_cautious']}:")
+        print(f"    Mean Episode Duration: {summary_stats['static_cautious']['mean_episode_length']:.2f} steps (±{summary_stats['static_cautious']['std_episode_length']:.2f})")
+        print(f"    Mean Final Reward: {summary_stats['static_cautious']['mean_final_reward']:.2f} (±{summary_stats['static_cautious']['std_final_reward']:.2f})")
+        
     if "greedy" in summary_stats:
-        print("  Greedy Maximizer:")
+        print(f"  {AGENT_LABELS['greedy']}:")
         print(f"    Mean Episode Duration: {summary_stats['greedy']['mean_episode_length']:.2f} steps (±{summary_stats['greedy']['std_episode_length']:.2f})")
         print(f"    Mean Final Reward: {summary_stats['greedy']['mean_final_reward']:.2f} (±{summary_stats['greedy']['std_final_reward']:.2f})")
         
@@ -186,13 +184,13 @@ def main():
         print("\n  Statistical Comparisons (Mann-Whitney U with Bonferroni Correction):")
         print("  -------------------------------------------------------------------")
         
+        # Only show comparisons between trained and other agents
         agent_pairs = [
-            ("Trained", "Random"),
-            ("Trained", "Stationary"),
-            ("Random", "Stationary"),
-            ("Trained", "Greedy"),
-            ("Random", "Greedy"),
-            ("Stationary", "Greedy")
+            (AGENT_LABELS["trained"], AGENT_LABELS["stationary"]),
+            (AGENT_LABELS["trained"], AGENT_LABELS["static_cautious"]),
+            (AGENT_LABELS["trained"], AGENT_LABELS["random_reckless"]),
+            (AGENT_LABELS["trained"], AGENT_LABELS["random_cautious"]),
+            (AGENT_LABELS["trained"], AGENT_LABELS["greedy"]),
         ]
         metrics = [
             ("episode_length", "Episode Duration"), 
@@ -244,8 +242,10 @@ def main():
             if metric_key in directional_tests_results:
                 metric_directional = directional_tests_results[metric_key]
                 displayed_directional = False
-                for baseline_agent in ["Random", "Stationary", "Greedy"]:
-                    comparison_key = f"Trained_vs_{baseline_agent}"
+                for baseline_agent in [AGENT_LABELS["stationary"], AGENT_LABELS["static_cautious"], 
+                                     AGENT_LABELS["random_reckless"], AGENT_LABELS["random_cautious"], 
+                                     AGENT_LABELS["greedy"]]:
+                    comparison_key = f"{AGENT_LABELS['trained']}_vs_{baseline_agent}"
                     if comparison_key in metric_directional:
                         comp_data = metric_directional[comparison_key]
                         p_corrected = comp_data.get("p_value_bonferroni")
@@ -269,7 +269,6 @@ def main():
     print(f"\nResults saved to {args.output_dir}/")
     print(f"Episode Duration Boxplot: {os.path.join(args.output_dir, boxplot_filename)}")
     print(f"Final Reward Boxplot: {os.path.join(args.output_dir, final_reward_boxplot_filename)}")
-    print(f"Exposure vs Adherence Plot: {os.path.join(args.output_dir, scatterplot_filename)}")
     print(f"Data: {os.path.join(args.output_dir, data_filename)}")
 
 if __name__ == "__main__":
