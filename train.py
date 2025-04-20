@@ -22,7 +22,7 @@ class EntropyCoefCallback(BaseCallback):
     Callback for updating the entropy coefficient during training.
     Allows for scheduled entropy coefficient annealing.
     """
-    def __init__(self, initial_value: float, final_value: float = 0.0, schedule_percentage: float = 0.75, verbose: int = 0):
+    def __init__(self, initial_value: float, final_value: float = 0.0, schedule_percentage: float = 0.3, verbose: int = 0):
         super().__init__(verbose)
         self.initial_value = initial_value
         self.final_value = final_value
@@ -361,7 +361,7 @@ def main(args):
         ent_callback = EntropyCoefCallback(
             initial_value=initial_ent_coef,
             final_value=0,  # Target value of 0 by the end
-            schedule_percentage=0.4,  # Schedule over 40% of training
+            schedule_percentage=0.3,  # Schedule over 30% of training
             verbose=1  # Print updates
         )
         callbacks.append(ent_callback)
