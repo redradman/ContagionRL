@@ -43,7 +43,7 @@ class SIRSEnvironment(gym.Env):
         recovery_rate: float = 0.1,
         max_immunity_loss_prob: float = 0.2,
         adherence_penalty_factor: float = 2,
-        movement_type: str = "stationary",
+        movement_type: str = "continuous_random",
         movement_scale: float = 1.0,  # Scale factor for non-focal agent movement (0 to 1)
         visibility_radius: float = -1,  # Restored: -1 means full visibility, >=0 means limited visibility
         rounding_digits: int = 2,
@@ -51,10 +51,14 @@ class SIRSEnvironment(gym.Env):
         safe_distance: float = 0,  # New parameter for minimum safe distance for reinfection
         init_agent_distance: float = 0,  # New parameter for initial distance all humans should be from agent
         max_distance_for_beta_calculation: float = -1,  # New parameter: -1 means no limit, >0 means distance threshold
-        reward_type: str = "stateBased",
+        reward_type: str = "comprehensive",
         render_mode: Optional[str] = None,
+        gamma: float = 0.99 # Added gamma for potential shaping consistency
     ):
         super().__init__()
+
+        # Store gamma for potential shaping
+        self.gamma = gamma
 
         # Initialize frames list for video recording
         self.frames = []
@@ -342,6 +346,9 @@ class SIRSEnvironment(gym.Env):
         self.agent_adherence = self.initial_agent_adherence
         self.agent_state = STATE_DICT['S']
         self.agent_time_in_state = 0  # Reset agent time in state
+
+        # Reset previous potential energy for potential shaping
+        self._prev_potential_energy = 0
         
         # Initialize humans with positions from movement handler
         self.humans = []
@@ -1269,26 +1276,162 @@ class SIRSEnvironment(gym.Env):
         
         return final_reward
 
-    def _calculate_reward(self):    
-        """Calculate the reward based on the selected reward type"""
-        reward_functions = {
-            "strategicAvoidance": self._calculate_strategic_avoidance_reward,
-            "distanceMaximization": self._calculate_distance_maximization_reward,
-            "weightedAvoidance": self._calculate_weighted_avoidance_reward,
-            "infectionAvoidance": self._calculate_infection_avoidance_reward,
-            "minimizeExposure": self._calculate_minimize_exposure_reward,
-            "strategicSurvival": self._calculate_strategic_survival_reward, 
-            "reduceInfectionProb": self._calculate_reduceInfectionProb_reward,
-            "enhancedInfectionAvoidance": self._calculate_enhanced_infection_avoidance_reward,
-            "constant": self.constant_reward,
-            "reduceInfectionProbwithConstant": self._calculate_reduceInfectionProbwithConstant_reward,
-            "comprehensive": self._calculate_comprehensive_reward,
-            "greedyDistanceIncrease": self._calculate_greedy_distance_increase_reward # Add new reward
-        }
-        if self.reward_type not in reward_functions:  
-            raise ValueError(f"Invalid reward type: {self.reward_type}")
+    def _calculate_greedy_distance_increase_reward(self):
+        """
+        Reward function that encourages the agent to maximize the immediate increase
+        in distance to the nearest infected individual, mimicking the greedy baseline.
+        Reward = (distance_after_step - distance_before_step)
+        """
+        # Only provide reward if the agent is susceptible
+        if self.agent_state != STATE_DICT['S']:
+            return -1.0 # No reward/penalty if not susceptible
+            
+        # Calculate distance to nearest infected AFTER stepping
+        dist_after_step = self.max_distance # Default if no infected after step
+        agent_human_after = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        infected_list_after = self._get_infected_list(agent_human_after)
+        if infected_list_after:
+            distances_after = [self._calculate_distance(agent_human_after, h) for h in infected_list_after]
+            dist_after_step = min(distances_after)
         
-        return reward_functions[self.reward_type]()
+        # Retrieve distance before step (calculated in the step function)
+        dist_before = self.dist_before_step
+        
+        # Calculate the change in distance
+        delta_distance = dist_after_step - dist_before
+        
+        # The reward is the change in distance. 
+        # A positive delta means the agent moved further away.
+        # A negative delta means the agent moved closer.
+        # Max possible positive delta in one step is roughly agent max speed (1.0)
+        # Max possible negative delta is also roughly 1.0
+        # Normalize reward slightly to keep it within a reasonable range (e.g., [-1, 1])
+        # Since max step size is 1, delta_distance is naturally bounded around [-1, 1]
+        
+        # Optional: Scale the reward if needed, but raw delta might be fine.
+        reward_scale = 0.9 
+        reward = reward_scale * delta_distance
+        reward += 0.1 # alive bonus
+
+        
+        return reward
+
+    def _calculate_potential_field_reward(self):
+        """
+        Implements a potential-field based reward function with potential-based shaping.
+        Uses a combination of:
+        1. Repulsive forces from infected humans (positive charges)
+        2. Weak attractive forces from susceptible humans (negative charges)
+        3. Base reward for health status and adherence cost
+        """
+        # Constants for the potential field calculation
+        alpha = 0.2  # Weak attraction factor for susceptible humans
+        kappa = 0.5  # Scaling factor for the potential shaping
+        c = 0.1      # Adherence cost factor
+        # Use gamma stored in the environment instance
+        gamma = self.gamma
+        # epsilon = 1e-3  # Small value to avoid division by zero - replaced by max()
+        
+        # 1. Calculate maximum toroidal distance (diagonal half-length)
+        D = np.sqrt(2) * (self.grid_size / 2)
+        
+        # Get the agent (focal human)
+        agent = self.humans[0]
+        
+        # 2 & 3. Calculate potential energy based on all other humans
+        potential_energy = 0
+        
+        for j, human in enumerate(self.humans):
+            if j == 0:  # Skip the agent itself
+                continue
+                
+            # Calculate normalized distance to this human
+            distance = self._calculate_distance(agent, human)
+            normalized_distance_sq = (distance / D) ** 2 # d_j^2 / D^2 ∈ (0, 1]
+            
+            # Assign charge based on infection status
+            if human.state == STATE_DICT['I']:
+                q_j = 1.0  # Repulsive (positive charge)
+            elif human.state == STATE_DICT['S']:
+                q_j = -alpha  # Weak attraction (negative charge)
+            else:  # RECOVERED or DEAD
+                q_j = 0.0  # Neutral
+                
+            # Cap per-pair contribution instead of clipping total reward
+            # Add to potential energy: q_j / max(d̂_j^2, 0.05)
+            potential_energy += q_j / max(normalized_distance_sq, 0.05)
+        
+        # Normalize potential energy by number of other humans
+        if self.n_humans > 1:
+            potential_energy /= (self.n_humans - 1)
+
+        # Store previous potential energy if available, otherwise use current as initial
+        # (This check is mostly for the very first step, reset handles subsequent episodes)
+        if not hasattr(self, '_prev_potential_energy'):
+            self._prev_potential_energy = potential_energy
+            
+        # 4. Calculate potential-based shaping term
+        shaping_reward = kappa * (self._prev_potential_energy - gamma * potential_energy)
+        
+        # Save current potential for next step
+        self._prev_potential_energy = potential_energy
+        
+        # 5. Calculate base reward (excluding infection penalty, handled in step)
+        # Health term: +1 if susceptible
+        if agent.state == STATE_DICT['S']:
+            health_reward = 1.0
+        else:
+            health_reward = 0.0
+                    
+        # Adherence cost: -c * adherence (fixed sign)
+        adherence_cost = -c * self.agent_adherence
+        
+        # Time penalty (small negative value to discourage dithering)
+        time_penalty = -0.01
+        
+        # Combine all reward components (infection penalty is added in step)
+        base_reward = health_reward + adherence_cost + time_penalty
+        total_reward = base_reward + shaping_reward
+        
+        # Store components for logging
+        self.reward_components = {
+            'health': health_reward,
+            'adherence_cost': adherence_cost,
+            'time_penalty': time_penalty,
+            'shaping': shaping_reward,
+            'total_base': base_reward, # Track base before shaping
+            'total': total_reward,
+            'potential_energy': potential_energy
+        }
+        
+        return total_reward
+
+    def _calculate_reward(self):    
+        # Map reward type to the corresponding reward function
+        reward_functions = {
+            "constant": self.constant_reward,
+            "strategic_avoidance": self._calculate_strategic_avoidance_reward,
+            "distance_maximization": self._calculate_distance_maximization_reward,
+            "weighted_avoidance": self._calculate_weighted_avoidance_reward,
+            "infection_avoidance": self._calculate_infection_avoidance_reward,
+            "minimize_exposure": self._calculate_minimize_exposure_reward,
+            "strategic_survival": self._calculate_strategic_survival_reward,
+            "reduceInfectionProb": self._calculate_reduceInfectionProb_reward,
+            "reduceInfectionProbwithConstant": self._calculate_reduceInfectionProbwithConstant_reward,
+            "enhancedInfectionAvoidance": self._calculate_enhanced_infection_avoidance_reward,
+            "comprehensive": self._calculate_comprehensive_reward,
+            "greedyDistanceIncrease": self._calculate_greedy_distance_increase_reward,
+            "potential_field": self._calculate_potential_field_reward,  # Add new reward function to the map
+        }
+        
+        # Get the reward function based on the specified reward type, default to constant reward
+        reward_function = reward_functions.get(self.reward_type, self.constant_reward)
+        return reward_function()
 
     def step(self, action: np.ndarray) -> Tuple[dict, float, bool, bool, dict]:
         """
@@ -1309,7 +1452,7 @@ class SIRSEnvironment(gym.Env):
         self.counter += 1
         
         # Store current state before update for terminal reward calculation
-        previous_state = self.agent_state
+        previous_agent_state = self.agent_state
         
         # --- Calculate distance to nearest infected BEFORE stepping --- 
         self.dist_before_step = self.max_distance # Default if no infected
@@ -1333,16 +1476,15 @@ class SIRSEnvironment(gym.Env):
         self.cumulative_reward += reward  # Update cumulative reward
      
         # Check if agent became infected in this step
-        became_infected = previous_state != STATE_DICT['I'] and self.agent_state == STATE_DICT['I']
+        became_infected = previous_agent_state == STATE_DICT['S'] and self.agent_state == STATE_DICT['I']
         
-        # # Apply strong negative terminal reward if agent became infected
-        # if became_infected:
-        #     infection_penalty = - self.simulation_time / 4  # Strong negative reward for becoming infected
-        #     # used -50 for penalty in the test_weighted_avoidance 20250305 1546
-        #     reward += infection_penalty
-        #     self.cumulative_reward += infection_penalty
-        #     # Add to info dict for monitoring
-        #     self.infection_penalty_applied = True
+        # Apply strong negative terminal reward DIRECTLY if agent became infected
+        infection_penalty_applied = False
+        if became_infected:
+            infection_penalty = -5.0  # Strong negative reward for becoming infected
+            reward += infection_penalty
+            self.cumulative_reward += infection_penalty # Ensure cumulative reflects the penalty
+            infection_penalty_applied = True
         
         terminated = False
         if self.counter >= self.simulation_time:
@@ -1367,9 +1509,9 @@ class SIRSEnvironment(gym.Env):
         # 2. There are no infected individuals AND either:
         #    a) reinfection is disabled (reinfection_count == 0) or
         #    b) there aren't enough susceptible humans beyond safe distance for reinfection
-        if (self.agent_state != STATE_DICT['S'] or
-            # self.agent_state == STATE_DICT['D'] or
-            # self.agent_state == STATE_DICT['I'] or
+        # *OR* 3. The agent becomes infected (apply penalty and truncate)
+        if (self.agent_state == STATE_DICT['D'] or # Agent died
+            became_infected or # Agent became infected
             (self.infected_count == 0 and  # No infected individuals
              (self.reinfection_count == 0 or distant_susceptible_count < self.reinfection_count))):  # Can't reinfect
             truncated = True
@@ -1387,7 +1529,7 @@ class SIRSEnvironment(gym.Env):
             "cumulative_reward": self.cumulative_reward,
             "truncation_reason": "timeout" if terminated else (
                 "agent_death" if self.agent_state == STATE_DICT['D'] else
-                "agent_infected" if self.agent_state == STATE_DICT['I'] else
+                "agent_infected" if became_infected else
                 "no_infection_possible" if truncated else None
             ),
             "agent_state": [k for k, v in STATE_DICT.items() if v == self.agent_state][0],
@@ -1397,7 +1539,9 @@ class SIRSEnvironment(gym.Env):
             "recovered_count": sum(1 for h in self.humans if h.state == STATE_DICT['R']),
             "dead_count": sum(1 for h in self.humans if h.state == STATE_DICT['D']),
             "adherence": float(self.agent_adherence),
-            "terminal_infection_penalty": became_infected,  # Flag if terminal penalty was applied
+            "terminal_infection_penalty": infection_penalty_applied,  # Flag if terminal penalty was applied
+            # Include reward components if available
+            **getattr(self, 'reward_components', {}) 
         }
         return observation, reward, terminated, truncated, info
 
