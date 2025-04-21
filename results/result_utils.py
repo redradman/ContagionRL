@@ -299,8 +299,8 @@ def run_benchmark(
             agent_pos = env.agent_position
             infected_humans = [h for h in env.humans if h.state == 1] # STATE_DICT['I'] == 1
             
-            best_action_idx = 0 # Default to stationary
-            max_min_dist = -1.0
+            # best_action_idx = 0 # Default to stationary
+            # max_min_dist = -1.0
 
             if not infected_humans:
                 # If no infected, stay put
