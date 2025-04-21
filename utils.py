@@ -254,9 +254,18 @@ class MovementHandler:
         # Get current velocity
         vx, vy = self.velocities[human_id]
         
-        # Add random acceleration
-        ax = rng.uniform(-self.max_acceleration, self.max_acceleration)
-        ay = rng.uniform(-self.max_acceleration, self.max_acceleration)
+        # Sample base random influence from Normal(0, sigma^2) aiming for [-1, 1]
+        sigma = 1.0 / 3.0 # Std dev so 3*sigma = 1.0
+        rand_x = rng.normal(loc=0.0, scale=sigma)
+        rand_y = rng.normal(loc=0.0, scale=sigma)
+
+        # Clip the influence to strictly enforce the [-1, 1] range
+        rand_x = np.clip(rand_x, -1.0, 1.0)
+        rand_y = np.clip(rand_y, -1.0, 1.0)
+
+        # Scale the clipped influence by max_acceleration to get the actual acceleration
+        ax = rand_x * self.max_acceleration
+        ay = rand_y * self.max_acceleration
         
         # Update velocity with momentum
         vx = self.momentum * vx + (1 - self.momentum) * ax
