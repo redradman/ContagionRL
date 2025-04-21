@@ -1,7 +1,7 @@
 from torch import nn
 # Environment Parameters
 env_config = {
-    "simulation_time": 500,        # Longer episodes for more learning opportunity
+    "simulation_time": 512,        # Longer episodes for more learning opportunity
     "grid_size": 50,               # A slightly smaller grid for easier navigation
     "n_humans": 40,                # Fewer humans to reduce environmental complexity
     "n_infected": 10,              # Fewer initial infections to avoid overwhelming the agent
@@ -20,7 +20,7 @@ env_config = {
     "safe_distance": 10,            # Distance for infected humans at initialization and reinfection
     "init_agent_distance": 5,     # Minimum starting distance ALL humans must be from agent
     "max_distance_for_beta_calculation": 10,  # -1 means no limit (current behavior), >0 limits infection range
-    "reward_type": "comprehensive",  # Using our new comprehensive reward function with distance-based crowding
+    "reward_type": "potential_field",  # Using our new potential field reward function 
     "render_mode": None            # No rendering during training
 }
 
@@ -30,32 +30,33 @@ ppo_config = {
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
         net_arch=dict(
-            pi=[256, 128, 64, 32, 16],  
-            vf=[256, 128, 64, 32, 16]  
+            pi=[256, 256, 128],  
+            vf=[256, 256, 128]  
         ),
         activation_fn=nn.ReLU,  # Explicitly use ReLU activation
         ortho_init=True,        # Use orthogonal initialization for better training stability
-        # log_std_init=-1.0,
+        # log_std_init=-0.6,
     ),
     
     # PPO specific parameters
-    "batch_size": 2048,            # Larger batch for more stable updates
-    # "n_steps": 4096,               # Collect more steps before updating
+    "batch_size": 4096,            # Larger batch for more stable updates (>= 512 samples per minibatch)
+    "n_steps": 2048,               # Collect more steps before updating
     "n_epochs": 10,                # Fewer epochs to prevent overfitting
     "learning_rate": 3e-4,         # Reduced learning rate for more stable learning
-    "gamma": 0.98,                 # Higher discount factor to focus more on long-term rewards
+    "gamma": 0.96,                 # Lower discount factor to match shorter episode horizon
     "gae_lambda": 0.95,            # Keep same lambda
-    # "clip_range": 0.15,            # Reduced clip range for more stable updates
-    "ent_coef": 0.005,              # Increased entropy coefficient for better exploration
-    # "vf_coef": 1.5,                # Increased value function coefficient for better value estimation
+    "target_kl": 0.04,             # Looser KL policing to allow larger updates
+    "clip_range": 0.2,             # Wider clip range to allow larger policy changes
+    "ent_coef": 0.01,              # Lower entropy coefficient, scheduled decay
+    "vf_coef": 0.5,                # Value function coefficient to balance losses
     # "max_grad_norm": 0.5,          # Keep same gradient clipping
     
     # Advanced PPO settings
     "normalize_advantage": True,   # Normalize advantages for more stable training
 
     # Training parameters
-    "total_timesteps": 20_000_000,
-    "n_envs": 8                    # Increased parallel environments for more diverse experience
+    "total_timesteps": 10_000_000,
+    "n_envs": 4                    # Increased parallel environments for more diverse experience
 }
 
 # For reference:
