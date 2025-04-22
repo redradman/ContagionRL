@@ -40,7 +40,22 @@ def load_config(model_path: str) -> Dict[str, Any]:
 
 def create_env_from_config(env_config: Dict[str, Any], seed: Optional[int] = None) -> SIRSEnvironment:
     """Create a SIRS environment from a configuration dictionary."""
-    env = SIRSEnvironment(**env_config)
+    # Handle parameter name changes between different versions of the code
+    config_copy = env_config.copy()
+    
+    # Convert 'immunity_decay' to 'immunity_loss_prob' if present
+    # if 'immunity_decay' in config_copy and 'immunity_loss_prob' not in config_copy:
+    #     config_copy['immunity_loss_prob'] = config_copy.pop('immunity_decay')
+    #     print("Parameter name converted: 'immunity_decay' → 'immunity_loss_prob'")
+    
+    # # Convert 'max_immunity_loss_prob' to 'immunity_loss_prob' if present
+    # if 'max_immunity_loss_prob' in config_copy and 'immunity_loss_prob' not in config_copy:
+    #     config_copy['immunity_loss_prob'] = config_copy.pop('max_immunity_loss_prob')
+    #     print("Parameter name converted: 'max_immunity_loss_prob' → 'immunity_loss_prob'")
+    
+    # Create environment with the updated config
+    env = SIRSEnvironment(**config_copy)
+        
     env.reset(seed=seed)
     return env
 
@@ -224,7 +239,7 @@ def run_benchmark(
         obs = env.reset(seed=seed)[0]
         done = False
         cumulative_rewards = [0]
-        adherence = 0.0 # Greedy agent uses 0 adherence
+        adherence = 1.0 
 
         while not done:
             # --- Greedy Action Logic --- 
@@ -935,6 +950,69 @@ def save_benchmark_results(
             print(f"Failed to save fallback JSON file: {e2}")
     except Exception as e:
          print(f"An unexpected error occurred during JSON saving: {e}")
+
+def save_benchmark_data_to_csv(
+    results: Dict[str, Any],
+    filename: str = "benchmark_raw_data.csv",
+    save_dir: str = "results/graphs"
+) -> None:
+    """
+    Save raw benchmark data to a CSV file with one row per episode.
+    
+    Args:
+        results: Results dictionary from run_benchmark
+        filename: Filename to save as
+        save_dir: Directory to save in
+    """
+    import pandas as pd
+    
+    # Ensure save directory exists
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # List to store all episode data
+    all_episodes_data = []
+    
+    # Process each agent type
+    agent_types = [k for k in results.keys() if k != "config"]
+    
+    for agent_type in agent_types:
+        # Get episode lengths and rewards
+        episode_lengths = results[agent_type].get("episode_lengths", [])
+        rewards_over_time = results[agent_type].get("rewards_over_time", [])
+        
+        # Process each episode
+        for episode_id, (length, rewards) in enumerate(zip(episode_lengths, rewards_over_time)):
+            # Get final reward
+            final_reward = float(rewards[-1]) if rewards else None
+            
+            # Convert reward trajectory to a clean string of plain Python floats
+            if rewards:
+                # Convert NumPy values to plain Python floats
+                python_rewards = [float(r) for r in rewards]
+                reward_trajectory = str(python_rewards)
+            else:
+                reward_trajectory = ""
+            
+            # Create entry for this episode
+            episode_data = {
+                "agent_type": agent_type,
+                "agent_label": AGENT_LABELS.get(agent_type, agent_type),
+                "episode_id": episode_id,
+                "episode_duration": length,
+                "final_reward": final_reward,
+                "reward_trajectory": reward_trajectory
+            }
+            all_episodes_data.append(episode_data)
+    
+    # Create DataFrame
+    df = pd.DataFrame(all_episodes_data)
+    
+    # Save to CSV
+    csv_path = os.path.join(save_dir, filename)
+    df.to_csv(csv_path, index=False)
+    print(f"Raw benchmark data saved to {csv_path}")
+    
+    return csv_path
 
 def plot_final_reward_boxplot(
     results: Dict[str, Any],

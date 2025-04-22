@@ -16,6 +16,7 @@ from result_utils import (
     save_benchmark_results,
     get_summary_stats,
     plot_final_reward_boxplot,
+    save_benchmark_data_to_csv,
     AGENT_LABELS
 )
 
@@ -132,6 +133,16 @@ def main():
     save_benchmark_results(
         results,
         filename=data_filename,
+        save_dir=args.output_dir
+    )
+    
+    # Save raw benchmark data to CSV
+    csv_filename = f"{output_base}_raw_data.csv"
+    print(f"Saving raw benchmark data: {csv_filename}")
+    
+    csv_path = save_benchmark_data_to_csv(
+        results,
+        filename=csv_filename,
         save_dir=args.output_dir
     )
     
@@ -256,6 +267,7 @@ def main():
     print(f"Episode Duration Boxplot: {os.path.join(args.output_dir, boxplot_filename)}")
     print(f"Final Reward Boxplot: {os.path.join(args.output_dir, final_reward_boxplot_filename)}")
     print(f"Data: {os.path.join(args.output_dir, data_filename)}")
+    print(f"Raw CSV Data: {csv_path}")
 
 if __name__ == "__main__":
     main() 
