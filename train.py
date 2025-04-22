@@ -8,7 +8,7 @@ import numpy as np
 import torch  # Import torch for seeding PyTorch if it's being used
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, DummyVecEnv, VecNormalize
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 import wandb
 from wandb.integration.sb3 import WandbCallback
@@ -294,6 +294,9 @@ def main(args):
     env_fns = [make_env(env_config, seed=base_seed + i) for i in range(ppo_config["n_envs"])]
     vec_env = SubprocVecEnv(env_fns)
     vec_env = VecMonitor(vec_env, os.path.join(log_path, "monitor"))
+    
+    # Add VecNormalize wrapper to normalize rewards
+    vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
 
     # Create evaluation environment if needed
     eval_freq = save_config.get("eval_freq", 0)  # Get eval_freq from config, default to 0
@@ -302,6 +305,13 @@ def main(args):
         eval_env = make_eval_env(env_config, seed=base_seed)  # same seed
         eval_env = DummyVecEnv([lambda: eval_env])
         eval_env = VecMonitor(eval_env, os.path.join(log_path, "eval"))
+        # Normalize evaluation environment as well for consistency
+        eval_env = VecNormalize(eval_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
+        # Copy normalization statistics from training environment
+        # eval_env.obs_rms = vec_env.obs_rms
+        eval_env.ret_rms = vec_env.ret_rms
+        # Force training=False for evaluation environment
+        eval_env.training = False
 
     # Initialize callbacks
     callbacks = []
@@ -312,7 +322,7 @@ def main(args):
         save_path=log_path,
         name_prefix="sirs_model",
         save_replay_buffer=save_config["save_replay_buffer"],
-        save_vecnormalize=True
+        save_vecnormalize=True  # Ensure VecNormalize stats are saved
     )
     callbacks.append(checkpoint_callback)
 
@@ -360,8 +370,8 @@ def main(args):
         # Create entropy callback and add to callbacks list
         ent_callback = EntropyCoefCallback(
             initial_value=initial_ent_coef,
-            final_value=0,  # Target value of 0 by the end
-            schedule_percentage=0.3,  # Schedule over 30% of training
+            final_value=0.002,  
+            schedule_percentage=0.4,  
             verbose=1  # Print updates
         )
         callbacks.append(ent_callback)
@@ -400,8 +410,9 @@ def main(args):
         print("\nTraining interrupted. Saving model...")
         pass
     finally:
-        # Save the final model
+        # Save the final model and VecNormalize stats
         model.save(os.path.join(log_path, "final_model"))
+        vec_env.save(os.path.join(log_path, "vecnormalize.pkl"))
         if use_wandb:
             wandb.finish()
         # Clean up
