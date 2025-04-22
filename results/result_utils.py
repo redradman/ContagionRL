@@ -20,15 +20,13 @@ from utils import Human
 # Centralized agent labels dictionary
 AGENT_LABELS = {
     "trained": "Trained",
-    "random_reckless": "Random-0",
-    "random_cautious": "Random-1",
-    "stationary": "Stationary-0",
-    "static_cautious": "Stationary-1",
-    "greedy": "Greedy-1"
+    "random": "Random",
+    "stationary": "Stationary",
+    "greedy": "Greedy"
 }
 
 # Order of agents for plotting
-AGENT_PLOT_ORDER = ["stationary", "static_cautious", "random_reckless", "random_cautious", "greedy", "trained"]
+AGENT_PLOT_ORDER = ["stationary", "random", "trained", "greedy"]
 
 def load_config(model_path: str) -> Dict[str, Any]:
     """Load the configuration file associated with the model."""
@@ -93,7 +91,7 @@ def run_benchmark(
     random_seed: Optional[int] = 42
 ) -> Dict[str, Any]:
     """
-    Run a benchmark comparing a trained model to random actions.
+    Run a benchmark comparing a trained model to baseline agents.
     Collects reward data and episode lengths.
     
     Args:
@@ -149,16 +147,13 @@ def run_benchmark(
         trained_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
     
     # Run random action episodes if requested
-    random_reckless_rewards_over_time = []
-    random_reckless_episode_lengths = []
-    
-    random_cautious_rewards_over_time = []
-    random_cautious_episode_lengths = []
+    random_rewards_over_time = []
+    random_episode_lengths = []
     
     if include_random:
-        # Random Walk Reckless: samples (dx, dy) uniformly from [‑1,1]² and fixes adherence at 0.0
-        print("Running episodes with Random Walk Reckless actions...")
-        for i in tqdm(range(n_runs), desc="Random Walk Reckless Episodes", unit="episode"):
+        # Random agent: samples (dx, dy) uniformly from [‑1,1]² and adherence from [0,1]
+        print("Running episodes with Random actions...")
+        for i in tqdm(range(n_runs), desc="Random Agent Episodes", unit="episode"):
             # Use different seeds for each run
             seed = random_seed + i if random_seed is not None else None
             
@@ -168,11 +163,11 @@ def run_benchmark(
             cumulative_rewards = [0]  # Start with 0 reward
             
             while not done:
-                # Use random actions with adherence=0.0
+                # Use random actions
                 action = np.array([
                     env.np_random.uniform(-1, 1),  # delta_x
                     env.np_random.uniform(-1, 1),  # delta_y
-                    0.0    # adherence fixed at 0.0
+                    env.np_random.uniform(0, 1)    # adherence random from [0,1]
                 ], dtype=np.float32)
                 
                 # Take a step in the environment
@@ -184,46 +179,15 @@ def run_benchmark(
                 done = terminated or truncated
             
             # Save episode data
-            random_reckless_rewards_over_time.append(cumulative_rewards)
-            random_reckless_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
-            
-        # Random Walk Cautious: samples (dx, dy) uniformly from [‑1,1]² and fixes adherence at 1.0
-        print("Running episodes with Random Walk Cautious actions...")
-        for i in tqdm(range(n_runs), desc="Random Walk Cautious Episodes", unit="episode"):
-            # Use different seeds for each run
-            seed = random_seed + i if random_seed is not None else None
-            
-            # Reset environment
-            obs = env.reset(seed=seed)[0]
-            done = False
-            cumulative_rewards = [0]  # Start with 0 reward
-            
-            while not done:
-                # Use random actions with adherence=1.0
-                action = np.array([
-                    env.np_random.uniform(-1, 1),  # delta_x
-                    env.np_random.uniform(-1, 1),  # delta_y
-                    1.0    # adherence fixed at 1.0
-                ], dtype=np.float32)
-                
-                # Take a step in the environment
-                obs, reward, terminated, truncated, info = env.step(action)
-                
-                # Update cumulative reward
-                cumulative_rewards.append(cumulative_rewards[-1] + reward)
-                
-                done = terminated or truncated
-            
-            # Save episode data
-            random_cautious_rewards_over_time.append(cumulative_rewards)
-            random_cautious_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
+            random_rewards_over_time.append(cumulative_rewards)
+            random_episode_lengths.append(len(cumulative_rewards) - 1)  # -1 because we start with 0
     
     # Run stationary (0 adherence) episodes
     stationary_rewards_over_time = []
     stationary_episode_lengths = []
     
     print("Running episodes with stationary (0 adherence) actions...")
-    for i in tqdm(range(n_runs), desc="Stationary (0 Adherence) Episodes", unit="episode"):
+    for i in tqdm(range(n_runs), desc="Stationary Agent Episodes", unit="episode"):
         # Use different seeds for each run
         seed = random_seed + i if random_seed is not None else None
         
@@ -249,38 +213,6 @@ def run_benchmark(
         # Save episode data
         stationary_rewards_over_time.append(cumulative_rewards)
         stationary_episode_lengths.append(len(cumulative_rewards) - 1) # -1 because we start with 0
-
-    # Run Static Cautious (1 adherence) episodes
-    static_cautious_rewards_over_time = []
-    static_cautious_episode_lengths = []
-    
-    print("Running episodes with Static Cautious (1 adherence) actions...")
-    for i in tqdm(range(n_runs), desc="Static Cautious (1 Adherence) Episodes", unit="episode"):
-        # Use different seeds for each run
-        seed = random_seed + i if random_seed is not None else None
-        
-        # Reset environment
-        obs = env.reset(seed=seed)[0]
-        done = False
-        cumulative_rewards = [0]  # Start with 0 reward
-        
-        # Fixed action [0, 0, 1]
-        static_cautious_action = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        
-        while not done:
-            action = static_cautious_action
-            
-            # Take a step in the environment
-            obs, reward, terminated, truncated, info = env.step(action)
-            
-            # Update cumulative reward
-            cumulative_rewards.append(cumulative_rewards[-1] + reward)
-            
-            done = terminated or truncated
-        
-        # Save episode data
-        static_cautious_rewards_over_time.append(cumulative_rewards)
-        static_cautious_episode_lengths.append(len(cumulative_rewards) - 1) # -1 because we start with 0
 
     # --- Greedy Distance Maximizer Agent --- 
     greedy_rewards_over_time = []
@@ -360,24 +292,16 @@ def run_benchmark(
             "rewards_over_time": stationary_rewards_over_time,
             "episode_lengths": stationary_episode_lengths
         },
-        "static_cautious": { 
-            "rewards_over_time": static_cautious_rewards_over_time,
-            "episode_lengths": static_cautious_episode_lengths
-        },
-        "greedy": { # Add greedy agent results
+        "greedy": {
              "rewards_over_time": greedy_rewards_over_time,
              "episode_lengths": greedy_episode_lengths
         }
     }
     
     if include_random:
-        results["random_reckless"] = {
-            "rewards_over_time": random_reckless_rewards_over_time,
-            "episode_lengths": random_reckless_episode_lengths
-        }
-        results["random_cautious"] = {
-            "rewards_over_time": random_cautious_rewards_over_time,
-            "episode_lengths": random_cautious_episode_lengths
+        results["random"] = {
+            "rewards_over_time": random_rewards_over_time,
+            "episode_lengths": random_episode_lengths
         }
         
     results["config"] = config
@@ -610,8 +534,8 @@ def plot_survival_boxplot(
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax1.xaxis.grid(False)
     
-    # Rotate x-axis labels to prevent overlap
-    plt.xticks(rotation=45, ha='right')
+    # Keep x-axis labels horizontal
+    plt.xticks(rotation=0)
     
     # Add statistical annotations
     add_stats_annotations(ax1, "with_points")
@@ -656,8 +580,8 @@ def plot_survival_boxplot(
     ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax2.xaxis.grid(False)
     
-    # Rotate x-axis labels to prevent overlap
-    plt.xticks(rotation=45, ha='right')
+    # Keep x-axis labels horizontal
+    plt.xticks(rotation=0)
     
     # Add statistical annotations
     add_stats_annotations(ax2, "no_points")
@@ -693,22 +617,13 @@ def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
         "std_final_reward": float(np.std([rewards[-1] for rewards in results["trained"]["rewards_over_time"] if rewards], ddof=1))
     }
     
-    # Calculate stats for random_reckless agent if available
-    if "random_reckless" in results:
-        summary["random_reckless"] = {
-            "mean_episode_length": float(np.mean(results["random_reckless"]["episode_lengths"])),
-            "std_episode_length": float(np.std(results["random_reckless"]["episode_lengths"], ddof=1)),
-            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random_reckless"]["rewards_over_time"] if rewards])),
-            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random_reckless"]["rewards_over_time"] if rewards], ddof=1))
-        }
-    
-    # Calculate stats for random_cautious agent if available
-    if "random_cautious" in results:
-        summary["random_cautious"] = {
-            "mean_episode_length": float(np.mean(results["random_cautious"]["episode_lengths"])),
-            "std_episode_length": float(np.std(results["random_cautious"]["episode_lengths"], ddof=1)),
-            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random_cautious"]["rewards_over_time"] if rewards])),
-            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random_cautious"]["rewards_over_time"] if rewards], ddof=1))
+    # Calculate stats for random agent if available
+    if "random" in results:
+        summary["random"] = {
+            "mean_episode_length": float(np.mean(results["random"]["episode_lengths"])),
+            "std_episode_length": float(np.std(results["random"]["episode_lengths"], ddof=1)),
+            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["random"]["rewards_over_time"] if rewards])),
+            "std_final_reward": float(np.std([rewards[-1] for rewards in results["random"]["rewards_over_time"] if rewards], ddof=1))
         }
     
     # Calculate stats for stationary agent if available
@@ -718,15 +633,6 @@ def get_summary_stats(results: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
             "std_episode_length": float(np.std(results["stationary"]["episode_lengths"], ddof=1)),
             "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["stationary"]["rewards_over_time"] if rewards])),
             "std_final_reward": float(np.std([rewards[-1] for rewards in results["stationary"]["rewards_over_time"] if rewards], ddof=1))
-        }
-    
-    # Calculate stats for static cautious agent if available
-    if "static_cautious" in results:
-        summary["static_cautious"] = {
-            "mean_episode_length": float(np.mean(results["static_cautious"]["episode_lengths"])),
-            "std_episode_length": float(np.std(results["static_cautious"]["episode_lengths"], ddof=1)),
-            "mean_final_reward": float(np.mean([rewards[-1] for rewards in results["static_cautious"]["rewards_over_time"] if rewards])),
-            "std_final_reward": float(np.std([rewards[-1] for rewards in results["static_cautious"]["rewards_over_time"] if rewards], ddof=1))
         }
     
     # Calculate stats for greedy agent if available
@@ -1252,8 +1158,8 @@ def plot_final_reward_boxplot(
     ax1.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax1.xaxis.grid(False)
     
-    # Rotate x-axis labels to prevent overlap
-    plt.xticks(rotation=45, ha='right')
+    # Keep x-axis labels horizontal
+    plt.xticks(rotation=0)
     
     # Add statistical annotations
     add_stats_annotations(ax1, "with_points")
@@ -1298,8 +1204,8 @@ def plot_final_reward_boxplot(
     ax2.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     ax2.xaxis.grid(False)
     
-    # Rotate x-axis labels to prevent overlap
-    plt.xticks(rotation=45, ha='right')
+    # Keep x-axis labels horizontal
+    plt.xticks(rotation=0)
     
     # Add statistical annotations
     add_stats_annotations(ax2, "no_points")

@@ -21,11 +21,11 @@ from result_utils import (
 
 def main():
     """
-    Run benchmarks comparing a trained model against random actions.
+    Run benchmarks comparing a trained model against baseline agents.
     Generates boxplots for episode duration and final rewards.
     """
     parser = argparse.ArgumentParser(
-        description="Benchmark a trained SIRS model against random actions"
+        description="Benchmark a trained SIRS model against baseline agents"
     )
     
     parser.add_argument(
@@ -144,25 +144,15 @@ def main():
     print(f"    Mean Final Reward: {summary_stats['trained']['mean_final_reward']:.2f} (±{summary_stats['trained']['std_final_reward']:.2f})")
     
     if not args.no_random:
-        if "random_reckless" in summary_stats:
-            print(f"  {AGENT_LABELS['random_reckless']}:")
-            print(f"    Mean Episode Duration: {summary_stats['random_reckless']['mean_episode_length']:.2f} steps (±{summary_stats['random_reckless']['std_episode_length']:.2f})")
-            print(f"    Mean Final Reward: {summary_stats['random_reckless']['mean_final_reward']:.2f} (±{summary_stats['random_reckless']['std_final_reward']:.2f})")
-        
-        if "random_cautious" in summary_stats:
-            print(f"  {AGENT_LABELS['random_cautious']}:")
-            print(f"    Mean Episode Duration: {summary_stats['random_cautious']['mean_episode_length']:.2f} steps (±{summary_stats['random_cautious']['std_episode_length']:.2f})")
-            print(f"    Mean Final Reward: {summary_stats['random_cautious']['mean_final_reward']:.2f} (±{summary_stats['random_cautious']['std_final_reward']:.2f})")
+        if "random" in summary_stats:
+            print(f"  {AGENT_LABELS['random']}:")
+            print(f"    Mean Episode Duration: {summary_stats['random']['mean_episode_length']:.2f} steps (±{summary_stats['random']['std_episode_length']:.2f})")
+            print(f"    Mean Final Reward: {summary_stats['random']['mean_final_reward']:.2f} (±{summary_stats['random']['std_final_reward']:.2f})")
         
     if "stationary" in summary_stats:
         print(f"  {AGENT_LABELS['stationary']}:")
         print(f"    Mean Episode Duration: {summary_stats['stationary']['mean_episode_length']:.2f} steps (±{summary_stats['stationary']['std_episode_length']:.2f})")
         print(f"    Mean Final Reward: {summary_stats['stationary']['mean_final_reward']:.2f} (±{summary_stats['stationary']['std_final_reward']:.2f})")
-        
-    if "static_cautious" in summary_stats:
-        print(f"  {AGENT_LABELS['static_cautious']}:")
-        print(f"    Mean Episode Duration: {summary_stats['static_cautious']['mean_episode_length']:.2f} steps (±{summary_stats['static_cautious']['std_episode_length']:.2f})")
-        print(f"    Mean Final Reward: {summary_stats['static_cautious']['mean_final_reward']:.2f} (±{summary_stats['static_cautious']['std_final_reward']:.2f})")
         
     if "greedy" in summary_stats:
         print(f"  {AGENT_LABELS['greedy']}:")
@@ -187,9 +177,7 @@ def main():
         # Only show comparisons between trained and other agents
         agent_pairs = [
             (AGENT_LABELS["trained"], AGENT_LABELS["stationary"]),
-            (AGENT_LABELS["trained"], AGENT_LABELS["static_cautious"]),
-            (AGENT_LABELS["trained"], AGENT_LABELS["random_reckless"]),
-            (AGENT_LABELS["trained"], AGENT_LABELS["random_cautious"]),
+            (AGENT_LABELS["trained"], AGENT_LABELS["random"]),
             (AGENT_LABELS["trained"], AGENT_LABELS["greedy"]),
         ]
         metrics = [
@@ -242,9 +230,7 @@ def main():
             if metric_key in directional_tests_results:
                 metric_directional = directional_tests_results[metric_key]
                 displayed_directional = False
-                for baseline_agent in [AGENT_LABELS["stationary"], AGENT_LABELS["static_cautious"], 
-                                     AGENT_LABELS["random_reckless"], AGENT_LABELS["random_cautious"], 
-                                     AGENT_LABELS["greedy"]]:
+                for baseline_agent in [AGENT_LABELS["stationary"], AGENT_LABELS["random"], AGENT_LABELS["greedy"]]:
                     comparison_key = f"{AGENT_LABELS['trained']}_vs_{baseline_agent}"
                     if comparison_key in metric_directional:
                         comp_data = metric_directional[comparison_key]
