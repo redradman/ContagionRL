@@ -5,6 +5,9 @@ logs/
 wandb/
 visualization_videos/
 results/graphs/
+.ipynb_checkpoints/
+.virtual_documents/
+*.r
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
