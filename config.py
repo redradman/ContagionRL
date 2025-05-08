@@ -12,16 +12,16 @@ env_config = {
     "immunity_loss_prob": 0.25,    
     "recovery_rate": 0.1,          
     "adherence_penalty_factor": 1, 
-    "adherence_effectiveness": 0.2,
+    "adherence_effectiveness": 0.2,         # Maximum effect of adherence. Lower is better. When adherence is 1, effective beta would be beta_effective = beta * adherence_effectiveness
     "movement_type": "continuous_random",  
     "movement_scale": 1,          
-    "visibility_radius": -1,       
+    "visibility_radius": -1,                # -1 means full visibility. Positive values would mean individuals within this distance are visible and others are not. 
     "reinfection_count": 5,        
-    "safe_distance": 10,           
+    "safe_distance": 10,                    
     "init_agent_distance": 5,      
     "max_distance_for_beta_calculation": 10,  
     "reward_type": "potential_field", 
-    "reward_ablation": "full",    
+    "reward_ablation": "full",              # Used for ablations, do not change    
     "render_mode": None           
 }
 
