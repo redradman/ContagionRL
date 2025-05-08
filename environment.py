@@ -108,7 +108,7 @@ class SIRSEnvironment(gym.Env):
         self.reinfection_count = reinfection_count
 
         # Normalization constants
-        self.max_distance = math.sqrt(2) * self.grid_size  # Maximum possible distance in the grid
+        self.max_distance = math.sqrt(2) * self.grid_size / 2 # Maximum possible distance in the grid
         self.max_movement = 1.0  # Maximum movement in any direction (-1 to 1)
 
         # Agent parameters that are handled by the env
@@ -146,7 +146,9 @@ class SIRSEnvironment(gym.Env):
         
         # Calculate features per human based on visibility setting
         self.use_visibility_flag = (visibility_radius >= 0)
-        features_per_human = 5 if self.use_visibility_flag else 4
+        # Features: delta_x, delta_y, dist (3) + state_one_hot (3) [+ visibility_flag (1)]
+        base_features = 3 + 3  # Positional + One-hot state features
+        features_per_human = base_features + 1 if self.use_visibility_flag else base_features
         
         self.observation_space = gym.spaces.Dict({
             # "agent_position": gym.spaces.Box(
@@ -169,7 +171,7 @@ class SIRSEnvironment(gym.Env):
             # ),
             "humans_features": gym.spaces.Box(
                 low=-1,  # Changed from 0 to -1 to accommodate negative relative positions
-                high=1,
+                high=1,  # Back to 1 for one-hot encoding
                 shape=(self.n_humans * features_per_human,),  # Features for each human (with or without visibility flag)
                 dtype=np.float32
             )
@@ -493,12 +495,12 @@ class SIRSEnvironment(gym.Env):
 
         Observation space structure:
         {
-            "agent_position": Box(shape=(2,)),           # (x, y) normalized to [0,1]
             "agent_adherence": Box(shape=(1,)),          # [adherence in 0..1]
-            "is_agent_infected": Box(shape=(1,)),        # [1 if infected, 0 otherwise]
             "humans_features": Box(shape=(n_humans * features_per_human,)),
-                # If visibility_radius == -1: [delta_x, delta_y, distance, is_infected] for each human
-                # If visibility_radius >= 0: [visibility, delta_x, delta_y, distance, is_infected] for each human
+                # If visibility_radius == -1:
+                #   [delta_x, delta_y, distance, is_dead, is_sus/rec, is_infected] for each human
+                # If visibility_radius >= 0:
+                #   [visibility, delta_x, delta_y, distance, is_dead, is_sus/rec, is_infected] for each human
                 # delta_x and delta_y are normalized relative positions from agent to human
         }
         """
@@ -523,7 +525,9 @@ class SIRSEnvironment(gym.Env):
             visible_ids = set(h.id for h in visible_humans)
         
         # Calculate features per human based on visibility setting
-        features_per_human = 5 if self.use_visibility_flag else 4
+        # Features: delta_x, delta_y, dist (3) + state_one_hot (3) [+ visibility_flag (1)]
+        base_features = 3 + 3  # Positional + One-hot state features
+        features_per_human = base_features + 1 if self.use_visibility_flag else base_features
 
         # Initialize array for human observations
         humans_features = np.zeros((self.n_humans * features_per_human,), dtype=np.float32)
@@ -533,8 +537,14 @@ class SIRSEnvironment(gym.Env):
             # Calculate base index for this human's features
             base_idx = i * features_per_human
             
-            # Set infection status (1 for infected, 0 for all other states)
-            is_infected = 1.0 if current_human.state == STATE_DICT['I'] else 0.0
+            # Create one-hot encoding for the state: [is_dead, is_susceptible_or_recovered, is_infected]
+            state_one_hot = np.zeros(3, dtype=np.float32)
+            if current_human.state == STATE_DICT['D']:
+                state_one_hot[0] = 1.0
+            elif current_human.state == STATE_DICT['S'] or current_human.state == STATE_DICT['R']:
+                state_one_hot[1] = 1.0
+            else: # Infected
+                state_one_hot[2] = 1.0
             
             # Calculate relative position (delta_x, delta_y)
             delta_x = current_human.x - self.agent_position[0]
@@ -560,14 +570,14 @@ class SIRSEnvironment(gym.Env):
                 visibility_flag = 1.0 if current_human.id in visible_ids else 0.0
                 
                 if visibility_flag == 0.0:
-                    # Invisible human - set position values to 0, but keep infection status
-                    humans_features[base_idx:base_idx + 5] = [0.0, 0.0, 0.0, 0.0, is_infected]
+                    # Invisible human - set position values to 0, set state one-hot as [0,0,0]
+                    humans_features[base_idx : base_idx + features_per_human] = [0.0, 0.0, 0.0, 0.0] + [0.0, 0.0, 0.0]
                 else:
                     # Visible human - include all information
-                    humans_features[base_idx:base_idx + 5] = [visibility_flag, delta_x_norm, delta_y_norm, dist_norm, is_infected]
+                    humans_features[base_idx : base_idx + features_per_human] = [visibility_flag, delta_x_norm, delta_y_norm, dist_norm] + state_one_hot.tolist()
             else:
                 # Simple mode without visibility flag (all humans visible)
-                humans_features[base_idx:base_idx + 4] = [delta_x_norm, delta_y_norm, dist_norm, is_infected]
+                humans_features[base_idx : base_idx + features_per_human] = [delta_x_norm, delta_y_norm, dist_norm] + state_one_hot.tolist()
 
         # Compose final observation dict
         obs = {
