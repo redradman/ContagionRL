@@ -250,12 +250,12 @@ def main(args):
         raise ValueError("reward_type must be specified in env_config for run naming")
     reward_type = env_config["reward_type"]
     
-    # Create run name with reward function type followed by timestamp
-    run_name = f"{reward_type}_{timestamp}"
-    
-    # Add experiment name prefix if provided
-    if args.exp_name:
-        run_name = f"{args.exp_name}_{run_name}"
+    # Determine the base run name
+    if args.exp_name:  # If --exp-name is provided (and not an empty string)
+        run_name = args.exp_name
+    else:
+        # Fallback to default naming convention if --exp-name is not provided
+        run_name = f"{reward_type}_{timestamp}"
     
     # Add seed to run name if not using the default
     if args.seed != 42:
