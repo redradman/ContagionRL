@@ -1,28 +1,28 @@
 from torch import nn
 # Environment Parameters
 env_config = {
-    "simulation_time": 512,        # Longer episodes for more learning opportunity
-    "grid_size": 50,               # A slightly smaller grid for easier navigation
-    "n_humans": 40,                # Fewer humans to reduce environmental complexity
-    "n_infected": 10,              # Fewer initial infections to avoid overwhelming the agent
-    "beta": 0.5,                   # Reduced infection rate
-    "initial_agent_adherence": 0,  # Lower initial adherence to allow the agent more flexibility
-    "distance_decay": 0.3,         # Increased decay rate to make distance more important
-    "lethality": 0,                # Increased to 2% chance of death per step
-    "immunity_loss_prob": 0.25,     # Probability of losing immunity per step
-    "recovery_rate": 0.1,          # Increased to 10% chance of recovery per step
-    "adherence_penalty_factor": 1, # Reduced penalty factor for more balanced adherence decisions
-    "adherence_effectiveness": 0.2, # Minimum effect of adherence (0.2 = 20% of beta remains at max adherence)
-    "movement_type": "continuous_random",  # Continuous random movement for humans
-    "movement_scale": 1,           # Scale factor for non-focal agent movement (0 to 1)
-    "visibility_radius": -1,       # DO NOT CHANGE THIS. Fully visilibty is required
-    "reinfection_count": 5,        # Moderate reinfection count to maintain some infected presence
-    "safe_distance": 10,           # Distance for infected humans at initialization and reinfection
-    "init_agent_distance": 5,      # Minimum starting distance ALL humans must be from agent
-    "max_distance_for_beta_calculation": 10,  # -1 means no limit (current behavior), >0 limits infection range
-    "reward_type": "potential_field",  # Using our new potential field reward function 
-    "reward_ablation": "full",     # Ablation variant: full, no_magnitude, no_direction, no_move, no_adherence, no_health, no_S
-    "render_mode": None            # No rendering during training
+    "simulation_time": 512,        
+    "grid_size": 50,               # the grid is a square. This value sets the size of its length. The grid area is grid_size^2. 
+    "n_humans": 40,                
+    "n_infected": 10,              
+    "beta": 0.5,                   
+    "initial_agent_adherence": 0,  # NPI adherence at the beginning
+    "distance_decay": 0.3,         
+    "lethality": 0,                
+    "immunity_loss_prob": 0.25,    
+    "recovery_rate": 0.1,          
+    "adherence_penalty_factor": 1, 
+    "adherence_effectiveness": 0.2,
+    "movement_type": "continuous_random",  
+    "movement_scale": 1,          
+    "visibility_radius": -1,       
+    "reinfection_count": 5,        
+    "safe_distance": 10,           
+    "init_agent_distance": 5,      
+    "max_distance_for_beta_calculation": 10,  
+    "reward_type": "potential_field", 
+    "reward_ablation": "full",    
+    "render_mode": None           
 }
 
 # PPO Hyperparameters
