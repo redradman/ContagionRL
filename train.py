@@ -33,29 +33,22 @@ class EntropyCoefCallback(BaseCallback):
         """
         Update entropy coefficient based on training progress.
         """
-        # Calculate progress elapsed (0 to 1)
         if self.model.num_timesteps >= self.model._total_timesteps:
             progress_elapsed = 1.0
         else:
             progress_elapsed = self.model.num_timesteps / self.model._total_timesteps
             
-        # Apply scheduling only during the specified percentage of training
         if progress_elapsed >= self.schedule_percentage:
             new_value = self.final_value
         else:
-            # Calculate what percentage of the schedule has elapsed
             schedule_progress = min(progress_elapsed / self.schedule_percentage, 1.0)
-            
-            # Linear interpolation between initial and final values
             new_value = self.initial_value + schedule_progress * (self.final_value - self.initial_value)
         
-        # Update the entropy coefficient in the model
         self.model.ent_coef = new_value
         self.current_value = new_value
         
-        # Log the current entropy coefficient value
-        if self.verbose > 0 and self.n_calls % 100_000 == 0:
-            print(f"Current entropy coefficient: {self.current_value:.6f}")
+        if self.verbose > 0 and self.n_calls % 100_000 == 0: # Log less frequently
+            self.logger.record("train/ent_coef", self.current_value)
             
         return True
 
@@ -87,105 +80,67 @@ def set_global_seeds(seed: int) -> None:
     print(f"Set global seed to: {seed}")
 
 class VideoRecorderCallback(BaseCallback):
-    def __init__(self, eval_env, video_folder, eval_freq=1000, use_wandb=False):
+    def __init__(self, eval_env, video_folder, eval_freq=1000, use_wandb_logging=False):
         super().__init__()
         self.eval_env = eval_env
         self.video_folder = video_folder
         self.eval_freq = eval_freq
-        self.use_wandb = use_wandb
+        self.use_wandb_logging = use_wandb_logging
         os.makedirs(video_folder, exist_ok=True)
 
     def _on_step(self) -> bool:
         if self.n_calls % self.eval_freq == 0:
-            # print("Starting evaluation episode...")
-            # Reset the environment and get initial observation
-            reset_result = self.eval_env.reset()
-            if isinstance(reset_result, tuple):
-                obs = reset_result[0]
-            else:
-                obs = reset_result
+            obs = self.eval_env.reset()
             
-            # Get underlying env
             env = self.eval_env.envs[0]
             frames = []
-            
-            # Run episode and collect frames
             done = False
-            step_count = 0
             
-            # Collect initial frame
-            frame = env.render()
-            if frame is not None:
-                frames.append(frame)
+            initial_frame = env.render()
+            if initial_frame is not None:
+                frames.append(initial_frame)
             
             while not done:
-                # Get action from the agent
                 action, _ = self.model.predict(obs, deterministic=True)
+                obs, _, terminated, info = self.eval_env.step(action)
                 
-                # Step the environment
-                obs, reward, terminated, info = self.eval_env.step(action)
+                done = terminated[0] or info[0].get('TimeLimit.truncated', False)
                 
-                # In vectorized env, terminated is a boolean array and info is a list of dicts
-                terminated = terminated[0]
-                truncated = info[0].get('TimeLimit.truncated', False)
-                done = terminated or truncated
-                
-                # Only add frame if we're not done (to avoid capturing next episode's first frame)
                 if not done:
                     frame = env.render()
                     if frame is not None:
                         frames.append(frame)
-                step_count += 1
             
-            # print(f"Episode finished after {step_count} steps")
-            
-            # Save the video
             if frames:
-                video_path = os.path.join(
-                    self.video_folder, 
-                    f"eval_episode_{self.n_calls}_steps.mp4"
-                )
-                # Get FPS from environment metadata, raise error if not found
-                if "render_fps" not in self.eval_env.envs[0].metadata:
-                    raise ValueError("Environment metadata must contain 'render_fps'")
-                env_fps = self.eval_env.envs[0].metadata["render_fps"]
+                video_path = os.path.join(self.video_folder, f"eval_episode_{self.n_calls}_steps.mp4")
+                if "render_fps" not in env.metadata:
+                    print("Warning: 'render_fps' not in environment metadata. Using default FPS 10.")
+                    env_fps = 10
+                else:
+                    env_fps = env.metadata["render_fps"]
                 imageio.mimsave(video_path, frames, fps=env_fps)
                 
-                # Log video to wandb if enabled
-                if self.use_wandb:
+                if self.use_wandb_logging and wandb.run is not None:
                     try:
-                        # Create a meaningful name for the video
-                        episode_name = f"episode_{self.n_calls}"
-                        
-                        # Log video to wandb - removed fps parameter since it doesn't work with file paths
                         wandb.log({
-                            f"videos/{episode_name}": wandb.Video(
-                                video_path, 
-                                caption=f"Evaluation at {self.n_calls} steps"
-                            )
-                        }, step=self.n_calls)
-                        print(f"Logged evaluation video to wandb at step {self.n_calls}")
+                            f"videos/eval_episode_{self.n_calls}": wandb.Video(video_path, caption=f"Evaluation at {self.n_calls} steps", fps=env_fps)
+                        }, step=self.model.num_timesteps)
+                        print(f"Logged evaluation video to W&B at step {self.model.num_timesteps}")
                     except Exception as e:
-                        # Don't fail if wandb logging fails
-                        print(f"Error logging video to wandb: {e}")
-            else:
-                # print("Warning: No frames were collected during the episode")
-                pass
-        
+                        print(f"Error logging video to W&B: {e}")
         return True
 
-def make_env(env_config: Dict[str, Any], seed: int = 0) -> Callable:
+def make_env(env_config_dict: Dict[str, Any], seed: int = 0) -> Callable:
     """Create a wrapped, monitored SIRS environment."""
     def _init() -> SIRSEnvironment:
-        env = SIRSEnvironment(**env_config)
-        # Set seed for this specific environment instance
+        env = SIRSEnvironment(**env_config_dict)
         env.reset(seed=seed)
         return env
     return _init
 
-def make_eval_env(env_config: Dict[str, Any], seed: int = 0, record_video: bool = False) -> SIRSEnvironment:
+def make_eval_env(env_config_dict: Dict[str, Any], seed: int = 0, record_video: bool = False) -> SIRSEnvironment:
     """Create an evaluation environment with rendering enabled only if record_video is True."""
-    eval_config = env_config.copy()
+    eval_config = env_config_dict.copy()
     if record_video:
         eval_config["render_mode"] = "rgb_array"
     else:
@@ -213,254 +168,236 @@ def setup_wandb(config: Dict[str, Any], run_name: str) -> None:
         settings=wandb_settings
     )
 
-def save_config_with_model(save_path: str, config: Dict[str, Any]) -> None:
+def save_config_with_model(save_path: str, config_dict: Dict[str, Any]) -> None:
     """Save the configuration alongside the model."""
     config_path = os.path.join(save_path, "config.json")
     with open(config_path, "w") as f:
-        json.dump(config, f, indent=4)
+        json.dump(config_dict, f, indent=4)
 
-def get_activation_fn(activation_str: str) -> torch.nn.Module:
+def get_activation_fn(activation_str_or_fn: Any) -> torch.nn.Module:
     """Convert activation function string to PyTorch activation function."""
-    # If it's already a PyTorch activation function class, return it
-    if isinstance(activation_str, type) and issubclass(activation_str, torch.nn.Module):
-        return activation_str
+    if isinstance(activation_str_or_fn, type) and issubclass(activation_str_or_fn, torch.nn.Module):
+        return activation_str_or_fn
+    if isinstance(activation_str_or_fn, torch.nn.Module):
+        return activation_str_or_fn.__class__
+    if isinstance(activation_str_or_fn, str):
+        activation_map = {"relu": torch.nn.ReLU, "tanh": torch.nn.Tanh, "sigmoid": torch.nn.Sigmoid, "leaky_relu": torch.nn.LeakyReLU, "elu": torch.nn.ELU}
+        if activation_str_or_fn.lower() not in activation_map:
+            raise ValueError(f"Unsupported activation function: {activation_str_or_fn}")
+        return activation_map[activation_str_or_fn.lower()]
+    raise TypeError(f"activation_fn must be a string or a torch.nn.Module, not {type(activation_str_or_fn)}")
+
+def execute_single_training_run(
+    current_seed: int,
+    run_name: str,
+    log_path_base: str,
+    effective_env_config: dict,
+    effective_ppo_config: dict,
+    effective_save_config: dict,
+    should_record_video_flag: bool,
+    use_wandb_flag: bool,
+    wandb_offline_flag: bool,
+    wandb_project_name: str,
+    wandb_group_name: str
+):
+    set_global_seeds(current_seed)
+
+    log_path = os.path.join(log_path_base, run_name)
+    os.makedirs(log_path, exist_ok=True)
+    tensorboard_path = os.path.join(log_path, "tensorboard")
+    video_folder = os.path.join(log_path, "videos")
+    os.makedirs(tensorboard_path, exist_ok=True)
+    os.makedirs(video_folder, exist_ok=True)
+    
+    current_wandb_run = None
+    if use_wandb_flag:
+        env_config_for_wandb = effective_env_config.copy()
+        env_config_for_wandb["random_seed"] = current_seed
         
-    # If it's already a PyTorch activation function instance, return its class
-    if isinstance(activation_str, torch.nn.Module):
-        return activation_str.__class__
-        
-    # If it's a string, convert it to the appropriate activation function class
-    activation_map = {
-        "relu": torch.nn.ReLU,
-        "tanh": torch.nn.Tanh,
-        "sigmoid": torch.nn.Sigmoid,
-        "leaky_relu": torch.nn.LeakyReLU,
-        "elu": torch.nn.ELU
+        ppo_config_for_wandb = effective_ppo_config.copy()
+        if "policy_kwargs" in ppo_config_for_wandb and "activation_fn" in ppo_config_for_wandb["policy_kwargs"]:
+            act_fn = ppo_config_for_wandb["policy_kwargs"]["activation_fn"]
+            if isinstance(act_fn, type):
+                ppo_config_for_wandb["policy_kwargs"]["activation_fn"] = act_fn.__name__
+            elif isinstance(act_fn, str):
+                pass
+            else:
+                ppo_config_for_wandb["policy_kwargs"]["activation_fn"] = act_fn.__class__.__name__
+
+
+        current_wandb_run = wandb.init(
+            project=wandb_project_name,
+            name=run_name,
+            group=wandb_group_name,
+            config={
+                "environment": env_config_for_wandb,
+                "ppo": ppo_config_for_wandb,
+                "save": effective_save_config,
+                "seed": current_seed
+            },
+            settings=wandb.Settings(init_timeout=120, sync_tensorboard=True),
+            reinit=True
+        )
+        if wandb_offline_flag:
+            print(f"\nRunning W&B in offline mode for {run_name}. Run 'wandb sync {current_wandb_run.dir}' to sync.")
+
+    env_fns = [make_env(effective_env_config, seed=current_seed + i) for i in range(effective_ppo_config["n_envs"])]
+    vec_env = SubprocVecEnv(env_fns)
+    vec_env = VecMonitor(vec_env, os.path.join(log_path, "monitor"))
+    vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
+
+    eval_env = None
+    eval_freq = effective_save_config.get("eval_freq", 0)
+    if eval_freq > 0:
+        eval_env = make_eval_env(effective_env_config, seed=current_seed, record_video=should_record_video_flag)
+        eval_env = DummyVecEnv([lambda: eval_env])
+        eval_env = VecMonitor(eval_env, os.path.join(log_path, "eval"))
+        eval_env = VecNormalize(eval_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
+        if vec_env.ret_rms is not None:
+            eval_env.ret_rms = vec_env.ret_rms
+        eval_env.training = False
+
+    callbacks = []
+    checkpoint_callback = CheckpointCallback(
+        save_freq=effective_save_config["save_freq"], save_path=log_path, name_prefix="sirs_model",
+        save_replay_buffer=effective_save_config["save_replay_buffer"], save_vecnormalize=True
+    )
+    callbacks.append(checkpoint_callback)
+
+    if eval_freq > 0 and eval_env is not None:
+        eval_callback = EvalCallback(
+            eval_env, best_model_save_path=log_path, log_path=log_path, eval_freq=eval_freq,
+            n_eval_episodes=5, deterministic=True, render=False
+        )
+        callbacks.append(eval_callback)
+        if should_record_video_flag:
+            video_recorder = VideoRecorderCallback(
+                eval_env, video_folder, eval_freq=eval_freq, use_wandb_logging=use_wandb_flag
+            )
+            callbacks.append(video_recorder)
+
+    if use_wandb_flag:
+        callbacks.append(WandbCallback(
+            model_save_path=os.path.join(log_path, "wandb_models"),
+            gradient_save_freq=effective_ppo_config.get("gradient_save_freq", 100_000),
+            verbose=2
+        ))
+
+    model_ppo_config_run = effective_ppo_config.copy()
+    
+    if "policy_kwargs" in model_ppo_config_run:
+        model_ppo_config_run["policy_kwargs"] = model_ppo_config_run["policy_kwargs"].copy()
+        if "activation_fn" in model_ppo_config_run["policy_kwargs"]:
+            act_fn_input = model_ppo_config_run["policy_kwargs"]["activation_fn"]
+            model_ppo_config_run["policy_kwargs"]["activation_fn"] = get_activation_fn(act_fn_input)
+
+    if "ent_coef" in model_ppo_config_run and isinstance(model_ppo_config_run["ent_coef"], (float, int)):
+        ent_callback = EntropyCoefCallback(
+            initial_value=model_ppo_config_run["ent_coef"], final_value=0.002, schedule_percentage=0.4, verbose=1
+        )
+        callbacks.append(ent_callback)
+    
+    serializable_ppo_config = effective_ppo_config.copy()
+    if "policy_kwargs" in serializable_ppo_config and "activation_fn" in serializable_ppo_config["policy_kwargs"]:
+        act_fn = serializable_ppo_config["policy_kwargs"]["activation_fn"]
+        if isinstance(act_fn, type):
+            serializable_ppo_config["policy_kwargs"]["activation_fn"] = act_fn.__name__
+        elif not isinstance(act_fn, str):
+            serializable_ppo_config["policy_kwargs"]["activation_fn"] = act_fn.__class__.__name__
+
+
+    config_to_save = {
+        "environment": effective_env_config, "ppo": serializable_ppo_config, 
+        "save": effective_save_config, "seed": current_seed
     }
-    if activation_str.lower() not in activation_map:
-        raise ValueError(f"Unsupported activation function: {activation_str}")
-    return activation_map[activation_str.lower()]
+    save_config_with_model(log_path, config_to_save)
+    
+    model = PPO(
+        policy=model_ppo_config_run["policy_type"],
+        env=vec_env,
+        verbose=effective_save_config["verbose"],
+        tensorboard_log=tensorboard_path,
+        seed=current_seed,
+        **{k: v for k, v in model_ppo_config_run.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
+    )
+
+    try:
+        print(f"Starting training for {run_name} with {model_ppo_config_run['total_timesteps']} timesteps...")
+        model.learn(
+            total_timesteps=model_ppo_config_run["total_timesteps"],
+            callback=callbacks,
+            progress_bar=True
+        )
+    except KeyboardInterrupt:
+        print(f"\nTraining interrupted for {run_name}. Saving model...")
+    finally:
+        model.save(os.path.join(log_path, "final_model"))
+        vec_env.save(os.path.join(log_path, "vecnormalize.pkl"))
+        if use_wandb_flag and current_wandb_run:
+            if wandb.run is not None and wandb.run.id == current_wandb_run.id:
+                wandb.finish()
+        vec_env.close()
+        if eval_env:
+            eval_env.close()
+        print(f"--- Finished run for SEED: {current_seed} for {run_name} ---")
 
 def main(args):
-    # --- Part 1: Setup common to all seeds ---
+    current_env_config = env_config.copy()
+    current_ppo_config = ppo_config.copy()
+    current_save_config = save_config.copy()
+
+    if args.config != 'config.py':
+        print(f"Loading custom configuration from: {args.config}")
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("custom_config", args.config)
+        custom_config_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(custom_config_module)
+        current_env_config = getattr(custom_config_module, 'env_config', current_env_config)
+        current_ppo_config = getattr(custom_config_module, 'ppo_config', current_ppo_config)
+        current_save_config = getattr(custom_config_module, 'save_config', current_save_config)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    if "reward_type" not in env_config:
-        raise ValueError("reward_type must be specified in env_config for run naming")
-    reward_type = env_config["reward_type"]
-
-    # Base name for grouping runs (e.g., for W&B group)
-    # This part determines the name prefix before "_seed{current_seed}"
+    reward_type_from_config = current_env_config.get("reward_type", "unknown_reward_type") 
+    
     if args.exp_name:
-        base_run_name_for_group = args.exp_name # If exp_name is given, it's the full base
+        base_run_name_for_group = args.exp_name
     else:
-        base_run_name_for_group = f"{reward_type}_{timestamp}"
+        base_run_name_for_group = f"{reward_type_from_config}_{timestamp}"
 
+    SEEDS_TO_RUN = [1, 2, 3]
+    
+    os.makedirs(current_save_config["base_log_path"], exist_ok=True)
 
-    SEEDS = [1, 2, 3]
-    should_record_video = args.record_video # Get flag value here, once
-
-    for current_seed in SEEDS:
-        print(f"--- Starting run for SEED: {current_seed} ---")
-        # --- Part 2: Seed-specific setup ---
-        set_global_seeds(current_seed)
-
-        # Create unique run name for this specific seed
-        # The user requested name_seed{seed_num}. If base_run_name_for_group already includes a timestamp or exp_name,
-        # this appends the seed correctly.
-        run_name = f"{base_run_name_for_group}_seed{current_seed}"
-
-        log_path = os.path.join(save_config["base_log_path"], run_name)
-        os.makedirs(log_path, exist_ok=True)
-        tensorboard_path = os.path.join(log_path, "tensorboard")
-        video_folder = os.path.join(log_path, "videos")
-        os.makedirs(tensorboard_path, exist_ok=True)
-        os.makedirs(video_folder, exist_ok=True)
-
-        use_wandb = not args.no_wandb
-        current_wandb_run = None # To store wandb run object
-        if use_wandb:
-            env_config_for_wandb = env_config.copy()
-            env_config_for_wandb["random_seed"] = current_seed
-            
-            ppo_config_for_wandb = ppo_config.copy()
-            if "policy_kwargs" in ppo_config_for_wandb and "activation_fn" in ppo_config_for_wandb["policy_kwargs"]:
-                 if isinstance(ppo_config_for_wandb["policy_kwargs"]["activation_fn"], type):
-                    ppo_config_for_wandb["policy_kwargs"]["activation_fn"] = ppo_config_for_wandb["policy_kwargs"]["activation_fn"].__name__
-
-
-            current_wandb_run = wandb.init(
-                project=os.getenv("WANDB_PROJECT", "sirs-rl"), # Use environment variable or default
-                name=run_name,
-                group=base_run_name_for_group,
-                config={
-                    "environment": env_config_for_wandb,
-                    "ppo": ppo_config_for_wandb,
-                    "save": save_config,
-                    "seed": current_seed
-                },
-                settings=wandb.Settings(
-                    init_timeout=120, 
-                    sync_tensorboard=True,
-                    # Handle cases where WANDB_DIR might not be set, default to './wandb' relative to script
-                    # This helps ensure logs are saved correctly in offline mode per run.
-                    # wandb_dir=os.path.join(os.getcwd(), 'wandb', run_name) if args.wandb_offline else None
-                ),
-                reinit=True
-            )
-            if args.wandb_offline:
-                 print(f"\\nRunning W&B in offline mode for seed {current_seed}. Run 'wandb sync {current_wandb_run.dir}' to sync.")
-
-        # Create vectorized environment with sequential seeds based on current_seed
-        # Each env in SubprocVecEnv gets current_seed + its_index
-        env_fns = [make_env(env_config, seed=current_seed + i) for i in range(ppo_config["n_envs"])]
-        vec_env = SubprocVecEnv(env_fns)
-        vec_env = VecMonitor(vec_env, os.path.join(log_path, "monitor"))
-        vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
-
-        eval_env = None
-        eval_freq = save_config.get("eval_freq", 0)
-        if eval_freq > 0:
-            eval_env = make_eval_env(env_config, seed=current_seed, record_video=should_record_video) # Pass flag here
-            eval_env = DummyVecEnv([lambda: eval_env])
-            eval_env = VecMonitor(eval_env, os.path.join(log_path, "eval"))
-            eval_env = VecNormalize(eval_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
-            if vec_env.ret_rms is not None: # Check if ret_rms exists before copying
-                 eval_env.ret_rms = vec_env.ret_rms
-            eval_env.training = False
-
-        callbacks = []
-        checkpoint_callback = CheckpointCallback(
-            save_freq=save_config["save_freq"],
-            save_path=log_path,
-            name_prefix="sirs_model", # The seed is already in log_path
-            save_replay_buffer=save_config["save_replay_buffer"],
-            save_vecnormalize=True
-        )
-        callbacks.append(checkpoint_callback)
-
-        if eval_freq > 0 and eval_env is not None:
-            eval_callback = EvalCallback(
-                eval_env,
-                best_model_save_path=log_path,
-                log_path=log_path,
-                eval_freq=eval_freq,
-                n_eval_episodes=5, # Explicitly set, though 5 is default
-                deterministic=True,
-                render=False # EvalCallback itself should not render to screen
-            )
-            callbacks.append(eval_callback) # Add EvalCallback regardless
-
-            if should_record_video: # Conditionally add VideoRecorderCallback
-                video_recorder = VideoRecorderCallback(
-                    eval_env,
-                    video_folder,
-                    eval_freq=eval_freq,
-                    use_wandb=use_wandb
-                )
-                callbacks.append(video_recorder)
-
-        if use_wandb:
-            callbacks.append(WandbCallback(
-                model_save_path=f"models/{run_name}", # Save model to W&B under run_name
-                gradient_save_freq=100_000, # Example, adjust as needed
-                verbose=2
-            ))
-
-        model_ppo_config = ppo_config.copy()
-        save_ppo_config = ppo_config.copy()
-        if "policy_kwargs" in save_ppo_config:
-            save_ppo_config["policy_kwargs"] = save_ppo_config["policy_kwargs"].copy()
-            if "activation_fn" in save_ppo_config["policy_kwargs"]:
-                 if isinstance(save_ppo_config["policy_kwargs"]["activation_fn"], type):
-                    save_ppo_config["policy_kwargs"]["activation_fn"] = save_ppo_config["policy_kwargs"]["activation_fn"].__name__
-
-
-        if "ent_coef" in model_ppo_config and isinstance(model_ppo_config["ent_coef"], (float, int)): # Check if scheduling needed
-            initial_ent_coef = model_ppo_config["ent_coef"]
-            save_ppo_config["ent_coef_initial"] = initial_ent_coef
-            save_ppo_config["ent_coef"] = "scheduled"
-            
-            ent_callback = EntropyCoefCallback(
-                initial_value=initial_ent_coef,
-                final_value=0.002,  
-                schedule_percentage=0.4,  
-                verbose=1
-            )
-            callbacks.append(ent_callback)
-
-        config_to_save = {
-            "environment": env_config.copy(),
-            "ppo": save_ppo_config,
-            "save": save_config.copy(),
-            "seed": current_seed # Log the actual seed used for this run
-        }
-        save_config_with_model(log_path, config_to_save)
-
-        if "policy_kwargs" in model_ppo_config and "activation_fn" in model_ppo_config["policy_kwargs"]:
-            activation_str_or_fn = model_ppo_config["policy_kwargs"]["activation_fn"]
-            model_ppo_config["policy_kwargs"]["activation_fn"] = get_activation_fn(activation_str_or_fn)
+    for seed_val in SEEDS_TO_RUN:
+        seed_specific_run_name = f"{base_run_name_for_group}_seed{seed_val}"
+        print(f"--- Preparing training for: {seed_specific_run_name} (Seed: {seed_val}) ---")
         
-        model = PPO(
-            model_ppo_config["policy_type"],
-            vec_env,
-            verbose=save_config["verbose"],
-            tensorboard_log=tensorboard_path,
-            seed=current_seed, # Use current_seed for the model
-            **{k: v for k, v in model_ppo_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
+        execute_single_training_run(
+            current_seed=seed_val,
+            run_name=seed_specific_run_name,
+            log_path_base=current_save_config["base_log_path"],
+            effective_env_config=current_env_config,
+            effective_ppo_config=current_ppo_config,
+            effective_save_config=current_save_config,
+            should_record_video_flag=args.record_video,
+            use_wandb_flag=not args.no_wandb,
+            wandb_offline_flag=args.wandb_offline,
+            wandb_project_name=os.getenv("WANDB_PROJECT", "sirs-rl"),
+            wandb_group_name=base_run_name_for_group
         )
-
-        try:
-            print(f"Starting training for {run_name} with {ppo_config['total_timesteps']} timesteps...")
-            model.learn(
-                total_timesteps=ppo_config["total_timesteps"],
-                callback=callbacks,
-                progress_bar=True
-            )
-        except KeyboardInterrupt:
-            print(f"\\nTraining interrupted for {run_name}. Saving model...")
-        finally:
-            model.save(os.path.join(log_path, "final_model"))
-            vec_env.save(os.path.join(log_path, "vecnormalize.pkl"))
-            if use_wandb and current_wandb_run:
-                # Check if there's an active W&B run before finishing
-                if wandb.run is not None and wandb.run.id == current_wandb_run.id:
-                    wandb.finish()
-            
-            vec_env.close()
-            if eval_env:
-                eval_env.close()
-            print(f"--- Finished run for SEED: {current_seed} ---")
-            # Add a small delay if needed, though usually not necessary
-            # import time
-            # time.sleep(2) 
-
-    # Original args.seed is now less relevant for the main loop,
-    # but other parts of arg parsing remain the same.
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train a SIRS environment agent using PPO")
-    parser.add_argument("--exp-name", type=str, default="", help="Optional experiment name prefix")
-    parser.add_argument("--no-wandb", action="store_true", help="Disable Weights & Biases logging (enabled by default)")
-    parser.add_argument("--wandb-offline", action="store_true", help="Run wandb in offline mode to avoid timeout issues")
-    parser.add_argument("--config", type=str, default="config.py", help="Path to config file")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default: 42, but overridden by internal list [1,2,3])")
+    parser = argparse.ArgumentParser(description="Train a SIRS environment agent using PPO.")
+    parser.add_argument("--exp-name", type=str, default="", help="Optional experiment name prefix for grouping runs.")
+    parser.add_argument("--config", type=str, default="config.py", help="Path to Python config file (e.g., 'config.py').")
+    parser.add_argument("--no-wandb", action="store_true", help="Disable Weights & Biases logging.")
+    parser.add_argument("--wandb-offline", action="store_true", help="Run W&B in offline mode.")
     parser.add_argument("--record-video", action="store_true", help="Enable video recording of evaluation episodes.")
     
-    args = parser.parse_args()
+    cli_args = parser.parse_args()
     
-    # Set wandb mode to offline if requested
-    if not args.no_wandb and args.wandb_offline:
+    if not cli_args.no_wandb and cli_args.wandb_offline:
         os.environ["WANDB_MODE"] = "offline"
-        print("Using wandb in offline mode")
+        print("Using W&B in offline mode.")
         
-    # Import config if custom path provided
-    if args.config != 'config.py':
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("config", args.config)
-        config = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(config)
-        env_config = config.env_config
-        ppo_config = config.ppo_config
-        save_config = config.save_config
-
-    main(args) 
+    main(cli_args) 
