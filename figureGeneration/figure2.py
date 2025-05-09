@@ -267,8 +267,6 @@ def main():
             if num_valid_comparisons > 0: 
                 ax.set_ylim(top=current_y + increment * 0.2)
 
-    title_str = "Comparison of Reward Functions\nEpisode Duration"
-    plt.title(title_str, fontsize=10)
     plt.xlabel("Reward Function Configuration", fontsize=9)
     plt.ylabel(y_label, fontsize=9)
     ax.tick_params(axis='x', labelsize=8, rotation=15)
