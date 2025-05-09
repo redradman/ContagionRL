@@ -183,10 +183,13 @@ def make_env(env_config: Dict[str, Any], seed: int = 0) -> Callable:
         return env
     return _init
 
-def make_eval_env(env_config: Dict[str, Any], seed: int = 0) -> SIRSEnvironment:
-    """Create an evaluation environment with rendering enabled."""
+def make_eval_env(env_config: Dict[str, Any], seed: int = 0, record_video: bool = False) -> SIRSEnvironment:
+    """Create an evaluation environment with rendering enabled only if record_video is True."""
     eval_config = env_config.copy()
-    eval_config["render_mode"] = "rgb_array"  # Use rgb_array instead of human to avoid window
+    if record_video:
+        eval_config["render_mode"] = "rgb_array"
+    else:
+        eval_config["render_mode"] = None
     env = SIRSEnvironment(**eval_config)
     env.reset(seed=seed)
     return env
@@ -239,186 +242,200 @@ def get_activation_fn(activation_str: str) -> torch.nn.Module:
     return activation_map[activation_str.lower()]
 
 def main(args):
-    # Set global seeds for reproducibility
-    set_global_seeds(args.seed)
-    
-    # Create unique run name with reward function type and formatted timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")  # Removed seconds for cleaner names
-    
-    # Get reward function type from environment config - throw error if not found
+    # --- Part 1: Setup common to all seeds ---
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     if "reward_type" not in env_config:
         raise ValueError("reward_type must be specified in env_config for run naming")
     reward_type = env_config["reward_type"]
-    
-    # Determine the base run name
-    if args.exp_name:  # If --exp-name is provided (and not an empty string)
-        run_name = args.exp_name
+
+    # Base name for grouping runs (e.g., for W&B group)
+    # This part determines the name prefix before "_seed{current_seed}"
+    if args.exp_name:
+        base_run_name_for_group = args.exp_name # If exp_name is given, it's the full base
     else:
-        # Fallback to default naming convention if --exp-name is not provided
-        run_name = f"{reward_type}_{timestamp}"
-    
-    # Add seed to run name if not using the default
-    if args.seed != 42:
-        run_name = f"{run_name}_seed{args.seed}"
+        base_run_name_for_group = f"{reward_type}_{timestamp}"
 
-    # Setup logging directory
-    log_path = os.path.join(save_config["base_log_path"], run_name)
-    os.makedirs(log_path, exist_ok=True)
-    
-    # Create subdirectories for TensorBoard and videos
-    tensorboard_path = os.path.join(log_path, "tensorboard")
-    video_folder = os.path.join(log_path, "videos")
-    os.makedirs(tensorboard_path, exist_ok=True)
-    os.makedirs(video_folder, exist_ok=True)
 
-    # Initialize wandb by default, unless disabled with --no-wandb
-    use_wandb = not args.no_wandb
-    if use_wandb:
-        # Add seed information to wandb config
-        env_config_with_seed = env_config.copy()
-        env_config_with_seed["random_seed"] = args.seed
-        
-        setup_wandb({
-            "environment": env_config_with_seed,
-            "ppo": ppo_config,
-            "save": save_config
-        }, run_name)
-        
-        # If using offline mode, print instructions for syncing later
-        if args.wandb_offline:
-            print("\nRunning wandb in offline mode. To sync later, run:")
-            print(f"wandb sync {os.path.join('wandb', f'run-{timestamp}*')}")
+    SEEDS = [1, 2, 3]
+    should_record_video = args.record_video # Get flag value here, once
 
-    # Create vectorized environment with sequential seeds
-    base_seed = args.seed
-    env_fns = [make_env(env_config, seed=base_seed + i) for i in range(ppo_config["n_envs"])]
-    vec_env = SubprocVecEnv(env_fns)
-    vec_env = VecMonitor(vec_env, os.path.join(log_path, "monitor"))
-    
-    # Add VecNormalize wrapper to normalize rewards
-    vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
+    for current_seed in SEEDS:
+        print(f"--- Starting run for SEED: {current_seed} ---")
+        # --- Part 2: Seed-specific setup ---
+        set_global_seeds(current_seed)
 
-    # Create evaluation environment if needed
-    eval_freq = save_config.get("eval_freq", 0)  # Get eval_freq from config, default to 0
-    if eval_freq > 0:
-        # eval_env = make_eval_env(env_config, seed=base_seed + 100)  # Different seed for eval
-        eval_env = make_eval_env(env_config, seed=base_seed)  # same seed
-        eval_env = DummyVecEnv([lambda: eval_env])
-        eval_env = VecMonitor(eval_env, os.path.join(log_path, "eval"))
-        # Normalize evaluation environment as well for consistency
-        eval_env = VecNormalize(eval_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
-        # Copy normalization statistics from training environment
-        # eval_env.obs_rms = vec_env.obs_rms
-        eval_env.ret_rms = vec_env.ret_rms
-        # Force training=False for evaluation environment
-        eval_env.training = False
+        # Create unique run name for this specific seed
+        # The user requested name_seed{seed_num}. If base_run_name_for_group already includes a timestamp or exp_name,
+        # this appends the seed correctly.
+        run_name = f"{base_run_name_for_group}_seed{current_seed}"
 
-    # Initialize callbacks
-    callbacks = []
-    
-    # Checkpoint callback
-    checkpoint_callback = CheckpointCallback(
-        save_freq=save_config["save_freq"],
-        save_path=log_path,
-        name_prefix="sirs_model",
-        save_replay_buffer=save_config["save_replay_buffer"],
-        save_vecnormalize=True  # Ensure VecNormalize stats are saved
-    )
-    callbacks.append(checkpoint_callback)
+        log_path = os.path.join(save_config["base_log_path"], run_name)
+        os.makedirs(log_path, exist_ok=True)
+        tensorboard_path = os.path.join(log_path, "tensorboard")
+        video_folder = os.path.join(log_path, "videos")
+        os.makedirs(tensorboard_path, exist_ok=True)
+        os.makedirs(video_folder, exist_ok=True)
 
-    # Evaluation and video recording callbacks if requested
-    if eval_freq > 0:
-        eval_callback = EvalCallback(
-            eval_env,
-            best_model_save_path=log_path,
-            log_path=log_path,
-            eval_freq=eval_freq,
-            deterministic=True,
-            render=False
-        )
-        video_recorder = VideoRecorderCallback(
-            eval_env,
-            video_folder,
-            eval_freq=eval_freq,
-            use_wandb=use_wandb
-        )
-        callbacks.extend([eval_callback, video_recorder])
-
-    # Wandb callback if wandb is enabled
-    if use_wandb:
-        callbacks.append(WandbCallback(model_save_path=f"models/{tensorboard_path}",
-        gradient_save_freq=100,
-        verbose=2))
-
-    # Create a copy of ppo_config for model creation
-    model_ppo_config = ppo_config.copy()
-
-    # Create a serializable copy of the config for saving
-    save_ppo_config = ppo_config.copy()
-    if "policy_kwargs" in save_ppo_config:
-        save_ppo_config["policy_kwargs"] = save_ppo_config["policy_kwargs"].copy()
-        if "activation_fn" in save_ppo_config["policy_kwargs"]:
-            save_ppo_config["policy_kwargs"]["activation_fn"] = "relu"  # Save as string
-
-    # Create entropy coefficient schedule if ent_coef is specified
-    if "ent_coef" in model_ppo_config:
-        initial_ent_coef = model_ppo_config["ent_coef"]
-        # Save the original value in the serialized config
-        save_ppo_config["ent_coef_initial"] = initial_ent_coef
-        save_ppo_config["ent_coef"] = "scheduled"
-        
-        # Create entropy callback and add to callbacks list
-        ent_callback = EntropyCoefCallback(
-            initial_value=initial_ent_coef,
-            final_value=0.002,  
-            schedule_percentage=0.4,  
-            verbose=1  # Print updates
-        )
-        callbacks.append(ent_callback)
-
-    # Save configs with seed information
-    config_with_seed = {
-        "environment": env_config.copy(),
-        "ppo": save_ppo_config,  # Use the serializable version
-        "save": save_config.copy(),
-        "seed": args.seed
-    }
-    save_config_with_model(log_path, config_with_seed)
-
-    # Convert activation function string to actual function for model creation
-    if "policy_kwargs" in model_ppo_config and "activation_fn" in model_ppo_config["policy_kwargs"]:
-        activation_str = model_ppo_config["policy_kwargs"]["activation_fn"]
-        model_ppo_config["policy_kwargs"]["activation_fn"] = get_activation_fn(activation_str)
-    
-    # Create and train the agent
-    model = PPO(
-        model_ppo_config["policy_type"],
-        vec_env,
-        verbose=save_config["verbose"],
-        tensorboard_log=tensorboard_path,
-        seed=args.seed,
-        **{k: v for k, v in model_ppo_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
-    )
-
-    try:
-        model.learn(
-            total_timesteps=ppo_config["total_timesteps"],
-            callback=callbacks,
-            progress_bar=True
-        )
-    except KeyboardInterrupt:
-        print("\nTraining interrupted. Saving model...")
-        pass
-    finally:
-        # Save the final model and VecNormalize stats
-        model.save(os.path.join(log_path, "final_model"))
-        vec_env.save(os.path.join(log_path, "vecnormalize.pkl"))
+        use_wandb = not args.no_wandb
+        current_wandb_run = None # To store wandb run object
         if use_wandb:
-            wandb.finish()
-        # Clean up
-        vec_env.close()
+            env_config_for_wandb = env_config.copy()
+            env_config_for_wandb["random_seed"] = current_seed
+            
+            ppo_config_for_wandb = ppo_config.copy()
+            if "policy_kwargs" in ppo_config_for_wandb and "activation_fn" in ppo_config_for_wandb["policy_kwargs"]:
+                 if isinstance(ppo_config_for_wandb["policy_kwargs"]["activation_fn"], type):
+                    ppo_config_for_wandb["policy_kwargs"]["activation_fn"] = ppo_config_for_wandb["policy_kwargs"]["activation_fn"].__name__
+
+
+            current_wandb_run = wandb.init(
+                project=os.getenv("WANDB_PROJECT", "sirs-rl"), # Use environment variable or default
+                name=run_name,
+                group=base_run_name_for_group,
+                config={
+                    "environment": env_config_for_wandb,
+                    "ppo": ppo_config_for_wandb,
+                    "save": save_config,
+                    "seed": current_seed
+                },
+                settings=wandb.Settings(
+                    init_timeout=120, 
+                    sync_tensorboard=True,
+                    # Handle cases where WANDB_DIR might not be set, default to './wandb' relative to script
+                    # This helps ensure logs are saved correctly in offline mode per run.
+                    # wandb_dir=os.path.join(os.getcwd(), 'wandb', run_name) if args.wandb_offline else None
+                ),
+                reinit=True
+            )
+            if args.wandb_offline:
+                 print(f"\\nRunning W&B in offline mode for seed {current_seed}. Run 'wandb sync {current_wandb_run.dir}' to sync.")
+
+        # Create vectorized environment with sequential seeds based on current_seed
+        # Each env in SubprocVecEnv gets current_seed + its_index
+        env_fns = [make_env(env_config, seed=current_seed + i) for i in range(ppo_config["n_envs"])]
+        vec_env = SubprocVecEnv(env_fns)
+        vec_env = VecMonitor(vec_env, os.path.join(log_path, "monitor"))
+        vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
+
+        eval_env = None
+        eval_freq = save_config.get("eval_freq", 0)
         if eval_freq > 0:
-            eval_env.close()
+            eval_env = make_eval_env(env_config, seed=current_seed, record_video=should_record_video) # Pass flag here
+            eval_env = DummyVecEnv([lambda: eval_env])
+            eval_env = VecMonitor(eval_env, os.path.join(log_path, "eval"))
+            eval_env = VecNormalize(eval_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
+            if vec_env.ret_rms is not None: # Check if ret_rms exists before copying
+                 eval_env.ret_rms = vec_env.ret_rms
+            eval_env.training = False
+
+        callbacks = []
+        checkpoint_callback = CheckpointCallback(
+            save_freq=save_config["save_freq"],
+            save_path=log_path,
+            name_prefix="sirs_model", # The seed is already in log_path
+            save_replay_buffer=save_config["save_replay_buffer"],
+            save_vecnormalize=True
+        )
+        callbacks.append(checkpoint_callback)
+
+        if eval_freq > 0 and eval_env is not None:
+            eval_callback = EvalCallback(
+                eval_env,
+                best_model_save_path=log_path,
+                log_path=log_path,
+                eval_freq=eval_freq,
+                n_eval_episodes=5, # Explicitly set, though 5 is default
+                deterministic=True,
+                render=False # EvalCallback itself should not render to screen
+            )
+            callbacks.append(eval_callback) # Add EvalCallback regardless
+
+            if should_record_video: # Conditionally add VideoRecorderCallback
+                video_recorder = VideoRecorderCallback(
+                    eval_env,
+                    video_folder,
+                    eval_freq=eval_freq,
+                    use_wandb=use_wandb
+                )
+                callbacks.append(video_recorder)
+
+        if use_wandb:
+            callbacks.append(WandbCallback(
+                model_save_path=f"models/{run_name}", # Save model to W&B under run_name
+                gradient_save_freq=100_000, # Example, adjust as needed
+                verbose=2
+            ))
+
+        model_ppo_config = ppo_config.copy()
+        save_ppo_config = ppo_config.copy()
+        if "policy_kwargs" in save_ppo_config:
+            save_ppo_config["policy_kwargs"] = save_ppo_config["policy_kwargs"].copy()
+            if "activation_fn" in save_ppo_config["policy_kwargs"]:
+                 if isinstance(save_ppo_config["policy_kwargs"]["activation_fn"], type):
+                    save_ppo_config["policy_kwargs"]["activation_fn"] = save_ppo_config["policy_kwargs"]["activation_fn"].__name__
+
+
+        if "ent_coef" in model_ppo_config and isinstance(model_ppo_config["ent_coef"], (float, int)): # Check if scheduling needed
+            initial_ent_coef = model_ppo_config["ent_coef"]
+            save_ppo_config["ent_coef_initial"] = initial_ent_coef
+            save_ppo_config["ent_coef"] = "scheduled"
+            
+            ent_callback = EntropyCoefCallback(
+                initial_value=initial_ent_coef,
+                final_value=0.002,  
+                schedule_percentage=0.4,  
+                verbose=1
+            )
+            callbacks.append(ent_callback)
+
+        config_to_save = {
+            "environment": env_config.copy(),
+            "ppo": save_ppo_config,
+            "save": save_config.copy(),
+            "seed": current_seed # Log the actual seed used for this run
+        }
+        save_config_with_model(log_path, config_to_save)
+
+        if "policy_kwargs" in model_ppo_config and "activation_fn" in model_ppo_config["policy_kwargs"]:
+            activation_str_or_fn = model_ppo_config["policy_kwargs"]["activation_fn"]
+            model_ppo_config["policy_kwargs"]["activation_fn"] = get_activation_fn(activation_str_or_fn)
+        
+        model = PPO(
+            model_ppo_config["policy_type"],
+            vec_env,
+            verbose=save_config["verbose"],
+            tensorboard_log=tensorboard_path,
+            seed=current_seed, # Use current_seed for the model
+            **{k: v for k, v in model_ppo_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
+        )
+
+        try:
+            print(f"Starting training for {run_name} with {ppo_config['total_timesteps']} timesteps...")
+            model.learn(
+                total_timesteps=ppo_config["total_timesteps"],
+                callback=callbacks,
+                progress_bar=True
+            )
+        except KeyboardInterrupt:
+            print(f"\\nTraining interrupted for {run_name}. Saving model...")
+        finally:
+            model.save(os.path.join(log_path, "final_model"))
+            vec_env.save(os.path.join(log_path, "vecnormalize.pkl"))
+            if use_wandb and current_wandb_run:
+                # Check if there's an active W&B run before finishing
+                if wandb.run is not None and wandb.run.id == current_wandb_run.id:
+                    wandb.finish()
+            
+            vec_env.close()
+            if eval_env:
+                eval_env.close()
+            print(f"--- Finished run for SEED: {current_seed} ---")
+            # Add a small delay if needed, though usually not necessary
+            # import time
+            # time.sleep(2) 
+
+    # Original args.seed is now less relevant for the main loop,
+    # but other parts of arg parsing remain the same.
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a SIRS environment agent using PPO")
@@ -426,7 +443,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-wandb", action="store_true", help="Disable Weights & Biases logging (enabled by default)")
     parser.add_argument("--wandb-offline", action="store_true", help="Run wandb in offline mode to avoid timeout issues")
     parser.add_argument("--config", type=str, default="config.py", help="Path to config file")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default: 42)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility (default: 42, but overridden by internal list [1,2,3])")
+    parser.add_argument("--record-video", action="store_true", help="Enable video recording of evaluation episodes.")
     
     args = parser.parse_args()
     
