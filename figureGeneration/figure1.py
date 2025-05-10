@@ -346,32 +346,50 @@ def main():
 
     # --- Statistical Annotations ---
     # Compare "Trained" agent against each baseline
-    trained_data = results_df[results_df['agent_label'] == AGENT_LABELS['trained']][y_metric_col]
+
+    # Data for statistical tests will be per-seed aggregates (mean of y_metric_col)
+    # For "Trained" agent, aggregate by 'trained_model_seed'
+    trained_agent_data = results_df[results_df['agent_label'] == AGENT_LABELS['trained']]
+    if 'trained_model_seed' in trained_agent_data.columns and not trained_agent_data['trained_model_seed'].isnull().all():
+        trained_data_for_test = trained_agent_data.groupby('trained_model_seed')[y_metric_col].mean()
+    else:
+        print(f"Warning: 'trained_model_seed' column is missing or all null for Trained agent. Using raw data for statistical tests.")
+        trained_data_for_test = trained_agent_data[y_metric_col] # Fallback
+
     comparisons_data = []
     p_values_uncorrected = []
 
     for baseline_label in plot_order_filtered:
         if baseline_label == AGENT_LABELS['trained']:
             continue
-        baseline_data = results_df[results_df['agent_label'] == baseline_label][y_metric_col]
-        if len(trained_data) > 0 and len(baseline_data) > 0:
+        
+        baseline_agent_data = results_df[results_df['agent_label'] == baseline_label]
+        
+        # For baseline agents, aggregate by 'baseline_env_seed_group'
+        if 'baseline_env_seed_group' in baseline_agent_data.columns and not baseline_agent_data['baseline_env_seed_group'].isnull().all():
+            baseline_data_for_test = baseline_agent_data.groupby('baseline_env_seed_group')[y_metric_col].mean()
+        else:
+            print(f"Warning: 'baseline_env_seed_group' column is missing or all null for {baseline_label}. Using raw data for statistical tests.")
+            baseline_data_for_test = baseline_agent_data[y_metric_col] # Fallback
+
+        if len(trained_data_for_test) > 0 and len(baseline_data_for_test) > 0:
             try:
-                # Check for identical constant values before running test
-                if len(set(trained_data)) == 1 and len(set(baseline_data)) == 1 and trained_data.iloc[0] == baseline_data.iloc[0]:
+                # Check for identical constant values before running test on aggregated data
+                if len(set(trained_data_for_test)) == 1 and len(set(baseline_data_for_test)) == 1 and trained_data_for_test.iloc[0] == baseline_data_for_test.iloc[0]:
                     p_val = 1.0 # Not significantly different
-                    print(f"Skipping Mann-Whitney U for Trained vs {baseline_label}: Both groups have identical constant values.")
+                    print(f"Skipping Mann-Whitney U for Trained (aggregated) vs {baseline_label} (aggregated): Both groups have identical constant values.")
                 else:
-                    _, p_val = stats.mannwhitneyu(trained_data, baseline_data, alternative='two-sided')
+                    # Ensure we have enough data points for the test after aggregation (typically > 1 per group)
+                    if len(trained_data_for_test) < 2 or len(baseline_data_for_test) < 2:
+                         print(f"Warning: Not enough data points for Mann-Whitney U after aggregation for Trained vs {baseline_label} (Trained: {len(trained_data_for_test)}, Baseline: {len(baseline_data_for_test)}). Assigning p_val=NaN.")
+                         p_val = np.nan
+                    else:
+                         _, p_val = stats.mannwhitneyu(trained_data_for_test, baseline_data_for_test, alternative='two-sided')
+
                 comparisons_data.append((AGENT_LABELS['trained'], baseline_label))
                 p_values_uncorrected.append(p_val)
-            except ValueError as e: # Handle cases like all NaNs or empty data after filtering
-                print(f"Warning: Mann-Whitney U test failed for Trained vs {baseline_label}: {e}")
-                comparisons_data.append((AGENT_LABELS['trained'], baseline_label))
-                p_values_uncorrected.append(np.nan) # Use NaN for failed tests
-        else:
-            comparisons_data.append((AGENT_LABELS['trained'], baseline_label))
-            p_values_uncorrected.append(np.nan)
-
+            except ValueError as e: # Handle cases like all NaNs or empty data after filtering/aggregation
+                print(f"Warning: Mann-Whitney U test failed for Trained (aggregated) vs {baseline_label} (aggregated): {e}")
 
     if p_values_uncorrected:
         # Filter out NaNs before Bonferroni correction
