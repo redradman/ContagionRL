@@ -191,7 +191,16 @@ def main():
     )
 
     # --- Statistical Annotations ---
-    potential_field_data = results_df[results_df['reward_function_label'] == REWARD_FUNC_LABELS['potential_field']][y_metric_col]
+    # Compare "Potential Field" against other reward functions using per-seed aggregates
+
+    # Aggregate Potential Field data by model_train_seed
+    pf_agent_data = results_df[results_df['reward_function_label'] == REWARD_FUNC_LABELS['potential_field']]
+    if 'model_train_seed' in pf_agent_data.columns and not pf_agent_data['model_train_seed'].isnull().all():
+        potential_field_data_for_test = pf_agent_data.groupby('model_train_seed')[y_metric_col].mean()
+    else:
+        print(f"Warning: 'model_train_seed' column is missing or all null for Potential Field. Using raw data for statistical tests.")
+        potential_field_data_for_test = pf_agent_data[y_metric_col] # Fallback
+
     comparisons_data = []
     p_values_uncorrected = []
 
@@ -199,22 +208,32 @@ def main():
         if reward_label_to_compare == REWARD_FUNC_LABELS['potential_field']:
             continue
         
-        compare_data = results_df[results_df['reward_function_label'] == reward_label_to_compare][y_metric_col]
-        if len(potential_field_data) > 0 and len(compare_data) > 0:
+        # Aggregate comparison data by model_train_seed
+        compare_agent_data = results_df[results_df['reward_function_label'] == reward_label_to_compare]
+        if 'model_train_seed' in compare_agent_data.columns and not compare_agent_data['model_train_seed'].isnull().all():
+            compare_data_for_test = compare_agent_data.groupby('model_train_seed')[y_metric_col].mean()
+        else:
+            print(f"Warning: 'model_train_seed' column is missing or all null for {reward_label_to_compare}. Using raw data for statistical tests.")
+            compare_data_for_test = compare_agent_data[y_metric_col] # Fallback
+
+        if len(potential_field_data_for_test) > 0 and len(compare_data_for_test) > 0:
             try:
-                if len(set(potential_field_data)) == 1 and len(set(compare_data)) == 1 and potential_field_data.iloc[0] == compare_data.iloc[0]:
+                # Check for identical constant values on aggregated data
+                if len(set(potential_field_data_for_test)) == 1 and len(set(compare_data_for_test)) == 1 and potential_field_data_for_test.iloc[0] == compare_data_for_test.iloc[0]:
                     p_val = 1.0
+                    print(f"Skipping Mann-Whitney U for PF (aggregated) vs {reward_label_to_compare} (aggregated): Both groups have identical constant values.")
                 else:
-                    _, p_val = stats.mannwhitneyu(potential_field_data, compare_data, alternative='two-sided')
+                    # Ensure enough data points for the test after aggregation
+                    if len(potential_field_data_for_test) < 2 or len(compare_data_for_test) < 2:
+                        print(f"Warning: Not enough data points for Mann-Whitney U after aggregation for PF vs {reward_label_to_compare} (PF: {len(potential_field_data_for_test)}, Compare: {len(compare_data_for_test)}). Assigning p_val=NaN.")
+                        p_val = np.nan
+                    else:
+                        _, p_val = stats.mannwhitneyu(potential_field_data_for_test, compare_data_for_test, alternative='two-sided')
+                
                 comparisons_data.append((REWARD_FUNC_LABELS['potential_field'], reward_label_to_compare))
                 p_values_uncorrected.append(p_val)
             except ValueError as e:
-                print(f"Warning: Mann-Whitney U test failed for PF vs {reward_label_to_compare}: {e}")
-                comparisons_data.append((REWARD_FUNC_LABELS['potential_field'], reward_label_to_compare))
-                p_values_uncorrected.append(np.nan)
-        else:
-            comparisons_data.append((REWARD_FUNC_LABELS['potential_field'], reward_label_to_compare))
-            p_values_uncorrected.append(np.nan)
+                print(f"Warning: Mann-Whitney U test failed for PF (aggregated) vs {reward_label_to_compare} (aggregated): {e}")
 
     if p_values_uncorrected:
         valid_indices = [i for i, p in enumerate(p_values_uncorrected) if not np.isnan(p)]
