@@ -182,10 +182,17 @@ def main():
         ax.tick_params(axis='x', labelsize=8)
         ax.tick_params(axis='y', labelsize=8)
 
-        # Statistical Annotations (comparing each beta to beta=0.2)
+        # Statistical Annotations (comparing each beta to beta=0.2 using per-seed aggregates)
         reference_label = BETA_LABELS[0.2]
-        reference_data = results_df[results_df[y_col] == reference_label][x_col]
         
+        # Aggregate reference data by model_train_seed for the current metric (x_col)
+        ref_beta_data = results_df[results_df[y_col] == reference_label]
+        if 'model_train_seed' in ref_beta_data.columns and not ref_beta_data['model_train_seed'].isnull().all():
+            reference_data_for_test = ref_beta_data.groupby('model_train_seed')[x_col].mean()
+        else:
+            print(f"Warning: 'model_train_seed' column missing/all null for reference Beta ({reference_label}) on metric {x_col}. Using raw data.")
+            reference_data_for_test = ref_beta_data[x_col] # Fallback
+
         comparisons_data_stats = []
         p_values_uncorrected_stats = []
 
@@ -193,21 +200,37 @@ def main():
             if beta_label_to_compare == reference_label:
                 continue
             
-            compare_data_stats = results_df[results_df[y_col] == beta_label_to_compare][x_col]
-            if len(reference_data) > 0 and len(compare_data_stats) > 0:
+            # Aggregate comparison beta data by model_train_seed for the current metric (x_col)
+            compare_beta_data = results_df[results_df[y_col] == beta_label_to_compare]
+            if 'model_train_seed' in compare_beta_data.columns and not compare_beta_data['model_train_seed'].isnull().all():
+                compare_data_for_test = compare_beta_data.groupby('model_train_seed')[x_col].mean()
+            else:
+                print(f"Warning: 'model_train_seed' column missing/all null for Beta ({beta_label_to_compare}) on metric {x_col}. Using raw data.")
+                compare_data_for_test = compare_beta_data[x_col] # Fallback
+
+            if len(reference_data_for_test) > 0 and len(compare_data_for_test) > 0:
                 try:
-                    if len(set(reference_data)) == 1 and len(set(compare_data_stats)) == 1 and reference_data.iloc[0] == compare_data_stats.iloc[0]:
+                    # Check for identical constant values on aggregated data
+                    if len(set(reference_data_for_test)) == 1 and len(set(compare_data_for_test)) == 1 and reference_data_for_test.iloc[0] == compare_data_for_test.iloc[0]:
                         p_val = 1.0
+                        print(f"Skipping Mann-Whitney U for {reference_label} (agg) vs {beta_label_to_compare} (agg) on metric {x_col}: Identical constant values.")
                     else:
-                        _, p_val = stats.mannwhitneyu(reference_data, compare_data_stats, alternative='two-sided')
+                        # Ensure enough data points for the test after aggregation
+                        if len(reference_data_for_test) < 2 or len(compare_data_for_test) < 2:
+                            print(f"Warning: Not enough data for Mann-Whitney U after aggregation for {reference_label} vs {beta_label_to_compare} on {x_col} (Ref: {len(reference_data_for_test)}, Comp: {len(compare_data_for_test)}). p_val=NaN.")
+                            p_val = np.nan
+                        else:
+                            _, p_val = stats.mannwhitneyu(reference_data_for_test, compare_data_for_test, alternative='two-sided')
+                    
                     comparisons_data_stats.append((reference_label, beta_label_to_compare))
                     p_values_uncorrected_stats.append(p_val)
                 except ValueError as e:
-                    print(f"Warning: Mann-Whitney U test failed for {reference_label} vs {beta_label_to_compare} on metric {x_col}: {e}")
+                    print(f"Warning: Mann-Whitney U test failed for {reference_label} (agg) vs {beta_label_to_compare} (agg) on metric {x_col}: {e}")
                     p_values_uncorrected_stats.append(np.nan)
+                    comparisons_data_stats.append((reference_label, beta_label_to_compare)) # Ensure added if exception before append
             else:
                 p_values_uncorrected_stats.append(np.nan)
-            comparisons_data_stats.append((reference_label, beta_label_to_compare)) # Ensure this is always added if loop runs
+                comparisons_data_stats.append((reference_label, beta_label_to_compare)) 
         
         if p_values_uncorrected_stats:
             valid_indices = [i for i, p in enumerate(p_values_uncorrected_stats) if not np.isnan(p)]
