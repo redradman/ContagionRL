@@ -920,6 +920,34 @@ class SIRSEnvironment(gym.Env):
 
         return total_reward
 
+    def _calculate_maximize_nearest_distance_reward(self):
+        """
+        Reward is 1.0 if the agent is farther than max_distance_for_beta_calculation from the nearest susceptible or infected human (if > 0).
+        If closer, the reward decays smoothly (linearly). If max_distance_for_beta_calculation == -1, use normalized distance.
+        If there are no relevant humans, return 1.0. If the agent is dead or infected, return 0.0.
+        """
+        if self.agent_state == STATE_DICT['I']:
+            return 0.0
+
+        agent_human = Human(
+            x=self.agent_position[0],
+            y=self.agent_position[1],
+            state=self.agent_state,
+            id=-1
+        )
+        relevant_humans = [h for h in self.humans if h.state in (STATE_DICT['S'], STATE_DICT['I'])]
+        if not relevant_humans:
+            return 1.0
+        distances = [self._calculate_distance(agent_human, h) for h in relevant_humans]
+        min_distance = min(distances)
+
+
+        if min_distance >= self.max_distance_for_beta_calculation:
+            return 1.0
+        else:
+            # Linear decay: reward = min_distance / max_distance_for_beta_calculation
+            return max(0.0, min_distance / self.max_distance_for_beta_calculation)
+
     def _calculate_reward(self):    
         # Map reward type to the corresponding reward function
         reward_functions = {
@@ -930,6 +958,7 @@ class SIRSEnvironment(gym.Env):
             "comprehensive": self._calculate_comprehensive_reward,
             "potential_field": self._calculate_potential_field_reward,  # Add new reward function to the map
             "sparse": self._calculate_sparse_reward,
+            "max_nearest_distance": self._calculate_maximize_nearest_distance_reward,  # New reward function
         }
         
         # Get the reward function based on the specified reward type, default to constant reward
