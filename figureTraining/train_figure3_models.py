@@ -36,7 +36,7 @@ def main_fig3_trainer(args):
     initial_save_config = copy.deepcopy(global_save_config_template)
 
     wandb_project_for_fig3 = os.getenv("WANDB_PROJECT_FIG3", "sirs-rl-fig3-beta")
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
 
     for beta_value in BETA_VALUES:
         print(f"\n=== Training models for Figure 3 (Beta: {beta_value}, Reward: {REWARD_TYPE_FOR_FIG3}) ===")
