@@ -30,6 +30,7 @@ REWARD_FUNC_LABELS = {
     "alive": "Constant",
     "reduce_infection": "Reduce Infection",
     "alive_reduce_infection": "Constant + Reduce Inf.",
+    "max_nearest_distance": "Max Nearest Distance",
     "potential_field": "Potential Field"
 }
 
@@ -38,6 +39,7 @@ PLOT_ORDER = [
     REWARD_FUNC_LABELS["alive"],
     REWARD_FUNC_LABELS["reduce_infection"],
     REWARD_FUNC_LABELS["alive_reduce_infection"],
+    REWARD_FUNC_LABELS["max_nearest_distance"],
     REWARD_FUNC_LABELS["potential_field"]
 ]
 
@@ -82,11 +84,7 @@ def run_evaluation_episodes(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Figure 2 comparing models trained with different reward functions.")
-    parser.add_argument("--pf-base", type=str, required=True, help="Base name for Potential Field models.")
-    parser.add_argument("--alive-base", type=str, required=True, help="Base name for Constant (alive) reward models.")
-    parser.add_argument("--reduce-base", type=str, required=True, help="Base name for Reduce Infection models.")
-    parser.add_argument("--combo-base", type=str, required=True, help="Base name for Constant + Reduce Infection models.")
-    
+    parser.add_argument("--model-base", type=str, required=True, help="Base name for all models (e.g., Fig2)")
     parser.add_argument("--runs", type=int, default=30, help="Number of evaluation episodes per loaded model (default: 30).")
     parser.add_argument("--seeds", type=str, default="1,2,3", help="Comma-separated list of seeds for trained models (e.g., '1,2,3').")
     parser.add_argument("--output-dir", type=str, default="figures/", help="Directory to save the generated figures (default: figures/).")
@@ -105,11 +103,18 @@ def main():
     all_results_data = []
     base_env_config_dict = None # To store the common environment config
 
+    # Map reward function labels to their suffixes
+    reward_func_suffixes = {
+        REWARD_FUNC_LABELS["alive"]: "ConstantReward",
+        REWARD_FUNC_LABELS["reduce_infection"]: "ReduceInfReward",
+        REWARD_FUNC_LABELS["alive_reduce_infection"]: "ComboReward",
+        REWARD_FUNC_LABELS["max_nearest_distance"]: "MaxNearestDistReward",
+        REWARD_FUNC_LABELS["potential_field"]: "PotentialFieldReward",
+    }
+
     model_bases = {
-        REWARD_FUNC_LABELS["alive"]: args.alive_base,
-        REWARD_FUNC_LABELS["reduce_infection"]: args.reduce_base,
-        REWARD_FUNC_LABELS["alive_reduce_infection"]: args.combo_base,
-        REWARD_FUNC_LABELS["potential_field"]: args.pf_base,
+        label: f"{args.model_base}_{suffix}"
+        for label, suffix in reward_func_suffixes.items()
     }
 
     # Offset for evaluation seeds per category to ensure uniqueness
