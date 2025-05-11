@@ -8,6 +8,10 @@ results/graphs/
 .ipynb_checkpoints/
 .virtual_documents/
 *.r
+ablation/
+ablation_results/
+
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
