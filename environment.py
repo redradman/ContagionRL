@@ -314,7 +314,7 @@ class SIRSEnvironment(gym.Env):
 
     ##### 
 
-    def reset(self, seed: Optional[int] = None) -> Tuple[dict, dict]:
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[dict, dict]:
         """Reset the environment to the initial state"""
         super().reset(seed=seed)
         
