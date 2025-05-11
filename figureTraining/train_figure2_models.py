@@ -65,7 +65,7 @@ def main_fig2_trainer(args):
     initial_save_config = copy.deepcopy(global_save_config_template)
 
     wandb_project_for_fig2 = os.getenv("WANDB_PROJECT_FIG2", "sirs-rl-fig2-rewards")
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
 
     for config_details in REWARD_CONFIGURATIONS:
         current_reward_label = config_details["label"]
@@ -80,7 +80,7 @@ def main_fig2_trainer(args):
         
         # Construct base_run_name_for_group for W&B grouping and file naming
         # This name is for the group of seeds under ONE reward configuration
-        base_run_name_for_group = f"{base_exp_name_prefix}_{timestamp}"
+        base_run_name_for_group = f"{base_exp_name_prefix}"
         if args.exp_suffix:
             base_run_name_for_group = f"{base_run_name_for_group}_{args.exp_suffix}"
 
