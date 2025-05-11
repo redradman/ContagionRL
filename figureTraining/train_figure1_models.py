@@ -34,7 +34,7 @@ def main_fig1_trainer(args):
     initial_save_config = copy.deepcopy(global_save_config_template)
 
     wandb_project_for_fig1 = os.getenv("WANDB_PROJECT_FIG1", "sirs-rl-fig1-pf")
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
 
     print(f"\n=== Training models for Figure 1 (Reward Type: {REWARD_TYPE_FOR_FIG1}) ===")
     
@@ -47,7 +47,7 @@ def main_fig1_trainer(args):
     if args.exp_name:
         base_run_name_for_group = args.exp_name
     else:
-        base_run_name_for_group = f"Fig1_PotentialField_{timestamp}"
+        base_run_name_for_group = f"Fig1_PotentialField"
     
     if args.exp_suffix:
         base_run_name_for_group = f"{base_run_name_for_group}_{args.exp_suffix}"
