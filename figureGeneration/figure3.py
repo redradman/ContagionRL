@@ -29,10 +29,10 @@ sns.set_style("whitegrid")
 # Define Beta values and their labels for plotting
 BETA_VALUES = [0.2, 0.5, 0.7, 0.9]
 BETA_LABELS = { # For display on the y-axis of the plot
-    0.2: "Beta = 0.2",
-    0.5: "Beta = 0.5",
-    0.7: "Beta = 0.7",
-    0.9: "Beta = 0.9"
+    0.2: r"$\beta = 0.2$",
+    0.5: r"$\beta = 0.5$",
+    0.7: r"$\beta = 0.7$",
+    0.9: r"$\beta = 0.9$"
 }
 # Order for plotting on the y-axis for horizontal boxplots
 PLOT_ORDER = [BETA_LABELS[b] for b in BETA_VALUES]
@@ -175,7 +175,7 @@ def main():
 
         ax.set_xlabel(metric_info["label"], fontsize=9)
         if metric_info["ax_idx"] == 0: # Only set y-label for the first plot
-            ax.set_ylabel("Beta Value", fontsize=9)
+            ax.set_ylabel("Infection Rate ($\\beta$)", fontsize=9)
         else:
             ax.set_ylabel("") # No y-label for the second plot
         
