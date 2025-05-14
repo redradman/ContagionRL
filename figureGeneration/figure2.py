@@ -13,6 +13,7 @@ from tqdm import tqdm
 from typing import Dict, List, Any, Optional
 from scipy import stats
 import statsmodels.stats.multitest as smm
+import cliffs_delta
 
 # Add the parent directory to the path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -167,150 +168,95 @@ def main():
     results_df = pd.DataFrame(all_results_data)
 
     # --- Plotting (Violin + Box Overlay + Stripplot) ---
-    plt.figure(figsize=(8, 6)) # Adjusted for potentially more categories or longer labels
+    plt.figure(figsize=(10, 6))
     y_metric_col = "episode_length"
     y_label = "Episode Duration (steps)"
-
-    # Filter out categories if they have no data
     plot_order_filtered = [label for label in PLOT_ORDER if label in results_df['reward_function_label'].unique()]
 
-    # 1. Boxplot (outlines)
     ax = sns.boxplot(
         x="reward_function_label", y=y_metric_col, data=results_df, order=plot_order_filtered,
         width=0.6, showfliers=False, saturation=1,
         boxprops=dict(facecolor='none', edgecolor='black'),
         medianprops=dict(color='black'), whiskerprops=dict(color='black'), capprops=dict(color='black')
     )
-
-    # 2. Violin plot (semi-transparent overlay)
     sns.violinplot(
         x="reward_function_label", y=y_metric_col, data=results_df, order=plot_order_filtered,
         width=0.8, inner=None, palette="muted", cut=0, alpha=0.5, ax=ax,
         hue="reward_function_label", legend=False
     )
-
-    # 3. Stripplot (individual points)
     sns.stripplot(
         x="reward_function_label", y=y_metric_col, data=results_df, order=plot_order_filtered,
         color='black', alpha=0.3, jitter=0.2, size=3, ax=ax
     )
 
-    # --- Statistical Annotations ---
-    # Compare "Potential Field" against other reward functions using per-seed aggregates
+    # Overlay per-seed means as large black dots
+    for i, reward_label in enumerate(plot_order_filtered):
+        group = results_df[results_df['reward_function_label'] == reward_label]
+        if 'model_train_seed' in group.columns:
+            seed_means = group.groupby('model_train_seed')[y_metric_col].mean()
+            ax.scatter([i]*len(seed_means), seed_means, color='black', s=80, zorder=10, marker='o', edgecolor='white', linewidth=1.5, label=None)
 
-    # Aggregate Potential Field data by model_train_seed
-    pf_agent_data = results_df[results_df['reward_function_label'] == REWARD_FUNC_LABELS['potential_field']]
-    if 'model_train_seed' in pf_agent_data.columns and not pf_agent_data['model_train_seed'].isnull().all():
-        potential_field_data_for_test = pf_agent_data.groupby('model_train_seed')[y_metric_col].mean()
-    else:
-        print(f"Warning: 'model_train_seed' column is missing or all null for Potential Field. Using raw data for statistical tests.")
-        potential_field_data_for_test = pf_agent_data[y_metric_col] # Fallback
-
-    comparisons_data = []
-    p_values_uncorrected = []
-
-    for reward_label_to_compare in plot_order_filtered:
-        if reward_label_to_compare == REWARD_FUNC_LABELS['potential_field']:
+    # --- Cliff's delta effect size annotations and summary table ---
+    ref_label = 'Potential Field'
+    ref_data = results_df[results_df['reward_function_label'] == ref_label]
+    ref_episodes = ref_data[y_metric_col].values
+    cat_pos = {cat: i for i, cat in enumerate(plot_order_filtered)}
+    y_max = results_df[y_metric_col].max()
+    y_min = results_df[y_metric_col].min()
+    y_range = y_max - y_min
+    increment = y_range * 0.08 if y_range > 1e-9 else 0.1 * abs(y_max) if abs(y_max) > 1e-9 else 0.1
+    current_y = y_max + increment * 0.5
+    summary_rows = []
+    for reward_label in plot_order_filtered:
+        if reward_label == ref_label:
             continue
-        
-        # Aggregate comparison data by model_train_seed
-        compare_agent_data = results_df[results_df['reward_function_label'] == reward_label_to_compare]
-        if 'model_train_seed' in compare_agent_data.columns and not compare_agent_data['model_train_seed'].isnull().all():
-            compare_data_for_test = compare_agent_data.groupby('model_train_seed')[y_metric_col].mean()
-        else:
-            print(f"Warning: 'model_train_seed' column is missing or all null for {reward_label_to_compare}. Using raw data for statistical tests.")
-            compare_data_for_test = compare_agent_data[y_metric_col] # Fallback
-
-        if len(potential_field_data_for_test) > 0 and len(compare_data_for_test) > 0:
-            try:
-                # Check for identical constant values on aggregated data
-                if len(set(potential_field_data_for_test)) == 1 and len(set(compare_data_for_test)) == 1 and potential_field_data_for_test.iloc[0] == compare_data_for_test.iloc[0]:
-                    p_val = 1.0
-                    print(f"Skipping Mann-Whitney U for PF (aggregated) vs {reward_label_to_compare} (aggregated): Both groups have identical constant values.")
-                else:
-                    # Ensure enough data points for the test after aggregation
-                    if len(potential_field_data_for_test) < 2 or len(compare_data_for_test) < 2:
-                        print(f"Warning: Not enough data points for Mann-Whitney U after aggregation for PF vs {reward_label_to_compare} (PF: {len(potential_field_data_for_test)}, Compare: {len(compare_data_for_test)}). Assigning p_val=NaN.")
-                        p_val = np.nan
-                    else:
-                        _, p_val = stats.mannwhitneyu(potential_field_data_for_test, compare_data_for_test, alternative='two-sided')
-                
-                comparisons_data.append((REWARD_FUNC_LABELS['potential_field'], reward_label_to_compare))
-                p_values_uncorrected.append(p_val)
-            except ValueError as e:
-                print(f"Warning: Mann-Whitney U test failed for PF (aggregated) vs {reward_label_to_compare} (aggregated): {e}")
-
-    if p_values_uncorrected:
-        valid_indices = [i for i, p in enumerate(p_values_uncorrected) if not np.isnan(p)]
-        valid_p_values = [p_values_uncorrected[i] for i in valid_indices]
-        valid_comparisons = [comparisons_data[i] for i in valid_indices]
-
-        if valid_p_values:
-            _ , pvals_corrected, _, _ = smm.multipletests(valid_p_values, alpha=0.05, method='bonferroni')
-            y_max = results_df[y_metric_col].max()
-            y_min = results_df[y_metric_col].min()
-            y_range = y_max - y_min
-            num_valid_comparisons = len(valid_comparisons)
-
-            if y_range <= 1e-9: 
-                increment_base = 0.1 * abs(y_max) if abs(y_max) > 1e-9 else 0.1
-            else: 
-                increment_base = y_range * 0.08
-            
-            increment_total_height_factor = 0.1 * num_valid_comparisons
-            if y_range > 1e-9: 
-                increment = max(increment_base, y_range * increment_total_height_factor / num_valid_comparisons if num_valid_comparisons > 0 else increment_base)
-            else: 
-                increment = increment_base
-
-            current_y = y_max + increment * 0.5
-            cat_pos = {cat: i for i, cat in enumerate(plot_order_filtered)}
-
-            for i, (cat1, cat2) in enumerate(valid_comparisons): # cat1 is always Potential Field here
-                p_corrected = pvals_corrected[i]
-                pos1 = cat_pos[cat1]
-                pos2 = cat_pos[cat2]
-
+        compare_data = results_df[results_df['reward_function_label'] == reward_label]
+        compare_episodes = compare_data[y_metric_col].values
+        if len(ref_episodes) > 0 and len(compare_episodes) > 0:
+            d, _ = cliffs_delta.cliffs_delta(compare_episodes, ref_episodes)
+            abs_d = abs(d)
+            if abs_d < 0.147:
+                effect = 'negligible effect'
+            elif abs_d < 0.33:
+                effect = 'small effect'
+            elif abs_d < 0.474:
+                effect = 'medium effect'
+            else:
+                effect = 'large effect'
+            pos1 = cat_pos[ref_label]
+            pos2 = cat_pos[reward_label]
+            if effect != 'negligible effect':
                 line_x = [pos1, pos1, pos2, pos2]
                 line_y = [current_y, current_y + increment * 0.2, current_y + increment * 0.2, current_y]
                 ax.plot(line_x, line_y, lw=1.0, c='black')
-
-                significance = 'ns'
-                if p_corrected < 0.001: 
-                    significance = '***'
-                elif p_corrected < 0.01: 
-                    significance = '**'
-                elif p_corrected < 0.05: 
-                    significance = '*'
-                
                 text_x = (pos1 + pos2) / 2
                 text_y = current_y + increment * 0.25
-                ax.text(text_x, text_y, significance, ha='center', va='bottom', fontsize=8)
+                ax.text(text_x, text_y, effect, ha='center', va='bottom', fontsize=8)
                 current_y += increment
-            
-            if num_valid_comparisons > 0: 
-                ax.set_ylim(top=current_y + increment * 0.2)
+            summary_rows.append([reward_label, f"{d:.2f}", effect])
+    if len(plot_order_filtered) > 1:
+        ax.set_ylim(top=current_y + increment * 0.2)
 
-    plt.xlabel("Reward Function Configuration", fontsize=9)
+    plt.xlabel("Reward Function", fontsize=9)
     plt.ylabel(y_label, fontsize=9)
-    ax.tick_params(axis='x', labelsize=8, rotation=15)
+    ax.tick_params(axis='x', labelsize=8, rotation=0)
     ax.tick_params(axis='y', labelsize=8)
-    
     plt.tight_layout(pad=0.5)
-
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Use a more generic name for the figure, as model base names are many
     figure_filename = f"figure2_reward_comparison_{timestamp}.pdf"
     figure_path = os.path.join(args.output_dir, figure_filename)
-    
     plt.savefig(figure_path, bbox_inches='tight')
     plt.close()
     print(f"Figure saved to {figure_path}")
-
     csv_filename = f"figure2_data_{timestamp}.csv"
     csv_path = os.path.join(args.output_dir, csv_filename)
     results_df.to_csv(csv_path, index=False)
     print(f"Aggregated data saved to {csv_path}")
+    # Print summary table
+    print("\nCliff's Delta Effect Size Summary (vs. Potential Field):")
+    print("Reward\tCliff's d\tEffect Size")
+    for row in summary_rows:
+        print("\t".join(row))
 
 if __name__ == "__main__":
     main() 
