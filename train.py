@@ -267,7 +267,7 @@ def execute_single_training_run(
     if eval_freq > 0 and eval_env is not None:
         eval_callback = EvalCallback(
             eval_env, best_model_save_path=log_path, log_path=log_path, eval_freq=eval_freq,
-            n_eval_episodes=5, deterministic=True, render=False
+            n_eval_episodes=10, deterministic=True, render=False
         )
         callbacks.append(eval_callback)
         if should_record_video_flag:
