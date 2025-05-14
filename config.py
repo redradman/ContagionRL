@@ -31,8 +31,8 @@ ppo_config = {
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
         net_arch=dict(
-            pi=[256, 256, 128],  
-            vf=[256, 256, 128]  
+            pi=[256, 256, 256, 256],  
+            vf=[256, 256, 256, 256]  
         ),
         activation_fn=nn.ReLU,  # Explicitly use ReLU activation
         ortho_init=True,        # Use orthogonal initialization for better training stability
@@ -40,17 +40,17 @@ ppo_config = {
     ),
     
     # PPO specific parameters
-    "batch_size": 4096,            # Larger batch for more stable updates (>= 512 samples per minibatch)
+    "batch_size": 2048,            # Larger batch for more stable updates (>= 512 samples per minibatch)
     "n_steps": 1024,               # Collect more steps before updating
-    "n_epochs": 10,                # Fewer epochs to prevent overfitting
+    "n_epochs": 5,                # Fewer epochs to prevent overfitting
     "learning_rate": 3e-4,         # Reduced learning rate for more stable learning
     "gamma": 0.96,                 # Lower discount factor to match shorter episode horizon
     "gae_lambda": 0.95,            # Keep same lambda
     "target_kl": 0.04,             # Looser KL policing to allow larger updates
     "clip_range": 0.2,             # Wider clip range to allow larger policy changes
     # "clip_range_vf": 0.2,          # Add value function clipping to prevent overshooting
-    "ent_coef": 0.04,              # Lower entropy coefficient, scheduled decay
-    "vf_coef": 1.0,                # Increased value function coefficient to stabilize value learning
+    "ent_coef": 0.02,              # Lower entropy coefficient, scheduled decay
+    # "vf_coef": 2.0,                # Increased value function coefficient to stabilize value learning
     # "max_grad_norm": 0.5,          # Keep same gradient clipping
     
     # Advanced PPO settings
@@ -58,6 +58,7 @@ ppo_config = {
 
     # Training parameters
     "total_timesteps": 8_000_000,
+    # "total_timesteps": 40_000,
     "n_envs": 4                    # Increased parallel environments for more diverse experience
 }
 
@@ -71,7 +72,9 @@ ppo_config = {
 save_config = {
     "base_log_path": "logs",
     "save_freq": 250_000,          # Save model every n steps
+    # "save_freq": 1_000,
     "save_replay_buffer": True,
     "verbose": 1,
     "eval_freq": 250_000,          # Evaluate less frequently to save time
+    # "eval_freq": 1_000, 
 } 
