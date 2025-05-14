@@ -3,6 +3,9 @@ import sys
 import argparse
 import datetime
 import copy # For deep copying configurations
+# Add wandb imports
+import wandb
+from wandb.integration.sb3 import WandbCallback
 
 # Add the parent directory to the path to access project modules
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,6 +47,11 @@ REWARD_CONFIGURATIONS = [
         "label": "ConstantPlusReduceInfection", 
         "reward_type": "reduceInfectionProbwithConstant", 
         "base_exp_name": "Fig2_ComboReward"
+    },
+    {
+        "label": "MaxNearestDistance", 
+        "reward_type": "max_nearest_distance", 
+        "base_exp_name": "Fig2_MaxNearestDistReward"
     },
     {
         "label": "PotentialField", 
@@ -88,11 +96,11 @@ def main_fig2_trainer(args):
             # The full unique run name for this specific seed and reward config
             seed_specific_run_name = f"{base_run_name_for_group}_seed{seed_val}"
             print(f"--- Preparing training for: {seed_specific_run_name} (Reward: {current_reward_label}, Seed: {seed_val}) ---")
-            
             # Ensure base_log_path from save_config exists
             # execute_single_training_run will create the seed-specific subdirectory
             os.makedirs(initial_save_config["base_log_path"], exist_ok=True)
 
+            # Only pass wandb flags and project/group names to the training function
             execute_single_training_run(
                 current_seed=seed_val,
                 run_name=seed_specific_run_name, 
@@ -104,7 +112,7 @@ def main_fig2_trainer(args):
                 use_wandb_flag=not args.no_wandb,
                 wandb_offline_flag=args.wandb_offline,
                 wandb_project_name=wandb_project_for_fig2,
-                wandb_group_name=base_run_name_for_group # Group by reward type + timestamp + suffix
+                wandb_group_name=base_run_name_for_group
             )
             print(f"--- Completed training for: {seed_specific_run_name} ---")
         print(f"=== Finished all seeds for reward type: {current_reward_label} ===")
