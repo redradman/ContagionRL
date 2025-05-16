@@ -58,7 +58,6 @@ ppo_config = {
 
     # Training parameters
     "total_timesteps": 8_000_000,
-    # "total_timesteps": 40_000,
     "n_envs": 4                    # Increased parallel environments for more diverse experience
 }
 
