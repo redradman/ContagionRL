@@ -71,9 +71,7 @@ ppo_config = {
 save_config = {
     "base_log_path": "logs",
     "save_freq": 250_000,          # Save model every n steps
-    # "save_freq": 1_000,
     "save_replay_buffer": True,
     "verbose": 1,
     "eval_freq": 250_000,          # Evaluate less frequently to save time
-    # "eval_freq": 1_000, 
 } 
