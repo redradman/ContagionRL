@@ -9,6 +9,10 @@ import seaborn as sns
 from stable_baselines3 import PPO, SAC, TD3, A2C
 import gymnasium as gym # Helper for flattening obs for SAC/TD3
 from tqdm import tqdm
+import cliffs_delta
+from scipy import stats
+import statsmodels.stats.multitest as smm
+from textwrap import wrap
 # from typing import Dict, List, Any, Optional
 
 # tueplots styling
@@ -165,43 +169,185 @@ def main():
                 all_results.append({"agent_label": AGENT_LABELS[agent_type], "train_seed": seed, "episode_length": ep_len})
             env.close()
 
-    # --- Plotting ---
+    # --- Plotting with 95% bootstrapped CIs over per-seed means ---
     results_df = pd.DataFrame(all_results)
     plt.figure(figsize=(8, 6))
     y_metric_col = "episode_length"
     y_label = "Episode Duration (steps)"
     plot_order_filtered = [label for label in PLOT_ORDER if label in results_df['agent_label'].unique()]
 
-    # Barplot with error bars (mean and standard error)
-    ax = sns.barplot(
-        x="agent_label",
-        y=y_metric_col,
-        data=results_df,
-        order=plot_order_filtered,
-        errorbar="se",
-        capsize=0.15,
-        palette="muted",
-        errcolor="black",
-        errwidth=1.5
-    )
-    # Add a thin dashed red line at y=simulation_time
-    # if base_env_config is not None and "simulation_time" in base_env_config:
-    #     sim_time = base_env_config["simulation_time"]
-    #     ax.axhline(sim_time, color='red', linestyle='--', linewidth=1)
-    plt.xlabel("Agent/Algorithm", fontsize=9)
-    plt.ylabel(y_label, fontsize=9)
-    ax.tick_params(axis='x', labelsize=8, rotation=0)
-    ax.tick_params(axis='y', labelsize=8)
+    # --- NEW: Boxplot per agent, overlay per-seed means as black dots with white outline, and all episode durations as points ---
+    ax = plt.gca()
+    sns.boxplot(x="agent_label", y=y_metric_col, data=results_df, order=plot_order_filtered, ax=ax, palette="muted", showfliers=True)
+    # Overlay all individual episode durations as small black points
+    sns.stripplot(x="agent_label", y=y_metric_col, data=results_df, order=plot_order_filtered, ax=ax, color='black', alpha=0.7, jitter=0.25, size=3, zorder=5)
+    # Overlay per-seed means as large black dots with white outline
+    grouped = results_df.groupby(['agent_label', 'train_seed'])[y_metric_col].mean().reset_index()
+    for i, agent in enumerate(plot_order_filtered):
+        means = grouped[grouped['agent_label'] == agent][y_metric_col].values
+        ax.scatter([i]*len(means), means, color='black', s=120, zorder=10, marker='o', edgecolor='white', linewidth=2, label=None)
+    # Add legend entry for per-seed mean dots
+    # ax.scatter([], [], color='black', s=120, label='Per-seed Mean', edgecolor='white', linewidth=2)
+    # ax.legend(fontsize=13)
+    plt.xlabel("Algorithm", fontsize=13)
+    plt.ylabel(y_label, fontsize=13)
+    ax.tick_params(axis='x', labelsize=11, rotation=0)
+    ax.tick_params(axis='y', labelsize=11)
     plt.tight_layout(pad=0.5)
-    # Barplot style: Bars show mean ± standard error across all episodes from 3 training seeds.
-    # NeurIPS-style caption (for your paper/figure legend):
-    # Figure 4: Episode durations across agents. Each point is the result of one evaluation episode. Boxes show the interquartile range and median across all seeds and episodes. Large dots show the mean for each training seed. This reveals variance in agent behavior and robustness across training seeds.
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     figure_filename = f"figure4_algo_comparison_{timestamp}.pdf"
     figure_path = os.path.join(args.output_dir, figure_filename)
     plt.savefig(figure_path, bbox_inches='tight')
     plt.close()
     print(f"Figure saved to {figure_path}")
+
+    # --- Bar plot: Mean and 95% bootstrapped CI for each algorithm ---
+    means = []
+    ci_lows = []
+    ci_highs = []
+    n_boot = 10000 # Standard number of bootstrap samples
+    rng = np.random.default_rng(args.eval_seed) # Use a consistent RNG seed from args
+
+    for label in plot_order_filtered: # plot_order_filtered is from figure4.py context
+        data = results_df[results_df['agent_label'] == label][y_metric_col].values
+        mean = np.mean(data)
+        if len(data) > 1:
+            boot_means = rng.choice(data, size=(n_boot, len(data)), replace=True).mean(axis=1)
+            ci_low_val = np.percentile(boot_means, 2.5)
+            ci_high_val = np.percentile(boot_means, 97.5)
+        else: 
+            ci_low_val = ci_high_val = mean
+        means.append(mean)
+        ci_lows.append(mean - ci_low_val)
+        ci_highs.append(ci_high_val - mean)
+
+    plt.figure(figsize=(8, 5)) # New figure for the bar plot
+    bar_x = np.arange(len(plot_order_filtered))
+    plt.bar(bar_x, means, yerr=[ci_lows, ci_highs], capsize=8,
+            color=sns.color_palette("muted", n_colors=len(plot_order_filtered)), 
+            edgecolor='black', linewidth=1.5)
+    
+    wrapped_bar_labels = ["\n".join(wrap(l, 12)) for l in plot_order_filtered] # Wrap labels
+    plt.xticks(bar_x, wrapped_bar_labels, rotation=0, fontsize=11)
+    plt.ylabel("Mean Episode Duration", fontsize=13) # Consistent y-axis label
+    plt.xlabel("Algorithm", fontsize=13) # Consistent x-axis label
+    plt.tight_layout(pad=0.5)
+
+    # Use the same timestamp as the previous plot or generate a new one if preferred
+    bar_figure_filename = f"figure4_bar_means_algo_comparison_{timestamp}.pdf" 
+    bar_figure_path = os.path.join(args.output_dir, bar_figure_filename)
+    plt.savefig(bar_figure_path, bbox_inches='tight')
+    plt.close() # Close the bar plot figure
+    print(f"Bar plot of means and 95% CI saved to {bar_figure_path}")
+
+    # --- Simplified Statistical Table: Cliff's d and Effect Size only ---
+    effect_map = {
+        'negligible effect': 'n.s.',
+        'small effect': 'S',
+        'medium effect': 'M',
+        'large effect': 'L'
+    }
+    agents_to_compare = ["PPO", "SAC", "A2C"]
+    baselines = ["Random", "Stationary", "Greedy"]
+    print("\nStatistical Comparison Table (per-seed means):")
+    print("| Comparison        | Cliff's d | Agent Mean | Baseline Mean | Mean Diff | Effect Size |")
+    print("| ----------------- | --------- | ---------- | ------------- | --------- | ----------- |")
+    for agent in agents_to_compare:
+        for baseline in baselines:
+            agent_means = grouped[grouped['agent_label'] == agent][y_metric_col].values
+            baseline_means = grouped[grouped['agent_label'] == baseline][y_metric_col].values
+            if len(agent_means) > 0 and len(baseline_means) > 0:
+                d, _ = cliffs_delta.cliffs_delta(agent_means, baseline_means)
+                abs_d = abs(d)
+                if abs_d < 0.147:
+                    effect = 'negligible effect'
+                elif abs_d < 0.33:
+                    effect = 'small effect'
+                elif abs_d < 0.474:
+                    effect = 'medium effect'
+                else:
+                    effect = 'large effect'
+                effect_label = effect_map[effect]
+                agent_mean = np.mean(agent_means)
+                baseline_mean = np.mean(baseline_means)
+                mean_diff = agent_mean - baseline_mean
+                print(f"| {agent} vs {baseline:<11} | {d:>9.2f} | {agent_mean:>10.2f} | {baseline_mean:>13.2f} | {mean_diff:>9.2f} | {effect_label:>11} |")
+    print("\nEffect size interpretation: n.s. = negligible, S = small, M = medium, L = large. Results use per-seed means (n=3).\n")
+    print("Due to the small number of seeds (n=3), confidence intervals and significance tests are not reported. Cliff's d and mean differences are provided for effect size interpretation only.\n")
+
+    # --- Directional Mann-Whitney U test section: one-sided test in direction of higher mean, Bonferroni correction, and directional advantage field ---
+    print("\nPairwise Mann–Whitney U Test Results (Raw + Bonferroni-corrected, Directional)")
+    from scipy.stats import mannwhitneyu
+    import itertools
+    import statsmodels.stats.multitest as smm
+
+    def significance_stars(p):
+        if p < 0.001: return '***'
+        elif p < 0.01: return '**'
+        elif p < 0.05: return '*'
+        return 'n.s.'
+
+    # Collect all episode lengths for each agent (across all seeds and runs)
+    agents = [label for label in PLOT_ORDER if label in results_df['agent_label'].unique()]
+    agent_data = {agent: results_df[results_df["agent_label"] == agent]["episode_length"].values for agent in agents}
+
+    # All pairwise comparisons
+    comparisons = list(itertools.combinations(agents, 2))
+    comparison_results = []
+    raw_pvals_one_sided = []
+
+    for a1, a2 in comparisons:
+        data1 = agent_data[a1]
+        data2 = agent_data[a2]
+        mean1 = np.mean(data1)
+        mean2 = np.mean(data2)
+
+        # Two-sided test
+        _, p_two = mannwhitneyu(data1, data2, alternative='two-sided')
+
+        # One-sided test in direction of higher mean
+        if mean1 > mean2:
+            _, p_one = mannwhitneyu(data1, data2, alternative='greater')
+            direction = a1
+        elif mean2 > mean1:
+            _, p_one = mannwhitneyu(data2, data1, alternative='greater')
+            direction = a2
+        else:
+            p_one = 1.0
+            direction = "--"
+
+        raw_pvals_one_sided.append(p_one)
+
+        comparison_results.append({
+            "Agent A": a1,
+            "Agent B": a2,
+            "p_two_raw": p_two,
+            "p_one_raw": p_one,
+            "Direction": direction
+        })
+
+    # Bonferroni correction on relevant one-sided tests
+    _, pvals_one_corr, _, _ = smm.multipletests(raw_pvals_one_sided, alpha=0.05, method="bonferroni")
+
+    # Add corrected p-values and stars
+    for i, row in enumerate(comparison_results):
+        row["p_one_corr"] = pvals_one_corr[i]
+        row["sig_two"] = significance_stars(row["p_two_raw"])
+        row["sig_one"] = significance_stars(pvals_one_corr[i])
+        # If not significant in one-sided test, nullify the directional advantage
+        if row["sig_one"] == "n.s.":
+            row["Direction"] = "--"
+
+    # Print NeurIPS-grade table with directional advantage
+    print("{:<12} {:<12} {:<12} {:<12} {:<8} {:<12} {:<8} {:<20}".format(
+        "Agent A", "Agent B", "p (2-sided)", "p (1-sided)", "Sig (2)", "p (1) Corr", "Sig (1)", "Directional Advantage"
+    ))
+    print("-" * 100)
+    for row in comparison_results:
+        print("{:<12} {:<12} {:<12.4g} {:<12.4g} {:<8} {:<12.4g} {:<8} {:<20}".format(
+            row["Agent A"], row["Agent B"], row["p_two_raw"], row["p_one_raw"], row["sig_two"],
+            row["p_one_corr"], row["sig_one"], row["Direction"]
+        ))
 
     # Load all logs
     all_logs = []
