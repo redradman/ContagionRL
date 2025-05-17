@@ -13,7 +13,8 @@ from tqdm import tqdm
 from typing import Dict, List, Any, Tuple, Optional
 from scipy import stats
 import statsmodels.stats.multitest as smm
-import cliffs_delta
+from scipy.stats import mannwhitneyu
+from statsmodels.stats.multitest import multipletests
 
 # Add the parent directory to the path to access project modules
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -103,7 +104,7 @@ def main():
     for beta_value in BETA_VALUES:
         beta_label = BETA_LABELS[beta_value]
         beta_str_for_name = str(beta_value).replace('.', 'p')
-        model_base_name_for_beta = f"{args.model_base_prefix}{beta_str_for_name}"
+        model_base_name_for_beta = f"{args.model_base_prefix}_beta{beta_str_for_name}"
         print(f"Processing models for {beta_label}")
         for train_seed in tqdm(train_seeds, desc=f"Models for {beta_label}"):
             model_dir_name = f"{model_base_name_for_beta}_seed{train_seed}"
@@ -236,7 +237,7 @@ def main():
     found_config = False
     for beta_value in BETA_VALUES:
         beta_str_for_name = str(beta_value).replace('.', 'p')
-        model_base_name_for_beta = f"{args.model_base_prefix}{beta_str_for_name}"
+        model_base_name_for_beta = f"{args.model_base_prefix}_beta{beta_str_for_name}"
         for train_seed in train_seeds:
             model_dir_name = f"{model_base_name_for_beta}_seed{train_seed}"
             model_path = os.path.join("logs", model_dir_name, "best_model.zip")
@@ -258,6 +259,93 @@ def main():
 
     agent_order = ['Stationary', 'Random', 'Trained', 'Greedy']
     beta_order = sorted(results_df['beta_value'].unique())
+
+    # --- Mann-Whitney U Tests: Trained vs Baselines for each Beta ---
+    for beta in beta_order: # beta_order should be defined before this loop
+        print(f"\nOne-Sided Mann–Whitney U Test Results (Beta = {beta}):")
+        comparisons = []
+        raw_pvals_one = []
+        
+        trained_data_series = results_df[(results_df['beta_value'] == beta) & (results_df['agent_type'] == 'Trained')]['episode_length']
+        
+        for baseline_agent_type in ['Stationary', 'Random', 'Greedy']:
+            baseline_data_series = results_df[(results_df['beta_value'] == beta) & (results_df['agent_type'] == baseline_agent_type)]['episode_length']
+
+            # Initialize metrics with NaN in case of missing data
+            p_two, p_one, mean_t, mean_b = np.nan, np.nan, np.nan, np.nan
+            winner = "--"
+
+            if trained_data_series.empty or baseline_data_series.empty:
+                print(f"Skipping {baseline_agent_type} for Beta = {beta} due to missing data for 'Trained' or '{baseline_agent_type}'.")
+                mean_t = trained_data_series.mean() if not trained_data_series.empty else np.nan
+                mean_b = baseline_data_series.mean() if not baseline_data_series.empty else np.nan
+            else:
+                mean_t, mean_b = trained_data_series.mean(), baseline_data_series.mean()
+                p_two = mannwhitneyu(trained_data_series, baseline_data_series, alternative='two-sided').pvalue
+                if mean_t > mean_b:
+                    p_one = mannwhitneyu(trained_data_series, baseline_data_series, alternative='greater').pvalue
+                    winner = 'Trained'
+                elif mean_b > mean_t: # Only if baseline mean is strictly greater
+                    p_one = mannwhitneyu(baseline_data_series, trained_data_series, alternative='greater').pvalue
+                    winner = baseline_agent_type
+                else: # Means are equal or one of the series was empty (already handled by initial NaNs)
+                    p_one = 1.0 # If means are equal, one-sided p-value is not straightforwardly < 0.05
+            
+            raw_pvals_one.append(p_one) # p_one will be np.nan if data was missing
+            comparisons.append({
+                "Baseline": baseline_agent_type,
+                "p_two": p_two,
+                "p_one_raw": p_one,
+                "mean_t": mean_t,
+                "mean_b": mean_b,
+                "winner_initial": winner # Store initial winner before significance check
+            })
+
+        # Bonferroni correction for the current beta group's one-sided tests
+        # Filter out NaNs for correction, then re-assign
+        valid_pvals_indices = [i for i, pval in enumerate(raw_pvals_one) if not np.isnan(pval)]
+        valid_pvals_to_correct = [raw_pvals_one[i] for i in valid_pvals_indices]
+        
+        corrected_pvals_subset = [np.nan] * len(valid_pvals_to_correct) # Default to NaN
+        if valid_pvals_to_correct: # Only run if there are valid p-values to correct
+            _, corrected_pvals_subset, _, _ = multipletests(valid_pvals_to_correct, alpha=0.05, method='bonferroni')
+
+        p_one_corr_full = [np.nan] * len(raw_pvals_one)
+        for i, original_idx in enumerate(valid_pvals_indices):
+            p_one_corr_full[original_idx] = corrected_pvals_subset[i]
+            
+        def stars(p_val):
+            if np.isnan(p_val): return "N/A"
+            return "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "n.s."
+
+        print("{:<12} {:<12} {:<12} {:<8} {:<12} {:<8} {:<10} {:<10}".format(
+            "Baseline", "p (2-sided)", "p (1-sided)", "Sig (2)", "p (1) Corr", "Sig (1)", "Winner", "Mean Diff"
+        ))
+        print("-" * 98)
+        for i, row_data in enumerate(comparisons):
+            row_data["p_one_corr"] = p_one_corr_full[i]
+            row_data["sig_two"] = stars(row_data["p_two"])
+            row_data["sig_one"] = stars(row_data["p_one_corr"])
+            
+            # Determine final winner based on corrected significant p-value
+            final_winner = row_data["winner_initial"]
+            if row_data["sig_one"] == "n.s." or row_data["sig_one"] == "N/A":
+                final_winner = "--"
+            
+            mean_diff = row_data["mean_t"] - row_data["mean_b"] if not (np.isnan(row_data["mean_t"]) or np.isnan(row_data["mean_b"])) else np.nan
+            
+            # Format numbers as strings for printing, handling NaNs
+            p2_str = f"{row_data['p_two']:.4g}" if not np.isnan(row_data['p_two']) else "N/A"
+            p1raw_str = f"{row_data['p_one_raw']:.4g}" if not np.isnan(row_data['p_one_raw']) else "N/A"
+            p1corr_str = f"{row_data['p_one_corr']:.4g}" if not np.isnan(row_data['p_one_corr']) else "N/A"
+            mdiff_str = f"{mean_diff:.2f}" if not np.isnan(mean_diff) else "N/A"
+
+            print("{:<12} {:<12} {:<12} {:<8} {:<12} {:<8} {:<10} {:<10}".format(
+                row_data["Baseline"], p2_str, p1raw_str, row_data["sig_two"],
+                p1corr_str, row_data["sig_one"], final_winner, mdiff_str
+            ))
+    # --- End of Mann-Whitney U Tests ---
+
     grouped = results_df.groupby(['beta_value', 'agent_type', 'model_train_seed'])['episode_length'].mean().reset_index()
 
     # --- BOOTSTRAP CI FUNCTION ---
@@ -318,49 +406,8 @@ def main():
     ax.legend(title="Agent Type", fontsize=9, title_fontsize=10, loc='center left', bbox_to_anchor=(1.02, 0.5), borderaxespad=0)
     plt.tight_layout(pad=0.5, rect=[0, 0, 0.85, 1])
 
-    # --- STATISTICAL ANNOTATIONS ---
-    # For each beta, compare Trained to each baseline using Cliff's delta
-    effect_map = {
-        'negligible effect': 'n.s.',
-        'small effect': 'S',
-        'medium effect': 'M',
-        'large effect': 'L'
-    }
-    summary_rows = []
-    for i, beta in enumerate(beta_order):
-        trained_group = grouped[(grouped['beta_value'] == beta) & (grouped['agent_type'] == 'Trained')]['episode_length'].values
-        for j, agent in enumerate(['Stationary', 'Random', 'Greedy']):
-            comp_group = grouped[(grouped['beta_value'] == beta) & (grouped['agent_type'] == agent)]['episode_length'].values
-            if len(trained_group) > 0 and len(comp_group) > 0:
-                d, _ = cliffs_delta.cliffs_delta(trained_group, comp_group)
-                abs_d = abs(d)
-                if abs_d < 0.147:
-                    effect = 'negligible effect'
-                elif abs_d < 0.33:
-                    effect = 'small effect'
-                elif abs_d < 0.474:
-                    effect = 'medium effect'
-                else:
-                    effect = 'large effect'
-                label = effect_map[effect]
-                bar_x = x[i] + (agent_order.index(agent) - (len(agent_order)-1)/2) * bar_width
-                # Find the correct bar height and error for this bar
-                bar_idx = agent_order.index(agent)
-                mean = bar_df[(bar_df['beta_value'] == beta) & (bar_df['agent_type'] == agent)]['mean_episode_length'].values
-                err = bar_df[(bar_df['beta_value'] == beta) & (bar_df['agent_type'] == agent)]['ci_high'].values
-                if len(mean) > 0 and len(err) > 0:
-                    bar_top = mean[0] + (err[0] - mean[0])
-                else:
-                    bar_top = max(np.mean(trained_group), np.mean(comp_group))
-                bar_y = bar_top + 8  # 8 units above the top of the error bar
-                ax.text(bar_x, bar_y, label, ha='center', va='bottom', fontsize=10, rotation=0)
-                summary_rows.append([str(beta), agent, f"{d:.2f}", effect])
-    # Print summary table
-    print("\nCliff's Delta Effect Size Summary (Trained vs Baselines):")
-    print("Beta\tBaseline\tCliff's d\tEffect Size")
-    for row in summary_rows:
-        print("\t".join(row))
-    # (Optional: explain abbreviations in caption/legend: L=Large, M=Medium, S=Small, n.s.=Negligible)
+    # --- STATISTICAL ANNOTATIONS REMOVED (Cliff's Delta) ---
+    # (The section calculating and printing Cliff's delta, and annotating the plot with it, is removed)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     figure_filename = f"figure3_grouped_bar_{timestamp}.pdf"
