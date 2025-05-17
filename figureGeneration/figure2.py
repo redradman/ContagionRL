@@ -14,6 +14,8 @@ from typing import Dict, List, Any, Optional
 from scipy import stats
 import statsmodels.stats.multitest as smm
 import cliffs_delta
+from scipy.stats import mannwhitneyu
+from textwrap import wrap
 
 # Add the parent directory to the path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -90,6 +92,7 @@ def main():
     parser.add_argument("--seeds", type=str, default="1,2,3", help="Comma-separated list of seeds for trained models (e.g., '1,2,3').")
     parser.add_argument("--output-dir", type=str, default="figures/", help="Directory to save the generated figures (default: figures/).")
     parser.add_argument("--eval-seed", type=int, default=2000, help="Base seed for evaluation runs (default: 2000).")
+    parser.add_argument("--aggregate-seeds", action="store_true", help="Aggregate episode lengths per seed before plotting.")
 
     args = parser.parse_args()
 
@@ -167,8 +170,12 @@ def main():
 
     results_df = pd.DataFrame(all_results_data)
 
+    # Optionally aggregate per-seed means only
+    if args.aggregate_seeds:
+        results_df = results_df.groupby(['reward_function_label', 'model_train_seed'])['episode_length'].mean().reset_index()
+
     # --- Plotting (Violin + Box Overlay + Stripplot) ---
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 6))
     y_metric_col = "episode_length"
     y_label = "Episode Duration (steps)"
     plot_order_filtered = [label for label in PLOT_ORDER if label in results_df['reward_function_label'].unique()]
@@ -176,8 +183,8 @@ def main():
     ax = sns.boxplot(
         x="reward_function_label", y=y_metric_col, data=results_df, order=plot_order_filtered,
         width=0.6, showfliers=False, saturation=1,
-        boxprops=dict(facecolor='none', edgecolor='black'),
-        medianprops=dict(color='black'), whiskerprops=dict(color='black'), capprops=dict(color='black')
+        boxprops=dict(facecolor='none', edgecolor='black', linewidth=2),
+        medianprops=dict(color='black', linewidth=2), whiskerprops=dict(color='black', linewidth=2), capprops=dict(color='black', linewidth=2)
     )
     sns.violinplot(
         x="reward_function_label", y=y_metric_col, data=results_df, order=plot_order_filtered,
@@ -186,7 +193,7 @@ def main():
     )
     sns.stripplot(
         x="reward_function_label", y=y_metric_col, data=results_df, order=plot_order_filtered,
-        color='black', alpha=0.3, jitter=0.2, size=3, ax=ax
+        color='black', alpha=0.3, jitter=0.2, size=5, ax=ax
     )
 
     # Overlay per-seed means as large black dots
@@ -194,53 +201,99 @@ def main():
         group = results_df[results_df['reward_function_label'] == reward_label]
         if 'model_train_seed' in group.columns:
             seed_means = group.groupby('model_train_seed')[y_metric_col].mean()
-            ax.scatter([i]*len(seed_means), seed_means, color='black', s=80, zorder=10, marker='o', edgecolor='white', linewidth=1.5, label=None)
+            ax.scatter([i]*len(seed_means), seed_means, color='black', s=120, zorder=10, marker='o', edgecolor='white', linewidth=2, label=None)
+    # Add legend entry for per-seed mean dots
+    ax.scatter([], [], color='black', s=120, label='Per-seed Mean', edgecolor='white', linewidth=2)
+    ax.legend(fontsize=13)
 
-    # --- Cliff's delta effect size annotations and summary table ---
+    # --- Directional Mann–Whitney U test vs. Potential Field (Table 1 style) ---
     ref_label = 'Potential Field'
-    ref_data = results_df[results_df['reward_function_label'] == ref_label]
-    ref_episodes = ref_data[y_metric_col].values
-    cat_pos = {cat: i for i, cat in enumerate(plot_order_filtered)}
+    comparisons = []
+    raw_one_sided_pvals = []
+
+    for reward_label in plot_order_filtered:
+        if reward_label == ref_label:
+            continue
+
+        data1 = results_df[results_df['reward_function_label'] == reward_label]['episode_length']
+        data2 = results_df[results_df['reward_function_label'] == ref_label]['episode_length']
+        mean1, mean2 = np.mean(data1), np.mean(data2)
+
+        # Two-sided test
+        _, p_two = mannwhitneyu(data1, data2, alternative='two-sided')
+
+        # Directional one-sided test
+        if mean1 > mean2:
+            _, p_one = mannwhitneyu(data1, data2, alternative='greater')
+            winner = reward_label
+        elif mean2 > mean1:
+            _, p_one = mannwhitneyu(data2, data1, alternative='greater')
+            winner = ref_label
+        else:
+            p_one = 1.0
+            winner = "--"
+
+        comparisons.append({
+            "Reward A": reward_label,
+            "Reward B": ref_label,
+            "p_two": p_two,
+            "p_one_raw": p_one,
+            "winner": winner
+        })
+        raw_one_sided_pvals.append(p_one)
+
+    # Apply Bonferroni correction
+    _, p_one_corr, _, _ = smm.multipletests(raw_one_sided_pvals, method='bonferroni')
+
+    # Add corrected values and significance
+    def stars(p): return "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "n.s."
+
+    for i, row in enumerate(comparisons):
+        row["p_one_corr"] = p_one_corr[i]
+        row["sig_two"] = stars(row["p_two"])
+        row["sig_one"] = stars(p_one_corr[i])
+        if row["sig_one"] == "n.s.":
+            row["winner"] = "--"
+
+    print("\nOne-Sided Mann–Whitney U Test Results (vs. Potential Field):")
+    print("{:<24} {:<20} {:<12} {:<12} {:<8} {:<12} {:<8} {:<20}".format(
+        "Reward A", "Reward B", "p (2-sided)", "p (1-sided)", "Sig (2)", "p (1) Corr", "Sig (1)", "Winner"
+    ))
+    print("-" * 112)
+    for row in comparisons:
+        print("{:<24} {:<20} {:<12.5g} {:<12.5g} {:<8} {:<12.5g} {:<8} {:<20}".format(
+            row['Reward A'], row['Reward B'], row["p_two"], row["p_one_raw"],
+            row["sig_two"], row["p_one_corr"], row["sig_one"], row["winner"]
+        ))
+
+    # --- Annotate the plot with significance stars from the one-sided tests ---
+    # Find y positions for annotation
     y_max = results_df[y_metric_col].max()
     y_min = results_df[y_metric_col].min()
     y_range = y_max - y_min
     increment = y_range * 0.08 if y_range > 1e-9 else 0.1 * abs(y_max) if abs(y_max) > 1e-9 else 0.1
     current_y = y_max + increment * 0.5
-    summary_rows = []
-    for reward_label in plot_order_filtered:
-        if reward_label == ref_label:
-            continue
-        compare_data = results_df[results_df['reward_function_label'] == reward_label]
-        compare_episodes = compare_data[y_metric_col].values
-        if len(ref_episodes) > 0 and len(compare_episodes) > 0:
-            d, _ = cliffs_delta.cliffs_delta(compare_episodes, ref_episodes)
-            abs_d = abs(d)
-            if abs_d < 0.147:
-                effect = 'negligible effect'
-            elif abs_d < 0.33:
-                effect = 'small effect'
-            elif abs_d < 0.474:
-                effect = 'medium effect'
-            else:
-                effect = 'large effect'
-            pos1 = cat_pos[ref_label]
-            pos2 = cat_pos[reward_label]
-            if effect != 'negligible effect':
-                line_x = [pos1, pos1, pos2, pos2]
-                line_y = [current_y, current_y + increment * 0.2, current_y + increment * 0.2, current_y]
-                ax.plot(line_x, line_y, lw=1.0, c='black')
-                text_x = (pos1 + pos2) / 2
-                text_y = current_y + increment * 0.25
-                ax.text(text_x, text_y, effect, ha='center', va='bottom', fontsize=8)
-                current_y += increment
-            summary_rows.append([reward_label, f"{d:.2f}", effect])
+    cat_pos = {cat: i for i, cat in enumerate(plot_order_filtered)}
+    annotation_idx = 0
+    for row in comparisons:
+        if row['sig_one'] in ('*', '**', '***'):
+            pos1 = cat_pos[row['Reward A']]
+            pos2 = cat_pos[row['Reward B']]
+            line_x = [pos1, pos1, pos2, pos2]
+            line_y = [current_y, current_y + increment * 0.2, current_y + increment * 0.2, current_y]
+            ax.plot(line_x, line_y, lw=1.0, c='black')
+            text_x = (pos1 + pos2) / 2
+            text_y = current_y + increment * 0.45 + annotation_idx * 0.08
+            ax.text(text_x, text_y, row['sig_one'], rotation=0, ha='center', fontsize=13)
+            annotation_idx += 1
+            current_y += increment
     if len(plot_order_filtered) > 1:
         ax.set_ylim(top=current_y + increment * 0.2)
 
-    plt.xlabel("Reward Function", fontsize=9)
-    plt.ylabel(y_label, fontsize=9)
-    ax.tick_params(axis='x', labelsize=8, rotation=0)
-    ax.tick_params(axis='y', labelsize=8)
+    plt.xlabel("Reward Function", fontsize=16)
+    plt.ylabel(y_label, fontsize=16)
+    ax.tick_params(axis='x', labelsize=13, rotation=0)
+    ax.tick_params(axis='y', labelsize=13)
     plt.tight_layout(pad=0.5)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     figure_filename = f"figure2_reward_comparison_{timestamp}.pdf"
@@ -248,15 +301,51 @@ def main():
     plt.savefig(figure_path, bbox_inches='tight')
     plt.close()
     print(f"Figure saved to {figure_path}")
+
+    # --- Bar plot: Mean and 95% bootstrapped CI for each reward function ---
+    means = []
+    ci_lows = []
+    ci_highs = []
+    n_boot = 10000 # Standard number of bootstrap samples
+    rng = np.random.default_rng(args.eval_seed) # Use a consistent RNG seed
+
+    for label in plot_order_filtered: # plot_order_filtered should be from figure2.py context
+        data = results_df[results_df['reward_function_label'] == label][y_metric_col].values
+        mean = np.mean(data)
+        if len(data) > 1:
+            # Generate bootstrap samples of means
+            boot_means = rng.choice(data, size=(n_boot, len(data)), replace=True).mean(axis=1)
+            # Calculate 2.5th and 97.5th percentiles for 95% CI
+            ci_low_val = np.percentile(boot_means, 2.5)
+            ci_high_val = np.percentile(boot_means, 97.5)
+        else: # Handle cases with insufficient data for CI
+            ci_low_val = ci_high_val = mean
+        means.append(mean)
+        ci_lows.append(mean - ci_low_val) # Error bar length from mean to lower CI bound
+        ci_highs.append(ci_high_val - mean) # Error bar length from mean to upper CI bound
+
+    plt.figure(figsize=(10, 5)) # New figure for the bar plot
+    bar_x = np.arange(len(plot_order_filtered))
+    plt.bar(bar_x, means, yerr=[ci_lows, ci_highs], capsize=8,
+            color=sns.color_palette("muted", n_colors=len(plot_order_filtered)), 
+            edgecolor='black', linewidth=1.5)
+    
+    wrapped_bar_labels = ["\n".join(wrap(l, 15)) for l in plot_order_filtered] # Wrap labels
+    plt.xticks(bar_x, wrapped_bar_labels, rotation=0, fontsize=11)
+    plt.ylabel("Mean Episode Duration", fontsize=13)
+    plt.xlabel("Reward Function", fontsize=13)
+    plt.tight_layout(pad=0.5)
+
+    bar_figure_filename = f"figure2_bar_means_{timestamp}.pdf" # Use the same timestamp or a new one
+    bar_figure_path = os.path.join(args.output_dir, bar_figure_filename)
+    plt.savefig(bar_figure_path, bbox_inches='tight')
+    plt.close() # Close the bar plot figure
+    print(f"Bar plot of means and 95% CI saved to {bar_figure_path}")
+
     csv_filename = f"figure2_data_{timestamp}.csv"
     csv_path = os.path.join(args.output_dir, csv_filename)
     results_df.to_csv(csv_path, index=False)
     print(f"Aggregated data saved to {csv_path}")
-    # Print summary table
-    print("\nCliff's Delta Effect Size Summary (vs. Potential Field):")
-    print("Reward\tCliff's d\tEffect Size")
-    for row in summary_rows:
-        print("\t".join(row))
 
 if __name__ == "__main__":
     main() 
