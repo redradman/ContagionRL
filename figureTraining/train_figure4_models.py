@@ -50,7 +50,6 @@ ppo_config = {
     "ent_coef": 0.02,
     "normalize_advantage": True,
     "total_timesteps": 8_000_000,
-    # "total_timesteps": 10_000,
     "n_envs": 4
 }
 
@@ -72,7 +71,6 @@ sac_config = {
     "ent_coef": "auto",
     "gamma": 0.96,
     "total_timesteps": 8_000_000,
-    # "total_timesteps": 10_000,
     "n_envs": 4,
 }
 
