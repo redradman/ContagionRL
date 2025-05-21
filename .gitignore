@@ -1,3 +1,4 @@
+results/r_plots/
 trained_model_videos/
 logs/
 *.ipynb
