@@ -5,8 +5,8 @@ import math
 from utils import STATE_DICT, MovementHandler, Human
 import matplotlib.pyplot as plt
 
-######## SIRS Environment class ########
-class SIRSEnvironment(gym.Env):
+######## SIRS+D Environment class ########
+class SIRSDEnvironment(gym.Env):
     metadata = {
         "render_modes": ["rgb_array"],
         "render_fps": 10,

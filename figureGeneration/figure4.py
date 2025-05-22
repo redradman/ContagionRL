@@ -23,7 +23,7 @@ sns.set_style("whitegrid")
 
 # Add the parent directory to the path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from environment import SIRSEnvironment
+from environment import SIRSDEnvironment
 
 class FlattenObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
@@ -32,10 +32,10 @@ class FlattenObservationWrapper(gym.ObservationWrapper):
     def observation(self, observation):
         return gym.spaces.flatten(self.env.observation_space, observation)
 
-def create_env_for_algo(env_config: dict, seed: int, algo: str) -> SIRSEnvironment:
+def create_env_for_algo(env_config: dict, seed: int, algo: str) -> SIRSDEnvironment:
     config = env_config.copy()
     config["render_mode"] = None
-    env = SIRSEnvironment(**config)
+    env = SIRSDEnvironment(**config)
     env.reset(seed=seed)
     if algo in ["sac", "a2c"]:
         env = FlattenObservationWrapper(env)

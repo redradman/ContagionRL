@@ -6,12 +6,12 @@ import numpy as np
 
 # Add the parent directory to the path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from environment import SIRSEnvironment
+from environment import SIRSDEnvironment
 from config import env_config
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Render a single frame from SIRSEnvironment and save as PDF.")
+    parser = argparse.ArgumentParser(description="Render a single frame from SIRSDEnvironment and save as PDF.")
     parser.add_argument(
         "--output",
         type=str,
@@ -31,7 +31,7 @@ def main():
     config["render_mode"] = "rgb_array"
 
     # Create environment
-    env = SIRSEnvironment(**config)
+    env = SIRSDEnvironment(**config)
     env.reset(seed=args.seed)
 
     # Take a few random steps to populate the environment with more state diversity

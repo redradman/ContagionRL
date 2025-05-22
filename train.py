@@ -13,7 +13,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback,
 import wandb
 from wandb.integration.sb3 import WandbCallback
 import imageio
-from environment import SIRSEnvironment
+from environment import SIRSDEnvironment
 from config import env_config, ppo_config, save_config
 
 # Add entropy coefficient scheduler
@@ -75,7 +75,7 @@ def set_global_seeds(seed: int) -> None:
         torch.backends.cudnn.benchmark = False
     
     # Set environment action space seed
-    # This will be handled by SIRSEnvironment.reset(seed=seed)
+    # This will be handled by SIRSDEnvironment.reset(seed=seed)
     
     print(f"Set global seed to: {seed}")
 
@@ -132,20 +132,20 @@ class VideoRecorderCallback(BaseCallback):
 
 def make_env(env_config_dict: Dict[str, Any], seed: int = 0) -> Callable:
     """Create a wrapped, monitored SIRS environment."""
-    def _init() -> SIRSEnvironment:
-        env = SIRSEnvironment(**env_config_dict)
+    def _init() -> SIRSDEnvironment:
+        env = SIRSDEnvironment(**env_config_dict)
         env.reset(seed=seed)
         return env
     return _init
 
-def make_eval_env(env_config_dict: Dict[str, Any], seed: int = 0, record_video: bool = False) -> SIRSEnvironment:
+def make_eval_env(env_config_dict: Dict[str, Any], seed: int = 0, record_video: bool = False) -> SIRSDEnvironment:
     """Create an evaluation environment with rendering enabled only if record_video is True."""
     eval_config = env_config_dict.copy()
     if record_video:
         eval_config["render_mode"] = "rgb_array"
     else:
         eval_config["render_mode"] = None
-    env = SIRSEnvironment(**eval_config)
+    env = SIRSDEnvironment(**eval_config)
     env.reset(seed=seed)
     return env
 

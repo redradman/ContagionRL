@@ -17,7 +17,7 @@ from scipy.stats import mannwhitneyu
 
 # Add the parent directory to the path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from environment import SIRSEnvironment
+from environment import SIRSDEnvironment
 
 # tueplots styling
 from tueplots import bundles
@@ -49,14 +49,14 @@ def load_model_config(model_path: str) -> Dict[str, Any]:
         config = json.load(f)
     return config
 
-def create_env_from_config(env_config_dict: Dict[str, Any], seed: Optional[int] = None) -> SIRSEnvironment:
+def create_env_from_config(env_config_dict: Dict[str, Any], seed: Optional[int] = None) -> SIRSDEnvironment:
     config_copy = env_config_dict.copy()
     config_copy["render_mode"] = None
-    env = SIRSEnvironment(**config_copy)
+    env = SIRSDEnvironment(**config_copy)
     env.reset(seed=seed)
     return env
 
-def run_evaluation_episodes(env: SIRSEnvironment, model: PPO, num_episodes: int, base_eval_seed: int) -> List[int]:
+def run_evaluation_episodes(env: SIRSDEnvironment, model: PPO, num_episodes: int, base_eval_seed: int) -> List[int]:
     episode_lengths = []
     for i in range(num_episodes):
         eval_seed_for_run = base_eval_seed + i

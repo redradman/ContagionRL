@@ -19,7 +19,7 @@ sys.path.append(PROJECT_ROOT)
 from config import env_config as global_env_config_template
 from config import ppo_config as global_ppo_config_template
 from config import save_config as global_save_config_template
-from environment import SIRSEnvironment
+from environment import SIRSDEnvironment
 
 SEEDS_FOR_TRAINING = [1, 2, 3]
 ABLATION_VARIANTS = [
@@ -39,7 +39,7 @@ def make_env_for_ablation(env_config, seed):
     config = copy.deepcopy(env_config)
     config["render_mode"] = None
     def _init():
-        env = SIRSEnvironment(**config)
+        env = SIRSDEnvironment(**config)
         env.reset(seed=seed)
         return env
     return _init

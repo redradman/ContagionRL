@@ -3,7 +3,7 @@ import argparse
 import json
 from stable_baselines3 import PPO
 import imageio
-from environment import SIRSEnvironment
+from environment import SIRSDEnvironment
 import numpy as np
 
 def load_config(model_path: str = None, config_path: str = None):
@@ -113,7 +113,7 @@ def main(args):
     env_config["render_mode"] = "rgb_array"
     
     # Create the environment
-    env = SIRSEnvironment(**env_config)
+    env = SIRSDEnvironment(**env_config)
     
     # Load the model if not using random actions
     model = None

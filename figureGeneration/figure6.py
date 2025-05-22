@@ -20,7 +20,7 @@ from textwrap import wrap
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
-from environment import SIRSEnvironment, Human
+from environment import SIRSDEnvironment, Human
 
 # tueplots styling
 from tueplots import bundles
@@ -48,15 +48,15 @@ def load_model_config(model_path: str) -> Dict[str, Any]:
         config = json.load(f)
     return config
 
-def create_env_from_config(env_config_dict: Dict[str, Any], seed: Optional[int] = None) -> SIRSEnvironment:
+def create_env_from_config(env_config_dict: Dict[str, Any], seed: Optional[int] = None) -> SIRSDEnvironment:
     config_copy = env_config_dict.copy()
     config_copy["render_mode"] = None
-    env = SIRSEnvironment(**config_copy)
+    env = SIRSDEnvironment(**config_copy)
     env.reset(seed=seed)
     return env
 
 def run_evaluation_episodes_for_metrics(
-    env: SIRSEnvironment, 
+    env: SIRSDEnvironment, 
     model: PPO, 
     num_episodes: int,
     base_eval_seed: int 

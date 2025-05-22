@@ -17,7 +17,7 @@ from textwrap import wrap
 
 # Add the parent directory to the path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from environment import SIRSEnvironment
+from environment import SIRSDEnvironment
 # utils.Human and utils.STATE_DICT are not directly needed here if only running pre-trained models
 
 # tueplots styling
@@ -54,16 +54,16 @@ def load_model_config(model_path: str) -> Dict[str, Any]:
         config = json.load(f)
     return config
 
-def create_env_from_config(env_config_dict: Dict[str, Any], seed: Optional[int] = None) -> SIRSEnvironment:
+def create_env_from_config(env_config_dict: Dict[str, Any], seed: Optional[int] = None) -> SIRSDEnvironment:
     """Create a SIRS environment from a configuration dictionary."""
     config_copy = env_config_dict.copy()
     config_copy["render_mode"] = None # Ensure no rendering during benchmark
-    env = SIRSEnvironment(**config_copy)
+    env = SIRSDEnvironment(**config_copy)
     env.reset(seed=seed)
     return env
 
 def run_evaluation_episodes(
-    env: SIRSEnvironment, 
+    env: SIRSDEnvironment, 
     model: PPO, 
     num_episodes: int,
     base_eval_seed: int 

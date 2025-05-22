@@ -16,7 +16,7 @@ import statsmodels.stats.multitest as smm
 
 # Add the parent directory to the path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from environment import SIRSEnvironment
+from environment import SIRSDEnvironment
 from utils import Human, STATE_DICT # For Greedy Agent & STATE_DICT usage
 
 # tueplots styling
@@ -56,17 +56,17 @@ def load_model_config(model_path: str) -> Dict[str, Any]:
         config = json.load(f)
     return config
 
-def create_env_from_config(env_config_dict: Dict[str, Any], seed: Optional[int] = None) -> SIRSEnvironment:
+def create_env_from_config(env_config_dict: Dict[str, Any], seed: Optional[int] = None) -> SIRSDEnvironment:
     """Create a SIRS environment from a configuration dictionary."""
     config_copy = env_config_dict.copy()
     # Ensure render_mode is None for benchmark runs
     config_copy["render_mode"] = None
-    env = SIRSEnvironment(**config_copy)
+    env = SIRSDEnvironment(**config_copy)
     env.reset(seed=seed)
     return env
 
 def run_single_episode(
-    env: SIRSEnvironment, 
+    env: SIRSDEnvironment, 
     agent_type: str, 
     model: Optional[PPO] = None, 
     eval_seed: Optional[int] = None
@@ -144,7 +144,7 @@ def run_single_episode(
     return cumulative_reward, episode_length
 
 def collect_episode_data(
-    env: SIRSEnvironment,
+    env: SIRSDEnvironment,
     agent_type: str,
     num_runs: int,
     model: Optional[PPO] = None,
