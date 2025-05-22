@@ -1,145 +1,142 @@
-# ContagionRL
-SIRS model and RL agent research
-
-## Usage Guide
-
-### Training (train.py)
-
-Train a new agent with default settings:
+# ContagionRL: A Flexible Platform for Learning in Different Spatial Epidemic Environments
+Welcome to ContagionRL, a flexible platform designed for reinforcement learning in different spatial epidemic environments. ContagionRL is a Gymnasium-compatible environment that unifies compartmental epidemiology and agent-based modeling (ABM).
+# Requirements
+Create an environment with [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html): 
 ```bash
-python train.py
+conda create --name ContagionRL python=3.13.1
 ```
 
-Common training options:
-```bash
-# Add experiment name prefix to the logs
-python train.py --exp-name my_experiment
-
-# Enable Weights & Biases logging
-python train.py --use-wandb
-
-# Use a custom config file
-python train.py --config my_config.py
-
-# Set a specific random seed for reproducibility
-python train.py --seed 12345
+Activate the environment: 
+```
+conda activate ContagionRL
 ```
 
-#### Reproducibility
+Install the dependencies: 
+```bash 
+pip install -r requirements.txt
+```
+### Licenses
+All of the libraries listed below are used in the ContagionRL paper and their respective licenses and their usage.
 
-For reproducible experiments, use the `--seed` argument to set a specific random seed:
+| Library           | Version | Purpose                                         | License                          |
+| ----------------- | ------- | ----------------------------------------------- | -------------------------------- |
+| gymnasium         | 1.0.0   | Toolkit for reinforcement learning environments | MIT License                      |
+| imageio[ffmpeg]   | 2.37.0  | Image and video I/O library                     | BSD 2-Clause                     |
+| matplotlib        | 3.10.3  | Comprehensive plotting library                  | Matplotlib License (BSD-based)   |
+| numpy             | 2.2.6   | Core numerical computing library                | BSD 3-Clause                     |
+| pandas            | 2.2.3   | Data manipulation and analysis                  | BSD 3-Clause                     |
+| scipy             | 1.15.3  | Advanced scientific computations                | BSD 3-Clause                     |
+| seaborn           | 0.13.2  | Statistical data visualization                  | BSD 3-Clause                     |
+| stable_baselines3 | 2.5.0   | Reinforcement learning algorithms               | MIT License                      |
+| statsmodels       | 0.14.4  | Statistical modeling and testing                | BSD 3-Clause                     |
+| torch             | 2.6.0   | Deep learning framework                         | BSD 3-Clause                     |
+| tqdm              | 4.67.1  | Progress bar utility                            | MPL 2.0 (Mozilla Public License) |
+| tueplots          | 0.2.0   | Publication-style plotting presets              | MIT License                      |
 
-```bash
-python train.py --seed 12345
+# SIRS+D Environment 
+The SIRS+D environment can be found as `SIRSDEnvironment` in `environment.py` file. `SIRSDEnvironment` can be used directly or using registered version with `gym.make`. The `env_config` corresponds to the environmental parameters in Table 3 of the paper.
+
+The `SIRSDEnvironment` can be used in the default epidemic scenario as follows:
+```python 
+from environment import SIRSDEnvironment
+env = SIRSDEnvironment()
 ```
 
-This ensures consistent results across runs by:
-- Setting global random seeds (Python's random module, NumPy, PyTorch)
-- Using sequential seeds derived from the base seed for vectorized environments
-- Storing the seed value in configuration files and model metadata
-- Including the seed in the run name when not using the default seed (42)
+Critically, to support an extensive range of epidemics, it could be configured and parameterized: 
+```python
+from environment import SIRSDEnvironment
 
-Without specifying a seed, each run will have different random initializations.
+env_config = {
+	"simulation_time": 512,
+	"grid_size": 50, 
+	"n_humans": 40,
+	"n_infected": 10,
+	"beta": 0.5,
+	"initial_agent_adherence": 0, 
+	"distance_decay": 0.3,
+	"lethality": 0,
+	"immunity_loss_prob": 0.25,
+	"recovery_rate": 0.1,
+	"adherence_penalty_factor": 1,
+	"adherence_effectiveness": 0.2,
+	"movement_type": "continuous_random",
+	"movement_scale": 1,
+	"visibility_radius": -1, 
+	"reinfection_count": 5,
+	"safe_distance": 10,
+	"init_agent_distance": 5,
+	"max_distance_for_beta_calculation": 10,
+	"reward_type": "potential_field",
+	"reward_ablation": "full",
+	"render_mode": None
+}
 
-### Weights & Biases Integration
-
-Track your training experiments with Weights & Biases:
-
-```bash
-# Basic wandb usage
-python train.py --use-wandb
-
-# Use offline mode to avoid timeout issues
-python train.py --use-wandb --wandb-offline
+env = SIRSDEnvironment(**env_config)
 ```
 
-#### Offline Mode
 
-If you encounter timeout issues with wandb, use offline mode to store data locally:
+Alternatively, it is also possible to use the registered form of environment directly from `gymnasium`: 
+```python
+import registerSIRSD # handles the registeration of SIRSDEnvironment
+import gymnasium as gym
 
-```bash
-python train.py --use-wandb --wandb-offline
+env_config = {
+	"simulation_time": 512,
+	"grid_size": 50, 
+	"n_humans": 40,
+	"n_infected": 10,
+	"beta": 0.5,
+	"initial_agent_adherence": 0, 
+	"distance_decay": 0.3,
+	"lethality": 0,
+	"immunity_loss_prob": 0.25,
+	"recovery_rate": 0.1,
+	"adherence_penalty_factor": 1,
+	"adherence_effectiveness": 0.2,
+	"movement_type": "continuous_random",
+	"movement_scale": 1,
+	"visibility_radius": -1, 
+	"reinfection_count": 5,
+	"safe_distance": 10,
+	"init_agent_distance": 5,
+	"max_distance_for_beta_calculation": 10,
+	"reward_type": "potential_field",
+	"reward_ablation": "full",
+	"render_mode": None
+}
+
+env = gym.make('SIRSD-v0', **env_config)
 ```
 
-This stores all data in the `wandb/` directory without requiring an internet connection during training.
 
-#### Syncing Offline Runs
+# Results
+To regenerate our data, figures and tables in the results or additional experiments follow the instructions here. The table below shows a grouping of the figures and tables in our paper. The figures are grouped by topic (and the script `figureX.py` where `X` is an integer) that produces them. 
 
-After training with offline mode, sync your data to the wandb servers:
+| Group Name                                                            | Supporting Figures and Tables | Figure Training Script    | Figure Generation Script |
+| :-------------------------------------------------------------------- | :---------------------------- | :------------------------ | :----------------------- |
+| **Comparison of Reinforcement Learning Algorithms Performance**       | Figure 1, Figure 6, Table 2   | `train_figure4_models.py` | `figure4.py`             |
+| **Comparison of Reward Functions**                                    | Figure 2, Figure 7, Table 7   | `train_figure2_models.py` | `figure2.py`             |
+| **Potential Field Reward Function Ablation Study**                    | Figure 3, Figure 8, Table 8   | `train_figure5_models.py` | `figure5.py`             |
+| **Environmental Parameter Variation: Infection Rate**                 | Figure 9, Table 9             | `train_figure3_models.py` | `figure3.py`             |
+| **Environmental Parameter Variation: Population density (Grid Size)** | Figure 10, Table 10           | `train_figure6_models.py` | `figure6.py`             |
+| **Environmental Parameter Variation: Adherence Effectiveness**        | Figure 11, Table 11           | `train_figure7_models.py` | `figure7.py`             |
+| **Environmental Parameter Variation: Distance Decay**                 | Figure 12, Table 12           | `train_figure8_models.py` | `figure8.py`             |
+The results section is divided into to two parts: 
+1. `figureTraining`: Handle the training of the necessary models to make the graphs. For example: `train_figure2_models.py` handles the training of the models needed to make `figure2.py`. By default, all of the models are trained across 3 seeds. 
+2. `figureGeneration`: Create graphs based on the train model made by its corresponding training file. Each `figureX.py` produces multiple visualizations. The charts are saved to a `figures` directory. The tables are printed (with pretty print) into the terminal that is running the script. 
 
-```bash
-# Sync a specific run using its timestamp ID
-./sync_wandb.py --run-id 20250303_184216
-
-# Sync all offline runs at once
-./sync_wandb.py --all
+## Recreating results
+To recreate the figures in our paper, follow these instructions. Make that you have activated the Conda environment, [see requirements](#Requirements).
+**First, train the models:** 
+```python
+python train_figure[X]_models.py
 ```
+In training you may be asked to log into [W&B](https://wandb.ai/). You can skip this using `--no-wandb` flag.
 
-#### Troubleshooting wandb Issues
-
-If you encounter connection issues with wandb:
-
-1. Use offline mode as described above
-2. Check your internet connection and firewall settings
-3. Try refreshing your credentials: `wandb login --relogin`
-4. Update wandb: `pip install wandb --upgrade`
-5. Increase timeout duration by modifying `setup_wandb()` in train.py
-
-### Visualization (visualize.py)
-
-Visualize a trained model:
-```bash
-python visualize.py --model-path logs/your_run_name/final_model.zip
+**Then, recreate the figures/tables:** 
+```python
+python figure[X].py --model-base Fig[X] --runs 100
 ```
-
-Common visualization options:
-```bash
-# Record more episodes (default is 5)
-python visualize.py --model-path logs/your_run_name/final_model.zip --num-episodes 10
-
-# Use stochastic actions instead of deterministic
-python visualize.py --model-path logs/your_run_name/final_model.zip --stochastic
-
-# Specify custom output directory for videos
-python visualize.py --model-path logs/your_run_name/final_model.zip --output-dir my_videos
-```
-
-You can also visualize checkpoints saved during training:
-```bash
-python visualize.py --model-path logs/your_run_name/sirs_model_20000_steps.zip
-```
-
-### Benchmarking (results/benchmark.py)
-
-Compare a trained model against random actions:
-```bash
-python results/benchmark.py --model-path logs/your_run_name/final_model.zip
-```
-
-Common benchmarking options:
-```bash
-# Run more episodes for more reliable statistics
-python results/benchmark.py --model-path logs/your_run_name/final_model.zip --runs 30
-
-# Skip the random agent comparison
-python results/benchmark.py --model-path logs/your_run_name/final_model.zip --no-random
-
-# Specify a custom title for the plot
-python results/benchmark.py --model-path logs/your_run_name/final_model.zip --title "My Custom Plot Title"
-```
-
-For a quick demonstration without needing a trained model:
-```bash
-python results/quick_test.py
-```
-
-See `results/README.md` for more detailed information on benchmarking.
-
-### Model Files
-
-After training, you'll find the following in your log directory (`logs/your_run_name/`):
-- `final_model.zip`: The final trained model
-- `best_model.zip`: The best model according to evaluation metrics
-- `config.json`: Configuration used for training
-- `videos/`: Directory containing evaluation videos
-- Checkpoint files saved during training (e.g., `sirs_model_20000_steps.zip`)
+- Be sure to replace `X` with an integer based on the grouping tables above. The value for `X` should be the same for both of the scripts. 
+- Model base provides a reference to which models in `logs` directory should be used.
+- `--runs 100` is used to do 100 inferences per seed per model. 
