@@ -161,4 +161,4 @@ if __name__ == "__main__":
     if args.random_actions and not args.model_path and not args.config_path:
         parser.error("When using --random-actions without a model, --config-path must be provided")
     
-    main(args) 
+    main(args)
