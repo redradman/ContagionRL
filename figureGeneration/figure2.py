@@ -11,9 +11,7 @@ import seaborn as sns
 from stable_baselines3 import PPO
 from tqdm import tqdm
 from typing import Dict, List, Any, Optional
-from scipy import stats
 import statsmodels.stats.multitest as smm
-import cliffs_delta
 from scipy.stats import mannwhitneyu
 from textwrap import wrap
 
