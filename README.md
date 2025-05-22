@@ -21,7 +21,7 @@ All of the libraries listed below are used in the ContagionRL paper and their re
 | Library           | Version | Purpose                                         | License                          |
 | ----------------- | ------- | ----------------------------------------------- | -------------------------------- |
 | gymnasium         | 1.0.0   | Toolkit for reinforcement learning environments | MIT License                      |
-| imageio[ffmpeg]   | 2.37.0  | Image and video I/O library                     | BSD 2-Clause                     |
+| imageio           | 2.37.0  | Image and video I/O library                     | BSD 2-Clause                     |
 | matplotlib        | 3.10.3  | Comprehensive plotting library                  | Matplotlib License (BSD-based)   |
 | numpy             | 2.2.6   | Core numerical computing library                | BSD 3-Clause                     |
 | pandas            | 2.2.3   | Data manipulation and analysis                  | BSD 3-Clause                     |
