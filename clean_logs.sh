@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Print warning message
-echo "Warning: This will delete all contents in the logs directory."
+echo "Warning: This will delete all contents in the logs directory (logs/)."
 echo "Are you sure you want to continue? (y/n)"
 
 # Read user input
