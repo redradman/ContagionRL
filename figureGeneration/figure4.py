@@ -9,8 +9,8 @@ import seaborn as sns
 from stable_baselines3 import PPO, SAC, TD3, A2C
 import gymnasium as gym # Helper for flattening obs for SAC/TD3
 from tqdm import tqdm
-import cliffs_delta
-from scipy import stats
+from scipy.stats import mannwhitneyu
+import itertools
 import statsmodels.stats.multitest as smm
 from textwrap import wrap
 # from typing import Dict, List, Any, Optional
@@ -240,46 +240,8 @@ def main():
     plt.close() # Close the bar plot figure
     print(f"Bar plot of means and 95% CI saved to {bar_figure_path}")
 
-    # --- Simplified Statistical Table: Cliff's d and Effect Size only ---
-    effect_map = {
-        'negligible effect': 'n.s.',
-        'small effect': 'S',
-        'medium effect': 'M',
-        'large effect': 'L'
-    }
-    agents_to_compare = ["PPO", "SAC", "A2C"]
-    baselines = ["Random", "Stationary", "Greedy"]
-    print("\nStatistical Comparison Table (per-seed means):")
-    print("| Comparison        | Cliff's d | Agent Mean | Baseline Mean | Mean Diff | Effect Size |")
-    print("| ----------------- | --------- | ---------- | ------------- | --------- | ----------- |")
-    for agent in agents_to_compare:
-        for baseline in baselines:
-            agent_means = grouped[grouped['agent_label'] == agent][y_metric_col].values
-            baseline_means = grouped[grouped['agent_label'] == baseline][y_metric_col].values
-            if len(agent_means) > 0 and len(baseline_means) > 0:
-                d, _ = cliffs_delta.cliffs_delta(agent_means, baseline_means)
-                abs_d = abs(d)
-                if abs_d < 0.147:
-                    effect = 'negligible effect'
-                elif abs_d < 0.33:
-                    effect = 'small effect'
-                elif abs_d < 0.474:
-                    effect = 'medium effect'
-                else:
-                    effect = 'large effect'
-                effect_label = effect_map[effect]
-                agent_mean = np.mean(agent_means)
-                baseline_mean = np.mean(baseline_means)
-                mean_diff = agent_mean - baseline_mean
-                print(f"| {agent} vs {baseline:<11} | {d:>9.2f} | {agent_mean:>10.2f} | {baseline_mean:>13.2f} | {mean_diff:>9.2f} | {effect_label:>11} |")
-    print("\nEffect size interpretation: n.s. = negligible, S = small, M = medium, L = large. Results use per-seed means (n=3).\n")
-    print("Due to the small number of seeds (n=3), confidence intervals and significance tests are not reported. Cliff's d and mean differences are provided for effect size interpretation only.\n")
-
     # --- Directional Mann-Whitney U test section: one-sided test in direction of higher mean, Bonferroni correction, and directional advantage field ---
     print("\nPairwise Mann–Whitney U Test Results (Raw + Bonferroni-corrected, Directional)")
-    from scipy.stats import mannwhitneyu
-    import itertools
-    import statsmodels.stats.multitest as smm
 
     def significance_stars(p):
         if p < 0.001: return '***'
