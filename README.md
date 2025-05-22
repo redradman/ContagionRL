@@ -121,6 +121,8 @@ To regenerate our data, figures and tables in the results or additional experime
 | **Environmental Parameter Variation: Population density (Grid Size)** | Figure 10, Table 10           | `train_figure6_models.py` | `figure6.py`             |
 | **Environmental Parameter Variation: Adherence Effectiveness**        | Figure 11, Table 11           | `train_figure7_models.py` | `figure7.py`             |
 | **Environmental Parameter Variation: Distance Decay**                 | Figure 12, Table 12           | `train_figure8_models.py` | `figure8.py`             |
+
+
 The results section is divided into to two parts: 
 1. `figureTraining`: Handle the training of the necessary models to make the graphs. For example: `train_figure2_models.py` handles the training of the models needed to make `figure2.py`. By default, all of the models are trained across 3 seeds. 
 2. `figureGeneration`: Create graphs based on the train model made by its corresponding training file. Each `figureX.py` produces multiple visualizations. The charts are saved to a `figures` directory. The tables are printed (with pretty print) into the terminal that is running the script. 
