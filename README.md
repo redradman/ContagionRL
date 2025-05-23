@@ -121,7 +121,7 @@ To regenerate our data, figures and tables in the results or additional experime
 | **Environmental Parameter Variation: Population density (Grid Size)** | Figure 10, Table 10           | `train_figure6_models.py` | `figure6.py`             |
 | **Environmental Parameter Variation: Adherence Effectiveness**        | Figure 11, Table 11           | `train_figure7_models.py` | `figure7.py`             |
 | **Environmental Parameter Variation: Distance Decay**                 | Figure 12, Table 12           | `train_figure8_models.py` | `figure8.py`             |
-| **Render of a single step of environment**                 | Figure 5           | no training needed | `figure_render.py`             |
+| **Render of a single step of environment**                 | Figure 5           | _no training needed_ | `figure_render.py`             |
 
 
 The results section is divided into to two parts: 
