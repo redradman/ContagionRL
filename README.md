@@ -1,5 +1,5 @@
 # ContagionRL: A Flexible Platform for Learning in Different Spatial Epidemic Environments
-Welcome to ContagionRL, a flexible platform designed for reinforcement learning in different spatial epidemic environments. ContagionRL is a Gymnasium-compatible environment that unifies compartmental epidemiology and agent-based modeling (ABM).
+This paper is the implementation of ContagionRL, a flexible platform designed for reinforcement learning in different spatial epidemic environments. ContagionRL is a Gymnasium-compatible environment that unifies compartmental epidemiology and agent-based modeling (ABM).
 # Requirements
 Create an environment with [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html): 
 ```bash
