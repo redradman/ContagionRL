@@ -131,7 +131,6 @@ class MovementHandler:
                         else:
                             non_infected_positions.append(pos)
                     
-                    # If we don't have enough infected positions, generate more
                     while len(infected_positions) < n_infected:
                         new_positions = self._initialize_random_positions(n_infected - len(infected_positions), rng)
                         
@@ -149,8 +148,6 @@ class MovementHandler:
                                 if len(infected_positions) >= n_infected:
                                     break
                 else:
-                    # If safe_distance <= init_agent_distance, all positions already satisfy the requirement
-                    # Just take the first n_infected positions for infected humans
                     infected_positions = positions[:n_infected]
                     non_infected_positions = positions[n_infected:]
                 
@@ -423,17 +420,17 @@ class SIRSDEnvironment(gym.Env):
         immunity_loss_prob: float = 0.1,
         recovery_rate: float = 0.1,
         adherence_penalty_factor: float = 2,
-        adherence_effectiveness: float = 0.2,  # Minimum effect of adherence (0.2 = 20% of beta remains at max adherence)
+        adherence_effectiveness: float = 0.2,  # effect of adherence (0.2 = 20% of beta remains at max adherence).
         movement_type: str = "continuous_random",
-        movement_scale: float = 1.0,  # Scale factor for non-focal agent movement (0 to 1)
-        visibility_radius: float = -1,  # Restored: -1 means full visibility, >=0 means limited visibility
+        movement_scale: float = 1.0, 
+        visibility_radius: float = -1,  # -1 means full visibility, >=0 means limited visibility
         rounding_digits: int = 2,
         reinfection_count: int = 3,
-        safe_distance: float = 0,  # New parameter for minimum safe distance for reinfection
-        init_agent_distance: float = 0,  # New parameter for initial distance all humans should be from agent
-        max_distance_for_beta_calculation: float = -1,  # New parameter: -1 means no limit, >0 means distance threshold
+        safe_distance: float = 0,  
+        init_agent_distance: float = 0,  
+        max_distance_for_beta_calculation: float = -1,  # -1 means no limit, >0 means distance threshold
         reward_type: str = "comprehensive",
-        reward_ablation: str = "full",  # Ablation variant: full, no_magnitude, no_direction, no_move, no_adherence, no_health, no_S
+        reward_ablation: str = "full",  # Ablation variant (for potential field reward ONLY): full, no_magnitude, no_direction, no_move, no_adherence, no_health, no_S
         render_mode: Optional[str] = None,
         gamma: float = 0.99 # Added gamma for potential shaping
     ):
@@ -462,9 +459,7 @@ class SIRSDEnvironment(gym.Env):
             raise ValueError("Adherence must be in [0,1]")
         if adherence_penalty_factor < 1:
             raise ValueError("adherence_penalty_factor must be 1 or greater")
-            
-        # error checking for reward type done in the handler function
-        
+                
         # Store render mode and initialize rendering variables
         self.render_mode = render_mode
         self.fig = None
@@ -516,44 +511,24 @@ class SIRSDEnvironment(gym.Env):
         ##############################
         ####### Observation and Action spaces
         ##############################
-        # Flatten the observation space to avoid nested structures
-        # Structure:
-        # - agent_position (2): [x, y]
-        # - agent_adherence (1): [adherence]
-        # - is_agent_infected (1): [1 if infected, 0 otherwise]
-        # - humans_features (n_humans * features_per_human):
-        #   If visibility_radius == -1, returns all humans
-        #   If visibility_radius >= 0, returns humans within visibility radius
         
         # Calculate features per human based on visibility setting
         self.use_visibility_flag = (visibility_radius >= 0)
-        # Features: delta_x, delta_y, dist (3) + state_one_hot (3) [+ visibility_flag (1)]
-        base_features = 3 + 3  # Positional + One-hot state features
+        # Features: delta_x, delta_y, dist (3) + state_one_hot (3)
+        base_features = 3 + 3 
         features_per_human = base_features + 1 if self.use_visibility_flag else base_features
         
         self.observation_space = gym.spaces.Dict({
-            # "agent_position": gym.spaces.Box(
-            #     low=0, 
-            #     high=1,
-            #     shape=(2,),
-            #     dtype=np.float32
-            # ),
             "agent_adherence": gym.spaces.Box(
                 low=0,
                 high=1,
                 shape=(1,),
                 dtype=np.float32
             ),
-            # "is_agent_infected": gym.spaces.Box(
-            #     low=0,
-            #     high=1,
-            #     shape=(1,),
-            #     dtype=np.float32
-            # ),
             "humans_features": gym.spaces.Box(
-                low=-1,  # Changed from 0 to -1 to accommodate negative relative positions
-                high=1,  # Back to 1 for one-hot encoding
-                shape=(self.n_humans * features_per_human,),  # Features for each human (with or without visibility flag)
+                low=-1, 
+                high=1,  
+                shape=(self.n_humans * features_per_human,),
                 dtype=np.float32
             )
         })
@@ -663,8 +638,6 @@ class SIRSDEnvironment(gym.Env):
         """
         total_exposure = self._calculate_total_exposure(susceptible)
 
-        # Define a minimum effective factor that ensures beta never goes to zero
-        # min_factor = 0.2  # for example, 20% of beta remains at maximum adherence
 
         if is_agent:
             # Effective beta is reduced but not eliminated by adherence
@@ -681,8 +654,6 @@ class SIRSDEnvironment(gym.Env):
         if human.state != STATE_DICT['I']:
             raise ValueError("incorrect call to function: probability of recovery is only applicable to humans in the infected state")
         else:
-            # recovery_prob = 1 - math.exp(-self.recovery_rate * human.time_in_state)
-            # return recovery_prob
             return self.recovery_rate
     
     def _calculate_immunity_loss_probability(self, human: Human) -> float:
@@ -690,10 +661,7 @@ class SIRSDEnvironment(gym.Env):
         if human.state != STATE_DICT['R']:
             raise ValueError("incorrect call to function: probability of immunity loss is only applicable to humans in the recovered state")
         else:
-            # return self.max_immunity_loss_prob * (1 - math.exp(-self.immunity_decay * human.time_in_state))
             return self.immunity_loss_prob
-
-    ##### 
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[dict, dict]:
         """Reset the environment to the initial state"""
@@ -712,9 +680,6 @@ class SIRSDEnvironment(gym.Env):
         self.agent_adherence = self.initial_agent_adherence
         self.agent_state = STATE_DICT['S']
         self.agent_time_in_state = 0  # Reset agent time in state
-
-        # Reset previous potential energy for potential shaping
-        self._prev_potential_energy = 0
         
         # Initialize humans with positions from movement handler
         self.humans = []
@@ -763,13 +728,12 @@ class SIRSDEnvironment(gym.Env):
         """Handle the stepping of humans and agent state transitions"""
         # First handle agent state transitions if agent is not dead
         if self.agent_state != STATE_DICT['D']:
-            # Create a temporary Human object for the agent to use existing transition functions
             agent_human = Human(
                 x=self.agent_position[0],
                 y=self.agent_position[1],
                 state=self.agent_state,
                 id=-1,
-                time_in_state=self.agent_time_in_state  # Pass the agent's time in state
+                time_in_state=self.agent_time_in_state
             )
 
             # Increment agent time in state
@@ -873,24 +837,11 @@ class SIRSDEnvironment(gym.Env):
     def _get_observation(self):
         """
         Build and return the observation dict for the agent.
-
-        Observation space structure:
-        {
-            "agent_adherence": Box(shape=(1,)),          # [adherence in 0..1]
-            "humans_features": Box(shape=(n_humans * features_per_human,)),
-                # If visibility_radius == -1:
-                #   [delta_x, delta_y, distance, is_dead, is_sus/rec, is_infected] for each human
-                # If visibility_radius >= 0:
-                #   [visibility, delta_x, delta_y, distance, is_dead, is_sus/rec, is_infected] for each human
-                # delta_x and delta_y are normalized relative positions from agent to human
-        }
         """
         # Normalize agent position to [0,1] range
-        # agent_pos = np.array(self.agent_position, dtype=np.float32) / self.grid_size  # shape=(2,)
         agent_adherence = np.array([self.agent_adherence], dtype=np.float32)  # already in [0,1]
         
         # Create agent infection status indicator (1 if infected, 0 otherwise)
-        # is_agent_infected = np.array([1.0 if self.agent_state == STATE_DICT['I'] else 0.0], dtype=np.float32)
 
         # Create a temporary human for the agent to reuse existing logic for distance calculations
         agent_human = Human(
@@ -962,9 +913,7 @@ class SIRSDEnvironment(gym.Env):
 
         # Compose final observation dict
         obs = {
-            # "agent_position": agent_position,
             "agent_adherence": agent_adherence,
-            # "is_agent_infected": is_agent_infected,
             "humans_features": humans_features
         }
         return obs
@@ -981,7 +930,7 @@ class SIRSDEnvironment(gym.Env):
         """
         # Calculate the infection probability of the agent
         if self.agent_state != STATE_DICT['S']:
-            return -5
+            return 0
         agent_human = Human(
             x=self.agent_position[0],
             y=self.agent_position[1],
@@ -1006,136 +955,6 @@ class SIRSDEnvironment(gym.Env):
         )
         infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
         return  0.8 * (1-infection_prob)**2 + 0.1 * self.constant_reward()
-    
-
-    def _calculate_minimize_exposure_reward(self):
-        """
-        Reward function focused on minimizing exposure to infected individuals.
-        
-        Key components:
-        1. Base reward for being susceptible (10%)
-        2. Exposure minimization (70%) - rewards lower total exposure to infected individuals
-        3. Adherence optimization (20%) - rewards efficient use of adherence based on exposure level
-        
-        This function encourages the agent to minimize its exposure to infected individuals
-        while using adherence strategically based on the current risk level.
-        """
-        # Create temporary agent human for calculations
-        agent_human = Human(
-            x=self.agent_position[0],
-            y=self.agent_position[1],
-            state=self.agent_state,
-            id=-1
-        )
-        
-        # Component 1: State-based rewards/penalties
-        if self.agent_state == STATE_DICT['S']:
-            state_reward = 0.2  # Small positive reward for staying susceptible
-        else:  # infected 
-            state_reward = -10
-            return state_reward
-            
-        # Component 2: Exposure minimization (70% weight)
-        # Calculate total exposure using the existing function
-        total_exposure = self._calculate_total_exposure(agent_human)
-        
-        # Normalize exposure to [0,1] range
-        # Assuming max possible exposure is when all infected are at distance 0
-        infected_list = self._get_infected_list(agent_human)
-        if infected_list:
-            max_possible_exposure = len(infected_list)
-            normalized_exposure = min(total_exposure / max_possible_exposure, 1.0)
-            
-            # Invert and apply weight: lower exposure = higher reward
-            exposure_reward = 0.6 * (1.0 - normalized_exposure)
-        else:
-            # Maximum reward if no infected are present
-            exposure_reward = 0.6
-        
-        # Component 3: Adherence optimization (20% weight)
-        # Create an adherence cost that increases with higher adherence
-        # But make it conditional on infection probability
-        if total_exposure > 0.2:  
-            # Higher infection risk - adherence should be higher
-            ideal_adherence = min(0.5 + (total_exposure * 0.5), 1.0)  # Scales from 0.6 to 1.0 as exposure increases
-            adherence_diff = abs(self.agent_adherence - ideal_adherence)
-            adherence_reward = 0.2 * (1.0 - adherence_diff)
-        else:
-            # Lower infection risk - lower adherence is fine to reduce cost
-            adherence_reward = 0.2 * (1.0 - self.agent_adherence)
-        
-        # Combine components
-        final_reward = state_reward + exposure_reward + adherence_reward
-        
-        return final_reward
-    
-
-    
-    def _calculate_comprehensive_reward(self):
-        """
-        Calculate a comprehensive reward function with multiple components:
-        1. Base reward for being susceptible (alive_reward)
-        2. Reward for reducing infection probability (infection_reward)
-        3. Reward for maintaining distance from all people (max_distance_with_people_reward)
-        
-        Returns a weighted combination of these components.
-        """
-        # Return negative reward if infected
-        if self.agent_state != STATE_DICT['S']:
-            return 0
-            
-        # Create a temporary agent human for calculations
-        agent_human = Human(
-            x=self.agent_position[0],
-            y=self.agent_position[1],
-            state=self.agent_state,
-            id=-1
-        )
-
-        # 1. Alive reward - base reward for being susceptible
-        alive_reward = 1.0  # reward for being in S state
-
-        # 2. Infection probability reward - reward for reducing infection risk
-        infection_prob = self._calculate_infection_probability(agent_human, is_agent=True)
-        infection_reward = (1 - infection_prob) ** 2  # Quadratic scaling for emphasis on low risk
-
-        # 3. Max distance with people reward - personal space implementation
-        # Get all humans (not just infected ones)
-        all_humans = self._get_neighbors_list(agent_human)
-        
-        # Parameters for personal space reward calculation
-        personal_space_radius = 10.0  # Fixed threshold distance - can be modified if needed
-        distance_decay = 1  # How quickly contribution falls off with distance
-        crowding_factor = 5  # How severely crowding affects the reward
-        
-        # Calculate crowding intensity based on people within personal space radius
-        crowding_intensity = 0
-        for human in all_humans:
-            distance = self._calculate_distance(agent_human, human)
-            
-            # Only consider humans within the personal space radius
-            if distance < personal_space_radius:
-                # Each human within radius contributes to crowding intensity based on proximity
-                # Closer humans contribute more to crowding
-                crowding_intensity += math.exp(-distance_decay * distance)
-        
-        # Calculate personal space reward - exponentially decreases with crowding
-        # If no humans within radius, crowding_intensity = 0, so reward = 1.0
-        # As more humans enter personal space, reward approaches 0
-        max_distance_with_people_reward = math.exp(-crowding_factor * crowding_intensity)
-        
-        # Combine all reward components with appropriate weights
-        # Weights can be adjusted based on the desired emphasis
-        final_reward = (
-            0.1 * alive_reward +               
-            0.45 * infection_reward +           
-            0.45 * max_distance_with_people_reward 
-        )
-
-        if self.counter >= self.simulation_time - 1:
-            final_reward += 10
-        
-        return final_reward
 
     def _calculate_potential_field_reward(self):
         """
@@ -1258,48 +1077,6 @@ class SIRSDEnvironment(gym.Env):
         }
         
         return total_reward
-    
-    def _calculate_sparse_reward(self):
-        """
-        Implements a sparse reward function that focuses on the agent's health status.
-        Reward = 1 if agent is susceptible, 0 otherwise.
-        """
-        # Get the agent (focal human)
-        agent_human = Human(
-            x=self.agent_position[0],
-            y=self.agent_position[1],
-            state=self.agent_state,
-            id=-1
-        )
-
-        # Health reward
-        health_reward = 0.0
-        if self.agent_state == STATE_DICT['S']:
-            health_reward = 1.0
-        
-        # Adherence reward
-        c_adherence = 0.10   # Linear cost for adherence
-        rho_adherence = 1   # Max bonus for matching ideal adherence
-        risk_gain_adherence = 5 # Maps infection prob -> ideal adherence
-
-        p_inf_raw = self._calculate_infection_probability(agent_human, is_agent=False)
-        # Map risk to ideal adherence (linear ramp)
-        ideal_adherence = min(1.0, p_inf_raw * risk_gain_adherence)
-
-        # Distance from the ideal
-        delta = abs(self.agent_adherence - ideal_adherence)
-
-        match_bonus = rho_adherence * (1.0 - delta)
-        mask_cost   = -c_adherence * self.agent_adherence
-        adherence_reward = match_bonus + mask_cost
-
-        # Infection reward
-        infection_reward = (1 - self._calculate_infection_probability(agent_human, is_agent=True))**2
-
-        # Combine all rewards
-        total_reward = 0.1 * health_reward + 0.45 * adherence_reward + 0.45 * infection_reward
-
-        return total_reward
 
     def _calculate_maximize_nearest_distance_reward(self):
         """
@@ -1333,17 +1110,14 @@ class SIRSDEnvironment(gym.Env):
         # Map reward type to the corresponding reward function
         reward_functions = {
             "constant": self.constant_reward,
-            "minimize_exposure": self._calculate_minimize_exposure_reward,
             "reduceInfectionProb": self._calculate_reduceInfectionProb_reward,
             "reduceInfectionProbwithConstant": self._calculate_reduceInfectionProbwithConstant_reward,
-            "comprehensive": self._calculate_comprehensive_reward,
-            "potential_field": self._calculate_potential_field_reward,  # Add new reward function to the map
-            "sparse": self._calculate_sparse_reward,
-            "max_nearest_distance": self._calculate_maximize_nearest_distance_reward,  # New reward function
+            "potential_field": self._calculate_potential_field_reward,  
+            "max_nearest_distance": self._calculate_maximize_nearest_distance_reward, 
         }
         
-        # Get the reward function based on the specified reward type, default to constant reward
-        reward_function = reward_functions.get(self.reward_type, self.constant_reward)
+        # Get the reward function based on the specified reward type in config, default to potential field reward
+        reward_function = reward_functions.get(self.reward_type, self._calculate_potential_field_reward)
         return reward_function()
 
     def step(self, action: np.ndarray) -> Tuple[dict, float, bool, bool, dict]:
@@ -1391,14 +1165,6 @@ class SIRSDEnvironment(gym.Env):
         # Check if agent became infected in this step
         became_infected = previous_agent_state == STATE_DICT['S'] and self.agent_state == STATE_DICT['I']
         
-        # Apply strong negative terminal reward DIRECTLY if agent became infected
-        # infection_penalty_applied = False
-        # if became_infected:
-        #     infection_penalty = -5.0  # Strong negative reward for becoming infected
-        #     reward += infection_penalty
-        #     self.cumulative_reward += infection_penalty # Ensure cumulative reflects the penalty
-        #     infection_penalty_applied = True
-        
         terminated = False
         if self.counter >= self.simulation_time:
             terminated = True
@@ -1417,12 +1183,7 @@ class SIRSDEnvironment(gym.Env):
                                       if h.state == STATE_DICT['S'] and 
                                       self._calculate_distance(agent_human, h) > self.safe_distance)
         
-        # Truncate if:
-        # 1. The agent dies, or
-        # 2. There are no infected individuals AND either:
-        #    a) reinfection is disabled (reinfection_count == 0) or
-        #    b) there aren't enough susceptible humans beyond safe distance for reinfection
-        # *OR* 3. The agent becomes infected (apply penalty and truncate)
+
         if (self.agent_state == STATE_DICT['D'] or # Agent died
             became_infected or # Agent became infected
             (self.infected_count == 0 and  # No infected individuals
@@ -1452,8 +1213,6 @@ class SIRSDEnvironment(gym.Env):
             "recovered_count": sum(1 for h in self.humans if h.state == STATE_DICT['R']),
             "dead_count": sum(1 for h in self.humans if h.state == STATE_DICT['D']),
             "adherence": float(self.agent_adherence),
-            # "terminal_infection_penalty": infection_penalty_applied,  # Flag if terminal penalty was applied
-            # Include reward components if available
             **getattr(self, 'reward_components', {}) 
         }
         return observation, reward, terminated, truncated, info
