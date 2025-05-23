@@ -143,7 +143,7 @@ class EpisodeReturnLogger(BaseCallback):
     def _on_training_end(self):
         df = pd.DataFrame(self.returns_log)
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
-        df.to_csv(self.log_path, index=False)
+        # df.to_csv(self.log_path, index=False)
 
 # Add entropy coefficient scheduler
 class EntropyCoefCallback(BaseCallback):
@@ -290,7 +290,7 @@ def main():
             if algo == "ppo":
                 env_fns = [make_env_for_algo(env_config, seed + i, algo) for i in range(ppo_config["n_envs"])]
                 vec_env = SubprocVecEnv(env_fns)
-                vec_env = VecMonitor(vec_env, os.path.join(save_config["base_log_path"], run_name, "monitor"))
+                vec_env = VecMonitor(vec_env, None)
                 vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
                 model_kwargs = {k: v for k, v in ppo_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
                 total_timesteps = ppo_config["total_timesteps"]
@@ -298,7 +298,7 @@ def main():
             elif algo == "sac":
                 env_fns = [make_env_for_algo(env_config, seed + i, algo) for i in range(sac_config["n_envs"])]
                 vec_env = SubprocVecEnv(env_fns)
-                vec_env = VecMonitor(vec_env, os.path.join(save_config["base_log_path"], run_name, "monitor"))
+                vec_env = VecMonitor(vec_env, None)
                 vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
                 model_kwargs = {k: v for k, v in sac_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
                 total_timesteps = sac_config["total_timesteps"]
@@ -306,7 +306,7 @@ def main():
             elif algo == "a2c":
                 env_fns = [make_env_for_algo(env_config, seed + i, algo) for i in range(a2c_config["n_envs"])]
                 vec_env = SubprocVecEnv(env_fns)
-                vec_env = VecMonitor(vec_env, os.path.join(save_config["base_log_path"], run_name, "monitor"))
+                vec_env = VecMonitor(vec_env, None)
                 vec_env = VecNormalize(vec_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
                 model_kwargs = {k: v for k, v in a2c_config.items() if k not in ["policy_type", "total_timesteps", "n_envs"]}
                 total_timesteps = a2c_config["total_timesteps"]
@@ -362,7 +362,7 @@ def main():
             eval_freq = save_config.get("eval_freq", 0)
             if eval_freq > 0:
                 eval_env = SubprocVecEnv([make_env_for_algo(env_config, seed, algo)])
-                eval_env = VecMonitor(eval_env, os.path.join(save_config["base_log_path"], run_name, "eval"))
+                eval_env = VecMonitor(eval_env, None)
                 eval_env = VecNormalize(eval_env, norm_obs=False, norm_reward=True, clip_reward=10.0)
                 eval_callback = EvalCallback(
                     eval_env,
