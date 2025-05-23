@@ -17,7 +17,7 @@ import statsmodels.stats.multitest as smm
 # Add the parent directory to the path to access project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment import SIRSDEnvironment
-from utils import Human, STATE_DICT # For Greedy Agent & STATE_DICT usage
+from environment import Human, STATE_DICT # For Greedy Agent & STATE_DICT usage
 
 # tueplots styling
 from tueplots import bundles
