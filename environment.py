@@ -894,13 +894,13 @@ class SIRSDEnvironment(gym.Env):
                 visibility_flag = 1.0 if current_human.id in visible_ids else 0.0
                 
                 if visibility_flag == 0.0:
-                    # Invisible human - set position values to 0, set state one-hot as [0,0,0]
+                    # Invisible human
                     humans_features[base_idx : base_idx + features_per_human] = [0.0, 0.0, 0.0, 0.0] + [0.0, 0.0, 0.0]
                 else:
-                    # Visible human - include all information
+                    # Visible human
                     humans_features[base_idx : base_idx + features_per_human] = [visibility_flag, delta_x_norm, delta_y_norm, dist_norm] + state_one_hot.tolist()
             else:
-                # Simple mode without visibility flag (all humans visible)
+                # Simple mode without visibility flag in observation per human (all humans visible)
                 humans_features[base_idx : base_idx + features_per_human] = [delta_x_norm, delta_y_norm, dist_norm] + state_one_hot.tolist()
 
         # Compose final observation dict
@@ -920,7 +920,6 @@ class SIRSDEnvironment(gym.Env):
         """
         Reward function that encourages the agent to reduce the infection probability of the population.
         """
-        # Calculate the infection probability of the agent
         if self.agent_state != STATE_DICT['S']:
             return 0
         agent_human = Human(
@@ -936,7 +935,6 @@ class SIRSDEnvironment(gym.Env):
         """
         Reward function that encourages the agent to reduce the infection probability of the population.
         """
-        # Calculate the infection probability of the agent
         if self.agent_state != STATE_DICT['S']:
             return 0
         agent_human = Human(
@@ -1095,11 +1093,12 @@ class SIRSDEnvironment(gym.Env):
         if min_distance >= self.max_distance_for_beta_calculation:
             return 1.0
         else:
-            # Linear decay: reward = min_distance / max_distance_for_beta_calculation
             return max(0.0, min_distance / self.max_distance_for_beta_calculation)
 
-    def _calculate_reward(self):    
-        # Map reward type to the corresponding reward function
+    def _calculate_reward(self):
+        """
+        Map reward type to the corresponding reward function
+        """
         reward_functions = {
             "constant": self.constant_reward,
             "reduceInfectionProb": self._calculate_reduceInfectionProb_reward,
@@ -1108,7 +1107,7 @@ class SIRSDEnvironment(gym.Env):
             "max_nearest_distance": self._calculate_maximize_nearest_distance_reward, 
         }
         
-        # Get the reward function based on the specified reward type in config, default to potential field reward
+        # Get reward function based on the specified reward type in config: default to potential field reward
         reward_function = reward_functions.get(self.reward_type, self._calculate_potential_field_reward)
         return reward_function()
 
