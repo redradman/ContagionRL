@@ -1,5 +1,5 @@
 # ContagionRL: A Flexible Platform for Learning in Different Spatial Epidemic Environments
-This paper is the implementation of ContagionRL, a flexible platform designed for reinforcement learning in different spatial epidemic environments. ContagionRL is a Gymnasium-compatible environment that unifies compartmental epidemiology and agent-based modeling (ABM).
+This repository contains the codebase for ContagionRL, a platform introduced in our paper for reinforcement learning in spatial epidemic environments which unifies compartmental epidemiology and agent-based modeling (ABM).
 # Requirements
 Create an environment with [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html): 
 ```bash
@@ -15,8 +15,8 @@ Install the dependencies:
 ```bash 
 pip install -r requirements.txt
 ```
-### Licenses
-All of the libraries listed below are used in the ContagionRL paper and their respective licenses and their usage. `gymnasium` and `matplotlib` are instrumental in making the environment. 
+## Licenses
+The following libraries are used in ContagionRL. Their licenses and usage details are listed below. `gymnasium` and `matplotlib` are instrumental in making the environment. Our codebase is intended for release under BSD-3 license.
 
 | Library           | Version | Purpose                                         | License                          |
 | ----------------- | ------- | ----------------------------------------------- | -------------------------------- |
@@ -107,7 +107,7 @@ env_config = {
 
 env = gym.make('SIRSD-v0', **env_config)
 ```
-
+The `registerSIRSD.py` script registers our environment with `gymnasium` under the name `SIRSD-v0`.
 
 # Results
 To regenerate our data, figures and tables in the results or additional experiments follow the instructions here. The table below shows a grouping of the figures and tables in our paper. The figures are grouped by topic (and the script `figureX.py` where `X` is an integer) that produces them. 
@@ -121,17 +121,17 @@ To regenerate our data, figures and tables in the results or additional experime
 | **Environmental Parameter Variation: Population density (Grid Size)** | Figure 10, Table 10           | `train_figure6_models.py` | `figure6.py`             |
 | **Environmental Parameter Variation: Adherence Effectiveness**        | Figure 11, Table 11           | `train_figure7_models.py` | `figure7.py`             |
 | **Environmental Parameter Variation: Distance Decay**                 | Figure 12, Table 12           | `train_figure8_models.py` | `figure8.py`             |
-| **Render of a single step of environment**                 | Figure 5           | _no training needed_ | `figure_render.py`             |
+| **Static render of a single environment step**                 | Figure 5           | _no training needed_ | `figure_render.py`             |
 
 
-The results section is divided into to two parts: 
+The results section is divided into two parts: 
 1. `figureTraining`: Handle the training of the necessary models to make the graphs. For example: `train_figure2_models.py` handles the training of the models needed to make `figure2.py`. By default, all of the models are trained across 3 seeds. 
 2. `figureGeneration`: Create graphs based on the train model made by its corresponding training file. Each `figureX.py` produces multiple visualizations. The charts are saved to a `figures` directory. The tables are printed (with pretty print) into the terminal that is running the script. 
 
 *Note: `train_figure1_models.py` and `figure1.py` are legacy scripts that are not part of the current figure generation workflow, and no figures in the paper are derived from them.*
 
 ## Recreating results
-To recreate the figures in our paper, follow these instructions. Make that you have activated the Conda environment, [see requirements](#Requirements).
+To recreate the figures in our paper, follow these instructions. Make sure that you have activated the Conda environment, [see requirements](#Requirements).
 **First, train the models:** 
 ```python
 python train_figure[X]_models.py
