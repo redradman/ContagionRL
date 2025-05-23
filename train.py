@@ -16,7 +16,6 @@ import imageio
 from environment import SIRSDEnvironment
 from config import env_config, ppo_config, save_config
 
-# Add entropy coefficient scheduler
 class EntropyCoefCallback(BaseCallback):
     """
     Callback for updating the entropy coefficient during training.
@@ -47,7 +46,7 @@ class EntropyCoefCallback(BaseCallback):
         self.model.ent_coef = new_value
         self.current_value = new_value
         
-        if self.verbose > 0 and self.n_calls % 100_000 == 0: # Log less frequently
+        if self.verbose > 0 and self.n_calls % 100_000 == 0: 
             self.logger.record("train/ent_coef", self.current_value)
             
         return True
@@ -55,23 +54,13 @@ class EntropyCoefCallback(BaseCallback):
 def set_global_seeds(seed: int) -> None:
     """
     Set all seeds for reproducibility.
-    
-    Args:
-        seed: The seed value to use
     """
-    # Set Python's random module seed
     random.seed(seed)
-    
-    # Set NumPy's random generator seed
     np.random.seed(seed)
-    
-    # Set PyTorch seed
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)  # For multi-GPU setups
-
-        # Make CUDA operations deterministic for reproducibility
+        torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     
@@ -149,10 +138,9 @@ def make_eval_env(env_config_dict: Dict[str, Any], seed: int = 0, record_video: 
 
 def setup_wandb(config: Dict[str, Any], run_name: str) -> None:
     """Initialize wandb with all configs."""
-    # Create wandb settings with increased timeout
     wandb_settings = wandb.Settings(
         init_timeout=120, 
-        sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
+        sync_tensorboard=True,
     )
     
     wandb.init(
