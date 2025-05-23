@@ -2,8 +2,6 @@ import os
 import sys
 import argparse
 import copy 
-import wandb
-from wandb.integration.sb3 import WandbCallback
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)

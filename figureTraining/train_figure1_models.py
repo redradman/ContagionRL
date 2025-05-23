@@ -41,7 +41,7 @@ def main_fig1_trainer(args):
     if args.exp_name:
         base_run_name_for_group = args.exp_name
     else:
-        base_run_name_for_group = f"Fig1_PotentialField"
+        base_run_name_for_group = "Fig1_PotentialField"
     
     if args.exp_suffix:
         base_run_name_for_group = f"{base_run_name_for_group}_{args.exp_suffix}"
@@ -66,7 +66,7 @@ def main_fig1_trainer(args):
             wandb_group_name=base_run_name_for_group
         )
         print(f"--- Completed training for: {seed_specific_run_name} ---")
-    print(f"=== Finished all seeds for Figure 1 models ===")
+    print("=== Finished all seeds for Figure 1 models ===")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Potential Field models for Figure 1.")
