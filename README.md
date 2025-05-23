@@ -143,6 +143,6 @@ In training you may be asked to log into [W&B](https://wandb.ai/). You can skip 
 python figure[X].py --model-base Fig[X] --runs 100
 ```
 The above command would create a new folder called `figures/`, which will contain the figure(s). The tables (if applicable) will be printed to the terminal output.
-- Be sure to replace `X` with an integer based on the grouping tables above. The value for `X` should be the same for both of the scripts. 
-- `--model-base` flag provides a reference to which trained models in `logs` directory should be used.
+- Be sure to replace `X` with a valid integer based on the grouping table above. The value for `X` should be the same for both of the scripts. 
+- `--model-base` flag provides a reference to which trained models in `logs` directory should be used to making the figure(s).
 - `--runs 100` is used to do 100 inferences per seed per model (as done in the paper). 
