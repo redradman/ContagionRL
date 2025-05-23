@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, Any, Callable
 import random
 import numpy as np
-import torch  # Import torch for seeding PyTorch if it's being used
+import torch 
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, DummyVecEnv, VecNormalize
@@ -65,17 +65,15 @@ def set_global_seeds(seed: int) -> None:
     # Set NumPy's random generator seed
     np.random.seed(seed)
     
-    # Set PyTorch seed (if using neural networks with torch)
+    # Set PyTorch seed
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)  # For multi-GPU setups
+        
         # Make CUDA operations deterministic for reproducibility
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-    
-    # Set environment action space seed
-    # This will be handled by SIRSDEnvironment.reset(seed=seed)
     
     print(f"Set global seed to: {seed}")
 
