@@ -36,7 +36,7 @@ The following libraries are used in ContagionRL. Their licenses and usage detail
 # SIRS+D Environment 
 The SIRS+D environment can be found as `SIRSDEnvironment` in `environment.py` file. `SIRSDEnvironment` can be used directly or using registered version with `gym.make`. The `env_config` corresponds to the environmental parameters in Table 3 of the paper.
 
-The `SIRSDEnvironment` can be used in the default epidemic scenario as follows:
+The `SIRSDEnvironment` can be used in the default epidemic configuration as follows:
 ```python 
 from environment import SIRSDEnvironment
 env = SIRSDEnvironment()
