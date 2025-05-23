@@ -144,5 +144,5 @@ python figure[X].py --model-base Fig[X] --runs 100
 ```
 The above command would create a new folder called `figures/`, which will contain the figure(s). The tables (if applicable) will be printed to the terminal output.
 - Be sure to replace `X` with an integer based on the grouping tables above. The value for `X` should be the same for both of the scripts. 
-- Model base provides a reference to which models in `logs` directory should be used.
-- `--runs 100` is used to do 100 inferences per seed per model. 
+- `--model-base` flag provides a reference to which trained models in `logs` directory should be used.
+- `--runs 100` is used to do 100 inferences per seed per model (as done in the paper). 
