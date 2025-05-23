@@ -62,30 +62,23 @@ def record_episode(model, env, video_path: str, deterministic: bool = True, use_
     
     while not done:
         if use_random:
-            # Use random actions - sample using environment's RNG for consistency
             action = np.array([
-                env.np_random.uniform(-1, 1),  # delta_x
-                env.np_random.uniform(-1, 1),  # delta_y
-                env.np_random.uniform(0, 1)    # adherence
+                env.np_random.uniform(-1, 1),  
+                env.np_random.uniform(-1, 1),  
+                env.np_random.uniform(0, 1)    
             ], dtype=np.float32)
         else:
-            # Get action from the model
             action, _ = model.predict(obs, deterministic=deterministic)
         
-        # Step the environment
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
         step_count += 1
         cumulative_reward = info.get("cumulative_reward", total_reward)  
         
-        # Get frame
         frame = env.render()
         if frame is not None:
             frames.append(frame)
             
-        # Print action information
-        # dx, dy, adherence = action
-        # print(f"Step {step_count}: dx={dx:.2f}, dy={dy:.2f}, adherence={adherence:.2f}, reward={reward:.2f}")
         
         done = terminated or truncated
     
@@ -97,7 +90,6 @@ def record_episode(model, env, video_path: str, deterministic: bool = True, use_
         print("Warning: No frames were collected during the episode")
 
 def main(args):
-    # Load the config either from model or direct config file
     if args.config_path:
         config = load_config(config_path=args.config_path)
     else:
@@ -105,13 +97,10 @@ def main(args):
     
     env_config = config["environment"]
     
-    # Modify config for visualization
     env_config["render_mode"] = "rgb_array"
     
-    # Create the environment
     env = SIRSDEnvironment(**env_config)
     
-    # Load the model if not using random actions
     model = None
     if not args.random_actions and args.model_path:
         model = PPO.load(args.model_path)
