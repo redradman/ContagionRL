@@ -158,7 +158,7 @@ def collect_episode_data(
 def main():
     parser = argparse.ArgumentParser(description="Generate Figure 1 comparing trained models against baselines.")
     parser.add_argument(
-        "--model-base-name",
+        "--model-base",
         type=str,
         required=True,
         help="Base name of the trained model directories in logs/ (e.g., 'potential_field_20231027_1200')."
@@ -207,12 +207,12 @@ def main():
     base_env_config_dict = None
     
     for train_seed in tqdm(eval_seeds, desc="Trained Model Seeds"):
-        model_dir_name = f"{args.model_base_name}_seed{train_seed}"
+        model_dir_name = f"{args.model_base}_seed{train_seed}"
         model_path = os.path.join("logs", model_dir_name, "best_model.zip")
 
         if not os.path.exists(model_path):
             print(f"Warning: Model file not found for seed {train_seed} at {model_path}. Trying alternative common name...")
-            alt_model_dir_name = f"{args.model_base_name.capitalize()}_seed{train_seed}"
+            alt_model_dir_name = f"{args.model_base.capitalize()}_seed{train_seed}"
             alt_model_path = os.path.join("logs", alt_model_dir_name, "best_model.zip")
             if os.path.exists(alt_model_path):
                 print(f"Found model at alternative path: {alt_model_path}")
@@ -417,7 +417,7 @@ def main():
 
     # Create a unique filename
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    figure_filename = f"figure1_{args.model_base_name}_{args.metric}_{timestamp}.pdf"
+    figure_filename = f"figure1_{args.model_base}_{args.metric}_{timestamp}.pdf"
     figure_path = os.path.join(args.output_dir, figure_filename)
     
     plt.savefig(figure_path, bbox_inches='tight')
@@ -425,7 +425,7 @@ def main():
     print(f"Figure saved to {figure_path}")
 
     # Save the aggregated DataFrame for inspection
-    csv_filename = f"figure1_data_{args.model_base_name}_{args.metric}_{timestamp}.csv"
+    csv_filename = f"figure1_data_{args.model_base}_{args.metric}_{timestamp}.csv"
     csv_path = os.path.join(args.output_dir, csv_filename)
     results_df.to_csv(csv_path, index=False)
     print(f"Aggregated data saved to {csv_path}")
