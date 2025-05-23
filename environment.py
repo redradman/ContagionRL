@@ -26,17 +26,11 @@ class MovementHandler:
         self.grid_size = grid_size
         self.movement_type = movement_type
         self.rounding_digits = rounding_digits
-        self.movement_scale = max(0.0, min(1.0, movement_scale))  # Ensure value is between 0 and 1
-        
-        # Movement parameters for continuous random
-        self.momentum = 0.8  # How much previous velocity affects current velocity
-        self.max_acceleration = 0.2  # Maximum change in velocity per step
-        self.max_velocity = 1.0  # Maximum velocity magnitude
-        
-        # Store velocities for continuous random movement
-        self.velocities = {}  # Dictionary to store velocities for each human
-        
-        # Validate movement type
+        self.movement_scale = max(0.0, min(1.0, movement_scale))
+        self.momentum = 0.8 
+        self.max_acceleration = 0.2 
+        self.max_velocity = 1.0
+        self.velocities = {}
         valid_types = ["stationary", "discrete_random", "continuous_random", "circular_formation"]
         if movement_type not in valid_types:
             raise ValueError(f"Movement type must be one of {valid_types}")
@@ -291,7 +285,7 @@ class MovementHandler:
             return self._discrete_random_move(x, y, rng)
         elif self.movement_type == "continuous_random":
             if human_id is None:
-                raise ValueError("human_id is required for continuous random movement")
+                raise ValueError("human_id is required")
             return self._continuous_random_move(x, y, human_id, rng)
         elif self.movement_type == "circular_formation":
             return self._circular_formation_move(x, y, rng)
@@ -306,8 +300,8 @@ class MovementHandler:
         """
         Random movement in discrete steps (-1, 0, 1) for both x and y
         """
-        dx = rng.integers(-1, 2)  # Random integer from [-1, 0, 1]
-        dy = rng.integers(-1, 2)  # Random integer from [-1, 0, 1]
+        dx = rng.integers(-1, 2)  
+        dy = rng.integers(-1, 2)
         
         # Ensure we stay within bounds
         new_x = (x + dx) % self.grid_size
@@ -388,7 +382,7 @@ class SIRSDEnvironment(gym.Env):
     metadata = {
         "render_modes": ["rgb_array"],
         "render_fps": 10,
-        "render_resolution": (1200, 600),  # Width increased to accommodate both panels
+        "render_resolution": (1200, 600), 
     }
 
     # Color definitions for rendering
@@ -430,7 +424,7 @@ class SIRSDEnvironment(gym.Env):
         init_agent_distance: float = 0,  
         max_distance_for_beta_calculation: float = -1,  # -1 means no limit, >0 means distance threshold
         reward_type: str = "comprehensive",
-        reward_ablation: str = "full",  # Ablation variant (for potential field reward ONLY): full, no_magnitude, no_direction, no_move, no_adherence, no_health, no_S
+        reward_ablation: str = "full",  # Ablation variant (for potential field reward ONLY, no effect if not using this reward function): full, no_magnitude, no_direction, no_move, no_adherence, no_health, no_S
         render_mode: Optional[str] = None,
         gamma: float = 0.99 # Added gamma for potential shaping
     ):
@@ -471,21 +465,20 @@ class SIRSDEnvironment(gym.Env):
         self.dead_count = 0
         self.infected_count = n_infected
 
-        # Calculate figure size and DPI for rendering
         width, height = self.metadata["render_resolution"]
         self.dpi = 100
-        self.figure_size = (width / self.dpi, height / self.dpi)  # Convert pixels to inches
+        self.figure_size = (width / self.dpi, height / self.dpi)
 
         # General parameters
         self.simulation_time = simulation_time
-        self.counter = 0 # counter for the simulation time
-        self.grid_size = grid_size # from 0 to grid_size exclusive for both of the x and y axis
+        self.counter = 0 # counter for the elapsed simulation time
+        self.grid_size = grid_size 
         self.rounding_digits = rounding_digits
         self.reinfection_count = reinfection_count
 
         # Normalization constants
-        self.max_distance = math.sqrt(2) * self.grid_size / 2 # Maximum possible distance in the grid
-        self.max_movement = 1.0  # Maximum movement in any direction (-1 to 1)
+        self.max_distance = math.sqrt(2) * self.grid_size / 2
+        self.max_movement = 1.0  
 
         # Agent parameters that are handled by the env
         self.agent_position = np.array([self.grid_size//2, self.grid_size//2]) # initial position of the agent
@@ -888,10 +881,9 @@ class SIRSDEnvironment(gym.Env):
             if abs(delta_y) > self.grid_size / 2:
                 delta_y = delta_y - np.sign(delta_y) * self.grid_size
                 
-            # Normalize delta_x and delta_y to [-0.5, 0.5] range
             # This represents relative position scaled by grid size
-            delta_x_norm = delta_x / self.grid_size
-            delta_y_norm = delta_y / self.grid_size
+            delta_x_norm = delta_x / self.grid_size * 2
+            delta_y_norm = delta_y / self.grid_size * 2
             
             # Calculate distance
             dist = self._calculate_distance(agent_human, current_human)
