@@ -353,7 +353,7 @@ def main():
     if 'trained_model_seed' in trained_agent_data.columns and not trained_agent_data['trained_model_seed'].isnull().all():
         trained_data_for_test = trained_agent_data.groupby('trained_model_seed')[y_metric_col].mean()
     else:
-        print(f"Warning: 'trained_model_seed' column is missing or all null for Trained agent. Using raw data for statistical tests.")
+        print("Warning: 'trained_model_seed' column is missing or all null for Trained agent. Using raw data for statistical tests.")
         trained_data_for_test = trained_agent_data[y_metric_col] # Fallback
 
     comparisons_data = []
