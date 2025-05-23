@@ -52,7 +52,6 @@ def record_episode(model, env, video_path: str, deterministic: bool = True, use_
     frames = []
     done = False
     
-    # Collect initial frame
     frame = env.render()
     if frame is not None:
         frames.append(frame)
@@ -64,8 +63,6 @@ def record_episode(model, env, video_path: str, deterministic: bool = True, use_
     while not done:
         if use_random:
             # Use random actions - sample using environment's RNG for consistency
-            # This ensures that the random actions are generated with the same RNG state
-            # that is used for environment dynamics
             action = np.array([
                 env.np_random.uniform(-1, 1),  # delta_x
                 env.np_random.uniform(-1, 1),  # delta_y
@@ -79,7 +76,7 @@ def record_episode(model, env, video_path: str, deterministic: bool = True, use_
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
         step_count += 1
-        cumulative_reward = info.get("cumulative_reward", total_reward)  # Use env's cumulative reward if available
+        cumulative_reward = info.get("cumulative_reward", total_reward)  
         
         # Get frame
         frame = env.render()
@@ -92,7 +89,6 @@ def record_episode(model, env, video_path: str, deterministic: bool = True, use_
         
         done = terminated or truncated
     
-    # Save the video
     if frames:
         imageio.mimsave(video_path, frames, fps=env.metadata["render_fps"])
         print(f"Video saved to {video_path}")
@@ -120,10 +116,8 @@ def main(args):
     if not args.random_actions and args.model_path:
         model = PPO.load(args.model_path)
     
-    # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # Record episodes
     for i in range(args.num_episodes):
         video_path = os.path.join(args.output_dir, f"episode_{i+1}.mp4")
         record_episode(
@@ -153,11 +147,9 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Check that at least one of model_path or config_path is provided
     if not args.model_path and not args.config_path:
         parser.error("Either --model-path or --config-path must be provided")
     
-    # If using random actions, config-path is required if model-path not provided
     if args.random_actions and not args.model_path and not args.config_path:
         parser.error("When using --random-actions without a model, --config-path must be provided")
     
