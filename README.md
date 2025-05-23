@@ -23,7 +23,6 @@ All of the libraries listed below are used in the ContagionRL paper and their re
 | gymnasium         | 1.0.0   | Toolkit for reinforcement learning environments | MIT License                      |
 | imageio           | 2.37.0  | Image and video I/O library                     | BSD 2-Clause                     |
 | matplotlib        | 3.10.3  | Comprehensive plotting library                  | Matplotlib License (BSD-based)   |
-| numpy             | 2.2.6   | Core numerical computing library                | BSD 3-Clause                     |
 | pandas            | 2.2.3   | Data manipulation and analysis                  | BSD 3-Clause                     |
 | scipy             | 1.15.3  | Advanced scientific computations                | BSD 3-Clause                     |
 | seaborn           | 0.13.2  | Statistical data visualization                  | BSD 3-Clause                     |
@@ -32,6 +31,7 @@ All of the libraries listed below are used in the ContagionRL paper and their re
 | torch             | 2.6.0   | Deep learning framework                         | BSD 3-Clause                     |
 | tqdm              | 4.67.1  | Progress bar utility                            | MPL 2.0 (Mozilla Public License) |
 | tueplots          | 0.2.0   | Publication-style plotting presets              | MIT License                      |
+| wandb 			| 0.19.8  | Experiment tracking and visualization           | MIT License                      |
 
 # SIRS+D Environment 
 The SIRS+D environment can be found as `SIRSDEnvironment` in `environment.py` file. `SIRSDEnvironment` can be used directly or using registered version with `gym.make`. The `env_config` corresponds to the environmental parameters in Table 3 of the paper.
