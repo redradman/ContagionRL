@@ -325,7 +325,7 @@ def execute_single_training_run(
         vec_env.close()
         if eval_env:
             eval_env.close()
-        print(f"--- Finished run for SEED: {current_seed} for {run_name} ---")
+        print(f"# Finished run for SEED: {current_seed} for {run_name} #")
 
 def main(args):
     current_env_config = env_config.copy()
@@ -356,7 +356,7 @@ def main(args):
 
     for seed_val in SEEDS_TO_RUN:
         seed_specific_run_name = f"{base_run_name_for_group}_seed{seed_val}"
-        print(f"--- Preparing training for: {seed_specific_run_name} (Seed: {seed_val}) ---")
+        print(f"# Preparing training for: {seed_specific_run_name} (Seed: {seed_val}) #")
         
         execute_single_training_run(
             current_seed=seed_val,

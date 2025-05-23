@@ -965,7 +965,7 @@ class SIRSDEnvironment(gym.Env):
         # Get current ablation variant
         variant = self.reward_ablation
 
-        # --- Constants for vector field ---
+        # # Constants for vector field #
         w_I = 1.0      # strength of infected repulsion
         w_S = 0.5      # weak repulsion from susceptibles
         
@@ -1132,7 +1132,7 @@ class SIRSDEnvironment(gym.Env):
         # Store current state before update for terminal reward calculation
         previous_agent_state = self.agent_state
         
-        # --- Calculate distance to nearest infected BEFORE stepping --- 
+        # # Calculate distance to nearest infected BEFORE stepping # 
         self.dist_before_step = self.max_distance # Default if no infected
         agent_human_before = Human(
             x=self.agent_position[0],
@@ -1144,7 +1144,7 @@ class SIRSDEnvironment(gym.Env):
         if infected_list_before:
             distances_before = [self._calculate_distance(agent_human_before, h) for h in infected_list_before]
             self.dist_before_step = min(distances_before)
-        # --- End distance calculation --- 
+        # # End distance calculation # 
             
         self._update_agent(action) 
         self._handle_human_stepping()
