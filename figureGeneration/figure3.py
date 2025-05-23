@@ -82,7 +82,7 @@ def run_evaluation_episodes_for_metrics(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Figure 3 comparing models trained with different beta values.")
-    parser.add_argument("--model-base-prefix", type=str, required=True, help="Prefix for model directories (e.g., 'Fig3_Beta'). The script will append beta values and seed numbers.")
+    parser.add_argument("--model-base", type=str, required=True, help="Prefix for model directories (e.g., 'Fig3_Beta'). The script will append beta values and seed numbers.")
     parser.add_argument("--seeds", type=str, default="1,2,3", help="Comma-separated list of seeds for trained models.")
     parser.add_argument("--runs", type=int, default=30, help="Number of evaluation episodes per loaded model.")
     parser.add_argument("--output-dir", type=str, default="figures/", help="Directory to save the figures.")
@@ -104,7 +104,7 @@ def main():
     for beta_value in BETA_VALUES:
         beta_label = BETA_LABELS[beta_value]
         beta_str_for_name = str(beta_value).replace('.', 'p')
-        model_base_name_for_beta = f"{args.model_base_prefix}_beta{beta_str_for_name}"
+        model_base_name_for_beta = f"{args.model_base}_beta{beta_str_for_name}"
         print(f"Processing models for {beta_label}")
         for train_seed in tqdm(train_seeds, desc=f"Models for {beta_label}"):
             model_dir_name = f"{model_base_name_for_beta}_seed{train_seed}"
@@ -237,7 +237,7 @@ def main():
     found_config = False
     for beta_value in BETA_VALUES:
         beta_str_for_name = str(beta_value).replace('.', 'p')
-        model_base_name_for_beta = f"{args.model_base_prefix}_beta{beta_str_for_name}"
+        model_base_name_for_beta = f"{args.model_base}_beta{beta_str_for_name}"
         for train_seed in train_seeds:
             model_dir_name = f"{model_base_name_for_beta}_seed{train_seed}"
             model_path = os.path.join("logs", model_dir_name, "best_model.zip")

@@ -82,7 +82,7 @@ def run_evaluation_episodes_for_metrics(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Figure 6 comparing models trained with different grid sizes.")
-    parser.add_argument("--model-base-prefix", type=str, required=True, help="Prefix for model directories (e.g., 'Fig6'). The script will append '_grid<size>'.")
+    parser.add_argument("--model-base", type=str, required=True, help="Prefix for model directories (e.g., 'Fig6'). The script will append '_grid<size>'.")
     parser.add_argument("--seeds", type=str, default="1,2,3", help="Comma-separated list of seeds for trained models.")
     parser.add_argument("--runs", type=int, default=30, help="Number of evaluation episodes per loaded model.")
     parser.add_argument("--output-dir", type=str, default="figures/", help="Directory to save the figures.")
@@ -103,7 +103,7 @@ def main():
 
     for grid_size_value in GRID_SIZE_VALUES:
         grid_size_label = GRID_SIZE_LABELS[grid_size_value]
-        model_base_name_for_grid = f"{args.model_base_prefix}_grid{grid_size_value}"
+        model_base_name_for_grid = f"{args.model_base}_grid{grid_size_value}"
         print(f"Processing models for {grid_size_label}")
         for train_seed in tqdm(train_seeds, desc=f"Models for {grid_size_label}"):
             model_dir_name = f"{model_base_name_for_grid}_seed{train_seed}"
@@ -248,7 +248,7 @@ def main():
     # --- Get simulation_time from config.json of first available model ---
     simulation_time = None; found_config = False
     for gs_val in GRID_SIZE_VALUES:
-        model_base_name_for_grid = f"{args.model_base_prefix}_grid{gs_val}"
+        model_base_name_for_grid = f"{args.model_base}_grid{gs_val}"
         for train_seed in train_seeds:
             model_dir_name = f"{model_base_name_for_grid}_seed{train_seed}"
             model_path = os.path.join("logs", model_dir_name, "best_model.zip")

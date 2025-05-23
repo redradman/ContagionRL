@@ -81,7 +81,7 @@ def run_evaluation_episodes_for_metrics(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Figure 7 comparing models trained with different adherence effectiveness values.")
-    parser.add_argument("--model-base-prefix", type=str, required=True, help="Prefix for model directories (e.g., 'Fig7'). The script will append '_adherenceEff<value>'.")
+    parser.add_argument("--model-base", type=str, required=True, help="Prefix for model directories (e.g., 'Fig7'). The script will append '_adherenceEff<value>'.")
     parser.add_argument("--seeds", type=str, default="1,2,3", help="Comma-separated list of seeds for trained models.")
     parser.add_argument("--runs", type=int, default=30, help="Number of evaluation episodes per loaded model.")
     parser.add_argument("--output-dir", type=str, default="figures/", help="Directory to save the figures.")
@@ -103,7 +103,7 @@ def main():
     for adherence_eff_value in ADHERENCE_EFFECTIVENESS_VALUES:
         adherence_eff_label = ADHERENCE_EFFECTIVENESS_LABELS[adherence_eff_value]
         # Model name for adherence effectiveness uses the direct float value (e.g., 0.1 not 0p1)
-        model_base_name_for_ae = f"{args.model_base_prefix}_adherenceEff{adherence_eff_value}"
+        model_base_name_for_ae = f"{args.model_base}_adherenceEff{adherence_eff_value}"
         print(f"Processing models for {adherence_eff_label}")
         for train_seed in tqdm(train_seeds, desc=f"Models for {adherence_eff_label}"):
             model_dir_name = f"{model_base_name_for_ae}_seed{train_seed}"
@@ -227,7 +227,7 @@ def main():
 
     simulation_time = None; found_config = False
     for ae_val in ADHERENCE_EFFECTIVENESS_VALUES:
-        model_base_name_for_ae = f"{args.model_base_prefix}_adherenceEff{ae_val}"
+        model_base_name_for_ae = f"{args.model_base}_adherenceEff{ae_val}"
         for train_seed in train_seeds:
             model_dir_name = f"{model_base_name_for_ae}_seed{train_seed}"
             model_path = os.path.join("logs", model_dir_name, "best_model.zip")

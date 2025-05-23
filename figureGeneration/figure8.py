@@ -81,7 +81,7 @@ def run_evaluation_episodes_for_metrics(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Figure 8 comparing models trained with different distance decay values.")
-    parser.add_argument("--model-base-prefix", type=str, required=True, help="Prefix for model directories (e.g., 'Fig8'). The script will append '_distanceDecay<value>'.")
+    parser.add_argument("--model-base", type=str, required=True, help="Prefix for model directories (e.g., 'Fig8'). The script will append '_distanceDecay<value>'.")
     parser.add_argument("--seeds", type=str, default="1,2,3", help="Comma-separated list of seeds for trained models.")
     parser.add_argument("--runs", type=int, default=30, help="Number of evaluation episodes per loaded model.")
     parser.add_argument("--output-dir", type=str, default="figures/", help="Directory to save the figures.")
@@ -102,7 +102,7 @@ def main():
 
     for dd_value in DISTANCE_DECAY_VALUES:
         dd_label = DISTANCE_DECAY_LABELS[dd_value]
-        model_base_name_for_dd = f"{args.model_base_prefix}_distanceDecay{dd_value}"
+        model_base_name_for_dd = f"{args.model_base}_distanceDecay{dd_value}"
         print(f"Processing models for {dd_label}")
         for train_seed in tqdm(train_seeds, desc=f"Models for {dd_label}"):
             model_dir_name = f"{model_base_name_for_dd}_seed{train_seed}"
@@ -218,7 +218,7 @@ def main():
 
     simulation_time = None; found_config = False
     for dd_val in DISTANCE_DECAY_VALUES:
-        model_base_name_for_dd = f"{args.model_base_prefix}_distanceDecay{dd_val}"
+        model_base_name_for_dd = f"{args.model_base}_distanceDecay{dd_val}"
         for train_seed in train_seeds:
             model_dir_name = f"{model_base_name_for_dd}_seed{train_seed}"
             model_path = os.path.join("logs", model_dir_name, "best_model.zip")
