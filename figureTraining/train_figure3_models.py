@@ -1,20 +1,15 @@
-#!/usr/bin/env python
 import os
 import sys
 import argparse
-import datetime
-import copy # For deep copying configurations
+import copy
 
-# Add the parent directory to the path to access project modules
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
-# Imports from the main project
 from config import env_config as global_env_config_template
 from config import ppo_config as global_ppo_config_template
 from config import save_config as global_save_config_template
 
-# Attempt to import the refactored training function
 try:
     from train import execute_single_training_run
 except ImportError as e:
@@ -22,11 +17,9 @@ except ImportError as e:
     print("Please ensure train.py is in the project root and has been refactored.")
     sys.exit(1)
 
-# Seeds to run for each beta configuration
 SEEDS_FOR_TRAINING = [1, 2, 3]
-# Beta values to test
 BETA_VALUES = [0.2, 0.5, 0.7, 0.9]
-REWARD_TYPE_FOR_FIG3 = "potential_field" # Assuming Potential Field reward for these beta tests
+REWARD_TYPE_FOR_FIG3 = "potential_field" 
 
 def main_fig3_trainer(args):
     """Main function to orchestrate training for Figure 3 models (varying beta)."""
@@ -36,21 +29,16 @@ def main_fig3_trainer(args):
     initial_save_config = copy.deepcopy(global_save_config_template)
 
     wandb_project_for_fig3 = os.getenv("WANDB_PROJECT_FIG3", "sirs-rl-fig3-beta")
-    # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
 
     for beta_value in BETA_VALUES:
         print(f"\n=== Training models for Figure 3 (Beta: {beta_value}, Reward: {REWARD_TYPE_FOR_FIG3}) ===")
         
-        # Modify a copy of the environment config for the current beta value
         env_config_for_this_run = copy.deepcopy(initial_env_config)
         env_config_for_this_run['beta'] = beta_value
         env_config_for_this_run['reward_type'] = REWARD_TYPE_FOR_FIG3
-        env_config_for_this_run['reward_ablation'] = "full" # Ensure full Potential Field
+        env_config_for_this_run['reward_ablation'] = "full" 
 
-        # Construct base_run_name_for_group for W&B grouping and file naming
-        # Replace dot with p for filename/group name compatibility (e.g., Beta0p2)
         beta_str_for_name = str(beta_value).replace('.', 'p') 
-        # base_run_name_for_group = f"Fig3_Beta{beta_str_for_name}_{timestamp}"
         base_run_name_for_group = f"Fig3_Beta{beta_str_for_name}"
         if args.exp_suffix:
             base_run_name_for_group = f"{base_run_name_for_group}_{args.exp_suffix}"

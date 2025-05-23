@@ -2,19 +2,17 @@
 import os
 import sys
 import argparse
-import datetime
-import copy # For deep copying configurations
+import copy 
 
-# Add the parent directory to the path to access project modules
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
-# Imports from the main project
+
 from config import env_config as global_env_config_template
 from config import ppo_config as global_ppo_config_template
 from config import save_config as global_save_config_template
 
-# Attempt to import the refactored training function
 try:
     from train import execute_single_training_run
 except ImportError as e:
@@ -22,11 +20,9 @@ except ImportError as e:
     print("Please ensure train.py is in the project root and has been refactored.")
     sys.exit(1)
 
-# Seeds to run for each grid size configuration
 SEEDS_FOR_TRAINING = [1, 2, 3]
-# Grid size values to test
 GRID_SIZE_VALUES = [30, 40, 50, 60]
-REWARD_TYPE_FOR_FIG6 = "potential_field" # Assuming Potential Field reward for these grid size tests
+REWARD_TYPE_FOR_FIG6 = "potential_field"
 
 def main_fig6_trainer(args):
     """Main function to orchestrate training for Figure 6 models (varying grid size)."""
@@ -40,13 +36,11 @@ def main_fig6_trainer(args):
     for grid_size in GRID_SIZE_VALUES:
         print(f"\n=== Training models for Figure 6 (Grid Size: {grid_size}, Reward: {REWARD_TYPE_FOR_FIG6}) ===")
         
-        # Modify a copy of the environment config for the current grid size value
         env_config_for_this_run = copy.deepcopy(initial_env_config)
         env_config_for_this_run['grid_size'] = grid_size
         env_config_for_this_run['reward_type'] = REWARD_TYPE_FOR_FIG6
-        env_config_for_this_run['reward_ablation'] = "full" # Ensure full Potential Field
+        env_config_for_this_run['reward_ablation'] = "full" 
 
-        # Construct base_run_name_for_group for W&B grouping and file naming
         base_run_name_for_group = f"Fig6_grid{grid_size}"
         if args.exp_suffix:
             base_run_name_for_group = f"{base_run_name_for_group}_{args.exp_suffix}"

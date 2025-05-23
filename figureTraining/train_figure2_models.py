@@ -1,37 +1,27 @@
 import os
 import sys
 import argparse
-import datetime
-import copy # For deep copying configurations
-# Add wandb imports
+import copy 
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-# Add the parent directory to the path to access project modules
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
-# Imports from the main project
 from config import env_config as global_env_config_template
 from config import ppo_config as global_ppo_config_template
 from config import save_config as global_save_config_template
 
-# Attempt to import the refactored training function and other utilities from train.py
-# This assumes train.py is in the PROJECT_ROOT
+
 try:
     from train import (
         execute_single_training_run,
-        # We might need set_global_seeds if not implicitly handled by execute_single_training_run for its own scope
-        # EntropyCoefCallback, VideoRecorderCallback, # These are defined in train.py but used internally by execute_single_training_run
-        # make_env, make_eval_env, get_activation_fn, save_config_with_model # Also internal to execute_single_training_run logic
     )
 except ImportError as e:
     print(f"Error importing from train.py: {e}")
     print("Please ensure train.py is in the project root and has been refactored with execute_single_training_run.")
     sys.exit(1)
 
-# Define the reward configurations to be trained
-# The base_exp_name will be used to form the wandb group and part of the run name
 REWARD_CONFIGURATIONS = [
     {
         "label": "Constant", 
@@ -61,19 +51,16 @@ REWARD_CONFIGURATIONS = [
     # Add more configurations if needed
 ]
 
-# Seeds to run for each reward configuration
 SEEDS_FOR_TRAINING = [1, 2, 3]
 
 def main_fig2_trainer(args):
     """Main function to orchestrate training for different reward configurations."""
     
-    # Use copies of global configs to avoid modifying them across different reward types
     initial_env_config = copy.deepcopy(global_env_config_template)
     initial_ppo_config = copy.deepcopy(global_ppo_config_template)
     initial_save_config = copy.deepcopy(global_save_config_template)
 
     wandb_project_for_fig2 = os.getenv("WANDB_PROJECT_FIG2", "sirs-rl-fig2-rewards")
-    # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
 
     for config_details in REWARD_CONFIGURATIONS:
         current_reward_label = config_details["label"]
@@ -82,31 +69,24 @@ def main_fig2_trainer(args):
 
         print(f"\n=== Training models for reward type: {current_reward_label} ({current_reward_type}) ===")
         
-        # Modify a copy of the environment config for the current reward type
         env_config_for_this_run = copy.deepcopy(initial_env_config)
         env_config_for_this_run['reward_type'] = current_reward_type
         
-        # Construct base_run_name_for_group for W&B grouping and file naming
-        # This name is for the group of seeds under ONE reward configuration
         base_run_name_for_group = f"{base_exp_name_prefix}"
         if args.exp_suffix:
             base_run_name_for_group = f"{base_run_name_for_group}_{args.exp_suffix}"
 
         for seed_val in SEEDS_FOR_TRAINING:
-            # The full unique run name for this specific seed and reward config
             seed_specific_run_name = f"{base_run_name_for_group}_seed{seed_val}"
             print(f"--- Preparing training for: {seed_specific_run_name} (Reward: {current_reward_label}, Seed: {seed_val}) ---")
-            # Ensure base_log_path from save_config exists
-            # execute_single_training_run will create the seed-specific subdirectory
             os.makedirs(initial_save_config["base_log_path"], exist_ok=True)
 
-            # Only pass wandb flags and project/group names to the training function
             execute_single_training_run(
                 current_seed=seed_val,
                 run_name=seed_specific_run_name, 
                 log_path_base=initial_save_config["base_log_path"], 
-                effective_env_config=env_config_for_this_run, # Use the modified env_config
-                effective_ppo_config=copy.deepcopy(initial_ppo_config), # Pass copies to be safe
+                effective_env_config=env_config_for_this_run, 
+                effective_ppo_config=copy.deepcopy(initial_ppo_config), 
                 effective_save_config=copy.deepcopy(initial_save_config),
                 should_record_video_flag=args.record_video,
                 use_wandb_flag=not args.no_wandb,
@@ -123,7 +103,6 @@ if __name__ == "__main__":
     parser.add_argument("--no-wandb", action="store_true", help="Disable Weights & Biases logging.")
     parser.add_argument("--wandb-offline", action="store_true", help="Run W&B in offline mode.")
     parser.add_argument("--record-video", action="store_true", help="Enable video recording of evaluation episodes during these trainings.")
-    # We are not taking --config here, as this script drives specific modifications to the global config
     
     cli_args = parser.parse_args()
 

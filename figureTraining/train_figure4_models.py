@@ -11,11 +11,9 @@ import gymnasium as gym
 from torch import nn
 import pandas as pd
 import json
-# Add wandb imports
 import wandb
 from wandb.integration.sb3 import WandbCallback
 
-# Add the parent directory to the path to access project modules
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
@@ -25,10 +23,8 @@ from config import save_config as global_save_config_template
 from environment import SIRSDEnvironment
 
 SEEDS_FOR_TRAINING = [1, 2, 3]
-# ALGORITHMS = ["ppo", "sac", "a2c"]
-ALGORITHMS = ["a2c"]
+ALGORITHMS = ["ppo", "sac", "a2c"]
 
-# Unified hyperparameter configs for PPO, SAC, and TD3
 ppo_config = {
     "policy_type": "MultiInputPolicy",
     "policy_kwargs": dict(
@@ -97,7 +93,6 @@ a2c_config = {
     "n_envs": 4
 }
 
-# Helper to flatten observation space for SAC/TD3
 class FlattenObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -116,36 +111,7 @@ def make_env_for_algo(env_config, seed, algo):
         return env
     return _init
 
-class EpisodeReturnLogger(BaseCallback):
-    def __init__(self, log_path, algorithm, seed, verbose=0):
-        super().__init__(verbose)
-        self.log_path = log_path
-        self.algorithm = algorithm
-        self.seed = seed
-        self.returns_log = []
-        self.episode_counter = 0  # Explicit episode counter
 
-    def _on_step(self):
-        infos = self.locals.get("infos", [])
-        for info in infos:
-            if "episode" in info:
-                ep_return = info["episode"]["r"]
-                self.returns_log.append({
-                    "algorithm": self.algorithm,
-                    "seed": self.seed,
-                    "episode": self.episode_counter,
-                    "mean_return": ep_return,
-                    "timesteps": self.num_timesteps
-                })
-                self.episode_counter += 1
-        return True
-
-    def _on_training_end(self):
-        df = pd.DataFrame(self.returns_log)
-        os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
-        # df.to_csv(self.log_path, index=False)
-
-# Add entropy coefficient scheduler
 class EntropyCoefCallback(BaseCallback):
     """
     Callback for updating the entropy coefficient during training.
@@ -176,14 +142,13 @@ class EntropyCoefCallback(BaseCallback):
         self.model.ent_coef = new_value
         self.current_value = new_value
         
-        if self.verbose > 0 and self.n_calls % 100_000 == 0: # Log less frequently
+        if self.verbose > 0 and self.n_calls % 100_000 == 0:
             self.logger.record("train/ent_coef", self.current_value)
             
         return True
 
 def get_activation_fn(act_fn):
     if isinstance(act_fn, str):
-        # Accept both 'relu' and 'ReLU'
         act_map = {
             "relu": nn.ReLU,
             "ReLU": nn.ReLU,
@@ -207,7 +172,6 @@ def save_config_with_model(save_path: str, env_config: dict, algo_config: dict, 
         elif isinstance(obj, (list, tuple)):
             return [make_json_serializable(v) for v in obj]
         elif isinstance(obj, type):
-            # If it's a type, check if it's a nn.Module subclass
             if issubclass(obj, nn.Module):
                 return obj.__name__
             else:
@@ -236,7 +200,6 @@ def main():
     parser.add_argument("--record-video", action="store_true", help="Enable video recording of evaluation episodes during these trainings.")
     args = parser.parse_args()
 
-    # timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
     save_config = copy.deepcopy(global_save_config_template)
     env_config = copy.deepcopy(global_env_config_template)
 
@@ -249,7 +212,6 @@ def main():
             print(f"--- Training {algo.upper()} for seed {seed} ---")
             os.makedirs(save_config["base_log_path"], exist_ok=True)
 
-            # W&B setup (mimic train.py)
             use_wandb_flag = not args.no_wandb
             wandb_offline_flag = args.wandb_offline
             wandb_project_name = os.getenv("WANDB_PROJECT_FIG4", "sirs-rl-fig4")
@@ -286,7 +248,6 @@ def main():
                 if wandb_offline_flag:
                     print(f"\nRunning W&B in offline mode for {run_name}. Run 'wandb sync {current_wandb_run.dir}' to sync.")
 
-            # Environment setup
             if algo == "ppo":
                 env_fns = [make_env_for_algo(env_config, seed + i, algo) for i in range(ppo_config["n_envs"])]
                 vec_env = SubprocVecEnv(env_fns)
@@ -314,11 +275,11 @@ def main():
             else:
                 raise ValueError(f"Unknown algorithm: {algo}")
 
-            # Before model = PPO(...), SAC(...), TD3(...)
+
             if "policy_kwargs" in model_kwargs and "activation_fn" in model_kwargs["policy_kwargs"]:
                 model_kwargs["policy_kwargs"]["activation_fn"] = get_activation_fn(model_kwargs["policy_kwargs"]["activation_fn"])
 
-            # Model setup
+
             if algo == "ppo":
                 model = PPO(
                     policy=policy_type,
@@ -349,7 +310,7 @@ def main():
             else:
                 raise ValueError(f"Unknown algorithm: {algo}")
 
-            # Callbacks
+
             callbacks = []
             checkpoint_callback = CheckpointCallback(
                 save_freq=save_config["save_freq"],
@@ -374,9 +335,6 @@ def main():
                     render=False
                 )
                 callbacks.append(eval_callback)
-            log_path = os.path.join(save_config["base_log_path"], run_name, "training_returns.csv")
-            callbacks.append(EpisodeReturnLogger(log_path, algo.upper(), seed))
-            # Add EntropyCoefCallback for PPO only, matching train.py
             if algo == "ppo":
                 callbacks.append(EntropyCoefCallback(
                     initial_value=ppo_config["ent_coef"],
@@ -384,7 +342,7 @@ def main():
                     schedule_percentage=0.4,
                     verbose=1
                 ))
-            # Add WandbCallback if enabled
+
             if use_wandb_flag:
                 callbacks.append(WandbCallback(
                     model_save_path=os.path.join(save_config["base_log_path"], run_name, "wandb_models"),
@@ -402,13 +360,11 @@ def main():
                 model.save(os.path.join(save_config["base_log_path"], run_name, f"final_model_{algo}"))
                 vec_env.save(os.path.join(save_config["base_log_path"], run_name, "vecnormalize.pkl"))
                 vec_env.close()
-                # Finish wandb run if started
                 if use_wandb_flag and current_wandb_run:
                     if wandb.run is not None and wandb.run.id == current_wandb_run.id:
                         wandb.finish()
                 print(f"--- Finished run for {algo.upper()} SEED: {seed} ---")
 
-            # Save config.json for this run
             save_config_with_model(
                 os.path.join(save_config["base_log_path"], run_name),
                 env_config,
