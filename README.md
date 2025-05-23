@@ -16,7 +16,7 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 ## Licenses
-The following libraries are used in ContagionRL. Their licenses and usage details are listed below. `gymnasium` and `matplotlib` are instrumental in making the environment. Our codebase is intended for release under BSD-3 license.
+The following libraries are used in ContagionRL. Their licenses and usage details are listed below. Our codebase is intended for release under BSD-3 license.
 
 | Library           | Version | Purpose                                         | License                          |
 | ----------------- | ------- | ----------------------------------------------- | -------------------------------- |
