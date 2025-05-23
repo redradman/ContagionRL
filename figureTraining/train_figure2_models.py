@@ -76,7 +76,7 @@ def main_fig2_trainer(args):
 
         for seed_val in SEEDS_FOR_TRAINING:
             seed_specific_run_name = f"{base_run_name_for_group}_seed{seed_val}"
-            print(f"--- Preparing training for: {seed_specific_run_name} (Reward: {current_reward_label}, Seed: {seed_val}) ---")
+            print(f"# Preparing training for: {seed_specific_run_name} (Reward: {current_reward_label}, Seed: {seed_val}) #")
             os.makedirs(initial_save_config["base_log_path"], exist_ok=True)
 
             execute_single_training_run(
@@ -92,7 +92,7 @@ def main_fig2_trainer(args):
                 wandb_project_name=wandb_project_for_fig2,
                 wandb_group_name=base_run_name_for_group
             )
-            print(f"--- Completed training for: {seed_specific_run_name} ---")
+            print(f"# Completed training for: {seed_specific_run_name} #")
         print(f"=== Finished all seeds for reward type: {current_reward_label} ===")
 
 if __name__ == "__main__":

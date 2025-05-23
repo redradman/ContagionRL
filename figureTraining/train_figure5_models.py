@@ -155,7 +155,7 @@ def main():
             base_exp_name = f"{base_exp_name}_{args.exp_suffix}"
         for seed in SEEDS_FOR_TRAINING:
             run_name = f"{base_exp_name}_seed{seed}"
-            print(f"--- Training PPO for ablation {ablation} seed {seed} ---")
+            print(f"# Training PPO for ablation {ablation} seed {seed} #")
             os.makedirs(save_config["base_log_path"], exist_ok=True)
 
             # W&B setup
@@ -268,7 +268,7 @@ def main():
                 if use_wandb_flag and current_wandb_run:
                     if wandb.run is not None and wandb.run.id == current_wandb_run.id:
                         wandb.finish()
-                print(f"--- Finished run for ablation {ablation} SEED: {seed} ---")
+                print(f"# Finished run for ablation {ablation} SEED: {seed} #")
 
             # Save config.json for this run
             save_config_with_model(
