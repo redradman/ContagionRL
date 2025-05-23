@@ -124,7 +124,7 @@ def main():
                 model = PPO.load(model_path, env=env)
                 model_eval_run_base_seed = args.eval_seed_base + category_seed_offset * 100 + train_seed * args.runs
                 
-                # --- Trained PPO ---
+                #  Trained PPO 
                 eval_metrics_list = run_evaluation_episodes_for_metrics(env, model, args.runs, model_eval_run_base_seed)
                 for metrics in eval_metrics_list:
                     all_results_data.append({
@@ -136,7 +136,7 @@ def main():
                         "agent_type": "Trained"
                     })
 
-                # --- Baselines (run for each trained model's env config to ensure correct grid_size) ---
+                #  Baselines (run for each trained model's env config to ensure correct grid_size) 
                 baseline_env = create_env_from_config(current_env_config, seed=env_creation_seed + 1) # Use slightly different seed for safety
                 # Stationary
                 for i in range(args.runs):
@@ -204,7 +204,7 @@ def main():
     
     grid_size_order_from_data = sorted(results_df['grid_size_value'].unique())
 
-    # --- Mann-Whitney U Tests: Trained vs Baselines for each Grid Size ---
+    #  Mann-Whitney U Tests: Trained vs Baselines for each Grid Size 
     for gs_val in grid_size_order_from_data:
         gs_label_for_print = GRID_SIZE_LABELS.get(gs_val, str(gs_val))
         print(f"\nOne-Sided Mann–Whitney U Test Results (Grid Size = {gs_label_for_print}):")
@@ -245,7 +245,7 @@ def main():
             p1corr_str = f"{row_data['p_one_corr']:.4g}" if not np.isnan(row_data['p_one_corr']) else "N/A"; mdiff_str = f"{mean_diff:.2f}" if not np.isnan(mean_diff) else "N/A"
             print("{:<12} {:<12} {:<12} {:<8} {:<12} {:<8} {:<10} {:<10}".format(row_data["Baseline"], p2_str, p1raw_str, row_data["sig_two"], p1corr_str, row_data["sig_one"], final_winner, mdiff_str))
 
-    # --- Get simulation_time from config.json of first available model ---
+    #  Get simulation_time from config.json of first available model 
     simulation_time = None; found_config = False
     for gs_val in GRID_SIZE_VALUES:
         model_base_name_for_grid = f"{args.model_base}_grid{gs_val}"

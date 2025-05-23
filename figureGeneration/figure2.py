@@ -172,7 +172,7 @@ def main():
     if args.aggregate_seeds:
         results_df = results_df.groupby(['reward_function_label', 'model_train_seed'])['episode_length'].mean().reset_index()
 
-    # --- Plotting (Violin + Box Overlay + Stripplot) ---
+    # Plotting (Violin + Box Overlay + Stripplot)
     plt.figure(figsize=(12, 6))
     y_metric_col = "episode_length"
     y_label = "Episode Duration (steps)"
@@ -204,7 +204,7 @@ def main():
     ax.scatter([], [], color='black', s=120, label='Per-seed Mean', edgecolor='white', linewidth=2)
     ax.legend(fontsize=13)
 
-    # --- Directional Mann–Whitney U test vs. Potential Field (Table 1 style) ---
+    # Directional Mann–Whitney U test vs. Potential Field (Table 1 style)
     ref_label = 'Potential Field'
     comparisons = []
     raw_one_sided_pvals = []
@@ -264,7 +264,7 @@ def main():
             row["sig_two"], row["p_one_corr"], row["sig_one"], row["winner"]
         ))
 
-    # --- Annotate the plot with significance stars from the one-sided tests ---
+    # Annotate the plot with significance stars from the one-sided tests
     # Find y positions for annotation
     y_max = results_df[y_metric_col].max()
     y_min = results_df[y_metric_col].min()
@@ -300,7 +300,7 @@ def main():
     plt.close()
     print(f"Figure saved to {figure_path}")
 
-    # --- Bar plot: Mean and 95% bootstrapped CI for each reward function ---
+    # Bar plot: Mean and 95% bootstrapped CI for each reward function
     means = []
     ci_lows = []
     ci_highs = []

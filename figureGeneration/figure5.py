@@ -136,7 +136,7 @@ def main():
 
     results_df = pd.DataFrame(all_results_data)
 
-    # --- Plotting (Box + Violin + Stripplot + Per-seed Means) ---
+    #  Plotting (Box + Violin + Stripplot + Per-seed Means) 
     fig, ax = plt.subplots(figsize=(10, 6))
     y_metric_col = "episode_length"
     y_label = "Episode Duration (steps)"
@@ -176,7 +176,7 @@ def main():
     plt.ylabel(y_label, fontsize=13)
     plt.tight_layout(pad=0.5)
 
-    # --- Directional Mann–Whitney U test vs. Full Model ---
+    #  Directional Mann–Whitney U test vs. Full Model 
     ref_label = VARIANT_LABELS["full"]
     ref_data = results_df[results_df["ablation_label"] == ref_label]["episode_length"]
 
@@ -230,7 +230,7 @@ def main():
         if row["sig_one"] == "n.s.":
             row["winner"] = "--"
 
-    # --- Add significance annotations to box/violin plot ---
+    #  Add significance annotations to box/violin plot 
     y_max = results_df[y_metric_col].max()
     increment = (results_df[y_metric_col].max() - results_df[y_metric_col].min()) * 0.08 if len(results_df) > 1 else 0.1 * abs(results_df[y_metric_col].max())
     current_y = y_max + increment * 0.5
@@ -279,7 +279,7 @@ def main():
     n_boot = 10000
     rng = np.random.default_rng(42)
 
-    # --- Bar plot: Mean and 95% bootstrapped CI for each ablation variant ---
+    #  Bar plot: Mean and 95% bootstrapped CI for each ablation variant 
     means = []
     ci_lows = []
     ci_highs = []

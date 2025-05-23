@@ -123,7 +123,7 @@ def main():
                 env = create_env_from_config(current_env_config, seed=env_creation_seed) 
                 model = PPO.load(model_path, env=env)
                 model_eval_run_base_seed = args.eval_seed_base + category_seed_offset * 100 + train_seed * args.runs
-                # --- Trained PPO ---
+                #  Trained PPO 
                 eval_metrics_list = run_evaluation_episodes_for_metrics(env, model, args.runs, model_eval_run_base_seed)
                 for metrics in eval_metrics_list:
                     all_results_data.append({
@@ -134,7 +134,7 @@ def main():
                         "final_reward": metrics["final_reward"],
                         "agent_type": "Trained"
                     })
-                # --- Baselines ---
+                #  Baselines 
                 # Stationary
                 for i in range(args.runs):
                     eval_seed = model_eval_run_base_seed + 1000 + i
@@ -232,7 +232,7 @@ def main():
         print("No data collected from any models. Exiting.")
         return
 
-    # --- Get simulation_time from config.json of first available model ---
+    #  Get simulation_time from config.json of first available model 
     simulation_time = None
     found_config = False
     for beta_value in BETA_VALUES:
@@ -260,7 +260,7 @@ def main():
     agent_order = ['Stationary', 'Random', 'Trained', 'Greedy']
     beta_order = sorted(results_df['beta_value'].unique())
 
-    # --- Mann-Whitney U Tests: Trained vs Baselines for each Beta ---
+    #  Mann-Whitney U Tests: Trained vs Baselines for each Beta 
     for beta in beta_order: # beta_order should be defined before this loop
         print(f"\nOne-Sided Mann–Whitney U Test Results (Beta = {beta}):")
         comparisons = []
@@ -344,11 +344,11 @@ def main():
                 row_data["Baseline"], p2_str, p1raw_str, row_data["sig_two"],
                 p1corr_str, row_data["sig_one"], final_winner, mdiff_str
             ))
-    # --- End of Mann-Whitney U Tests ---
+    #  End of Mann-Whitney U Tests 
 
     grouped = results_df.groupby(['beta_value', 'agent_type', 'model_train_seed'])['episode_length'].mean().reset_index()
 
-    # --- BOOTSTRAP CI FUNCTION ---
+    #  BOOTSTRAP CI FUNCTION 
     def bootstrap_ci(data, n_resamples=10000, ci=95):
         if len(data) < 2:
             return (np.nan, np.nan)
@@ -357,7 +357,7 @@ def main():
         upper = np.percentile(boot_means, 100 - (100 - ci) / 2)
         return lower, upper
 
-    # --- PREPARE DATA FOR BARPLOT ---
+    #  PREPARE DATA FOR BARPLOT 
     bar_data = []
     for beta in beta_order:
         for agent in agent_order:
@@ -377,7 +377,7 @@ def main():
             })
     bar_df = pd.DataFrame(bar_data)
 
-    # --- PLOT GROUPED BARPLOT ---
+    #  PLOT GROUPED BARPLOT 
     plt.figure(figsize=(8, 5))
     ax = plt.gca()
     bar_width = 0.18
@@ -394,7 +394,7 @@ def main():
         ]
         bar_positions = x + (i - (len(agent_order)-1)/2) * bar_width
         ax.bar(bar_positions, means, width=bar_width, label=agent, color=palette[i], yerr=err, capsize=4, edgecolor='black', linewidth=0.7)
-    # --- Add simulation_time reference line ---
+    #  Add simulation_time reference line 
     ax.axhline(simulation_time, color='red', linestyle='--', linewidth=1.5, alpha=0.8, zorder=2)
     # Add label at the right edge, above the line
     # xlim = ax.get_xlim()
@@ -406,7 +406,7 @@ def main():
     ax.legend(title="Agent Type", fontsize=9, title_fontsize=10, loc='center left', bbox_to_anchor=(1.02, 0.5), borderaxespad=0)
     plt.tight_layout(pad=0.5, rect=[0, 0, 0.85, 1])
 
-    # --- STATISTICAL ANNOTATIONS REMOVED (Cliff's Delta) ---
+    #  STATISTICAL ANNOTATIONS REMOVED (Cliff's Delta) 
     # (The section calculating and printing Cliff's delta, and annotating the plot with it, is removed)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

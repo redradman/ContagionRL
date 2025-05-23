@@ -124,7 +124,7 @@ def main():
 
     all_results = []
 
-    # --- Evaluate RL models ---
+    #  Evaluate RL models 
     for algo in ["ppo", "sac", "a2c"]:
         for seed in tqdm(train_seeds, desc=f"{algo.upper()} seeds", position=0):
             model_dir = f"{args.model_base}_{algo.upper()}_seed{seed}"
@@ -148,7 +148,7 @@ def main():
                 all_results.append({"agent_label": AGENT_LABELS[algo], "train_seed": seed, "episode_length": ep_len})
             env.close()
 
-    # --- Evaluate baselines ---
+    #  Evaluate baselines 
     # Use PPO env config for baselines (from the first PPO model found)
     base_env_config = None
     for seed in train_seeds:
@@ -169,14 +169,14 @@ def main():
                 all_results.append({"agent_label": AGENT_LABELS[agent_type], "train_seed": seed, "episode_length": ep_len})
             env.close()
 
-    # --- Plotting with 95% bootstrapped CIs over per-seed means ---
+    #  Plotting with 95% bootstrapped CIs over per-seed means 
     results_df = pd.DataFrame(all_results)
     plt.figure(figsize=(8, 6))
     y_metric_col = "episode_length"
     y_label = "Episode Duration (steps)"
     plot_order_filtered = [label for label in PLOT_ORDER if label in results_df['agent_label'].unique()]
 
-    # --- NEW: Boxplot per agent, overlay per-seed means as black dots with white outline, and all episode durations as points ---
+    #  NEW: Boxplot per agent, overlay per-seed means as black dots with white outline, and all episode durations as points 
     ax = plt.gca()
     sns.boxplot(x="agent_label", y=y_metric_col, data=results_df, order=plot_order_filtered, ax=ax, palette="muted", showfliers=True)
     # Overlay all individual episode durations as small black points
@@ -201,7 +201,7 @@ def main():
     plt.close()
     print(f"Figure saved to {figure_path}")
 
-    # --- Bar plot: Mean and 95% bootstrapped CI for each algorithm ---
+    #  Bar plot: Mean and 95% bootstrapped CI for each algorithm 
     means = []
     ci_lows = []
     ci_highs = []
@@ -240,7 +240,7 @@ def main():
     plt.close() # Close the bar plot figure
     print(f"Bar plot of means and 95% CI saved to {bar_figure_path}")
 
-    # --- Directional Mann-Whitney U test section: one-sided test in direction of higher mean, Bonferroni correction, and directional advantage field ---
+    #  Directional Mann-Whitney U test section: one-sided test in direction of higher mean, Bonferroni correction, and directional advantage field 
     print("\nPairwise Mann–Whitney U Test Results (Raw + Bonferroni-corrected, Directional)")
 
     def significance_stars(p):
@@ -300,7 +300,6 @@ def main():
         if row["sig_one"] == "n.s.":
             row["Direction"] = "--"
 
-    # Print NeurIPS-grade table with directional advantage
     print("{:<12} {:<12} {:<12} {:<12} {:<8} {:<12} {:<8} {:<20}".format(
         "Agent A", "Agent B", "p (2-sided)", "p (1-sided)", "Sig (2)", "p (1) Corr", "Sig (1)", "Directional Advantage"
     ))
