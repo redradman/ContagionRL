@@ -121,11 +121,14 @@ To regenerate our data, figures and tables in the results or additional experime
 | **Environmental Parameter Variation: Population density (Grid Size)** | Figure 10, Table 10           | `train_figure6_models.py` | `figure6.py`             |
 | **Environmental Parameter Variation: Adherence Effectiveness**        | Figure 11, Table 11           | `train_figure7_models.py` | `figure7.py`             |
 | **Environmental Parameter Variation: Distance Decay**                 | Figure 12, Table 12           | `train_figure8_models.py` | `figure8.py`             |
+| **Render of a single step of environment**                 | Figure 5           | N/A | `figure_render.py`             |
 
 
 The results section is divided into to two parts: 
 1. `figureTraining`: Handle the training of the necessary models to make the graphs. For example: `train_figure2_models.py` handles the training of the models needed to make `figure2.py`. By default, all of the models are trained across 3 seeds. 
 2. `figureGeneration`: Create graphs based on the train model made by its corresponding training file. Each `figureX.py` produces multiple visualizations. The charts are saved to a `figures` directory. The tables are printed (with pretty print) into the terminal that is running the script. 
+
+*Note: `train_figure1_models.py` and `figure1.py` are legacy scripts that are not part of the current figure generation workflow, and no figures in the paper are derived from them.*
 
 ## Recreating results
 To recreate the figures in our paper, follow these instructions. Make that you have activated the Conda environment, [see requirements](#Requirements).
@@ -139,6 +142,7 @@ In training you may be asked to log into [W&B](https://wandb.ai/). You can skip 
 ```python
 python figure[X].py --model-base Fig[X] --runs 100
 ```
+The above command would create a new folder called `figures/`, which will contain the figure(s). The tables (if applicable) will be printed to the terminal output.
 - Be sure to replace `X` with an integer based on the grouping tables above. The value for `X` should be the same for both of the scripts. 
 - Model base provides a reference to which models in `logs` directory should be used.
 - `--runs 100` is used to do 100 inferences per seed per model. 
