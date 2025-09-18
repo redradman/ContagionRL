@@ -19,7 +19,7 @@ class MovementHandler:
         
         Args:
             grid_size: Size of the environment grid
-            movement_type: One of ["stationary", "discrete_random", "continuous_random", "circular_formation"]
+            movement_type: One of ["stationary", "discrete_random", "continuous_random", "circular_formation", "workplace_home_cycle"]
             rounding_digits: Number of digits to round position coordinates to
             movement_scale: Scale factor for movement of non-focal agents (0 to 1, where 0 is no movement and 1 is full movement)
         """
@@ -31,9 +31,17 @@ class MovementHandler:
         self.max_acceleration = 0.2 
         self.max_velocity = 1.0
         self.velocities = {}
-        valid_types = ["stationary", "discrete_random", "continuous_random", "circular_formation"]
+        valid_types = ["stationary", "discrete_random", "continuous_random", "circular_formation", "workplace_home_cycle"]
         if movement_type not in valid_types:
             raise ValueError(f"Movement type must be one of {valid_types}")
+        
+        # Workplace/home cycle tracking (only used when movement_type == "workplace_home_cycle")
+        self.home_locations = {}  # {human_id: (x_home, y_home)}
+        self.work_locations = {}  # {human_id: (x_work, y_work)}
+        self.current_targets = {}  # {human_id: 'home' or 'work'}
+        self.stay_timers = {}  # {human_id: countdown_int}
+        self.movement_states = {}  # {human_id: 'at_home', 'going_to_work', 'at_work', 'going_home'}
+        self.movement_patterns = {}  # {human_id: 'workplace_cycle' or 'random'}
 
     def initialize_positions(self, n_humans: int, rng: np.random.Generator, n_infected: int = 0, safe_distance: float = 0, init_agent_distance: float = 0) -> list:
         """
@@ -160,6 +168,10 @@ class MovementHandler:
                         vx = (vx / speed) * self.max_velocity
                         vy = (vy / speed) * self.max_velocity
                     self.velocities[i] = [vx, vy]
+            
+            # Initialize workplace/home cycle data
+            elif self.movement_type == "workplace_home_cycle":
+                self._initialize_workplace_home_cycle(n_humans, rng, positions)
             
             return positions
 
@@ -289,6 +301,10 @@ class MovementHandler:
             return self._continuous_random_move(x, y, human_id, rng)
         elif self.movement_type == "circular_formation":
             return self._circular_formation_move(x, y, rng)
+        elif self.movement_type == "workplace_home_cycle":
+            if human_id is None:
+                raise ValueError("human_id is required for workplace_home_cycle movement")
+            return self._workplace_home_cycle_move(x, y, human_id, rng)
         else:
             raise ValueError(f"Invalid movement type: {self.movement_type}")
 
@@ -336,6 +352,150 @@ class MovementHandler:
         new_y = round(new_y % self.grid_size, self.rounding_digits)
         
         return new_x, new_y
+
+    def _initialize_workplace_home_cycle(self, n_humans: int, rng: np.random.Generator, positions: list):
+        """
+        Initialize workplace/home cycle data for humans.
+        80% follow workplace cycle (determined by human ID), 20% do random movement.
+        Workplace: Northwest area, Home: Southwest area, both with radius 15.
+        """
+        # Define workplace and residential zones with radius 15
+        # Workplace: Northwest area (downtown)
+        work_center_x = self.grid_size * 0.25  # Northwest quadrant
+        work_center_y = self.grid_size * 0.75  # Northwest quadrant  
+        work_radius = 15
+        
+        # Homes: Southwest area (residential)
+        home_center_x = self.grid_size * 0.25  # Southwest quadrant
+        home_center_y = self.grid_size * 0.25  # Southwest quadrant
+        home_radius = 15
+        
+        for i in range(n_humans):
+            # Use human ID to deterministically assign 80% to workplace cycle
+            # This ensures consistent assignment across runs with same seed
+            human_id_hash = hash(str(i)) % 100  # Convert ID to 0-99 range
+            
+            if human_id_hash < 80:  # 80% workplace cycle
+                self.movement_patterns[i] = 'workplace_cycle'
+                
+                # Assign home location within southwest residential area
+                home_angle = rng.uniform(0, 2 * math.pi)
+                home_dist = rng.uniform(0, home_radius)
+                home_x = home_center_x + home_dist * math.cos(home_angle)
+                home_y = home_center_y + home_dist * math.sin(home_angle)
+                
+                # Clamp to grid bounds
+                home_x = max(0, min(self.grid_size - 1, home_x))
+                home_y = max(0, min(self.grid_size - 1, home_y))
+                self.home_locations[i] = (round(home_x, self.rounding_digits), 
+                                        round(home_y, self.rounding_digits))
+                
+                # Assign work location within northwest downtown area
+                work_angle = rng.uniform(0, 2 * math.pi)
+                work_dist = rng.uniform(0, work_radius)
+                work_x = work_center_x + work_dist * math.cos(work_angle)
+                work_y = work_center_y + work_dist * math.sin(work_angle)
+                
+                # Clamp to grid bounds
+                work_x = max(0, min(self.grid_size - 1, work_x))
+                work_y = max(0, min(self.grid_size - 1, work_y))
+                self.work_locations[i] = (round(work_x, self.rounding_digits), 
+                                        round(work_y, self.rounding_digits))
+                
+                # Initialize state: start at home
+                self.current_targets[i] = 'home'
+                self.movement_states[i] = 'at_home'
+                self.stay_timers[i] = rng.integers(15, 26)  # 15-25 timesteps at home initially
+                
+                # Update position to be at home
+                positions[i] = self.home_locations[i]
+                
+            else:
+                # Random movement humans (20%)
+                self.movement_patterns[i] = 'random'
+                # Initialize velocity for random movement
+                vx = rng.uniform(-self.max_velocity, self.max_velocity)
+                vy = rng.uniform(-self.max_velocity, self.max_velocity)
+                speed = math.sqrt(vx**2 + vy**2)
+                if speed > self.max_velocity:
+                    vx = (vx / speed) * self.max_velocity
+                    vy = (vy / speed) * self.max_velocity
+                self.velocities[i] = [vx, vy]
+
+    def _workplace_home_cycle_move(self, x: float, y: float, human_id: int, rng: np.random.Generator) -> Tuple[float, float]:
+        """
+        Handle workplace/home cycle movement for a specific human.
+        """
+        # Check if this human uses random movement instead
+        if self.movement_patterns.get(human_id) == 'random':
+            return self._continuous_random_move(x, y, human_id, rng)
+            
+        # Get current state for this human
+        current_state = self.movement_states.get(human_id, 'at_home')
+        stay_timer = self.stay_timers.get(human_id, 0)
+        
+        # Get target locations
+        home_loc = self.home_locations.get(human_id, (x, y))
+        work_loc = self.work_locations.get(human_id, (x, y))
+        
+        if current_state in ['at_home', 'at_work']:
+            # Currently at a location
+            if stay_timer > 0:
+                # Still need to stay, decrement timer
+                self.stay_timers[human_id] = stay_timer - 1
+                return x, y  # Don't move
+            else:
+                # Time to switch locations
+                if current_state == 'at_home':
+                    self.current_targets[human_id] = 'work'
+                    self.movement_states[human_id] = 'going_to_work'
+                else:  # at_work
+                    self.current_targets[human_id] = 'home'
+                    self.movement_states[human_id] = 'going_home'
+        
+        # Now handle movement toward target
+        target_loc = work_loc if self.current_targets[human_id] == 'work' else home_loc
+        
+        # Calculate distance to target
+        dx = target_loc[0] - x
+        dy = target_loc[1] - y
+        
+        # Handle periodic boundaries
+        if abs(dx) > self.grid_size / 2:
+            dx = dx - np.sign(dx) * self.grid_size
+        if abs(dy) > self.grid_size / 2:
+            dy = dy - np.sign(dy) * self.grid_size
+            
+        distance = math.sqrt(dx**2 + dy**2)
+        
+        # Check if we've reached the target
+        if distance < 1.0:  # Close enough to target
+            if self.current_targets[human_id] == 'work':
+                self.movement_states[human_id] = 'at_work'
+                self.stay_timers[human_id] = rng.integers(18, 23)  # 18-22 timesteps at work
+            else:
+                self.movement_states[human_id] = 'at_home'
+                self.stay_timers[human_id] = rng.integers(18, 23)  # 18-22 timesteps at home
+            
+            return target_loc[0], target_loc[1]
+        
+        # Move toward target with reasonable speed
+        movement_speed = 1.0  # Units per timestep
+        if distance > 0:
+            # Normalize direction and apply speed
+            move_x = (dx / distance) * movement_speed
+            move_y = (dy / distance) * movement_speed
+            
+            new_x = x + move_x
+            new_y = y + move_y
+            
+            # Handle periodic boundaries
+            new_x = new_x % self.grid_size
+            new_y = new_y % self.grid_size
+            
+            return round(new_x, self.rounding_digits), round(new_y, self.rounding_digits)
+        
+        return x, y  # Fallback
 
 
 ######## Human class ########
