@@ -358,82 +358,227 @@ def main():
     print(f"Movement types: {df['movement_label'].unique()}")
     print(f"Agent types: {df['agent_type'].unique()}")
 
-    # Generate visualizations
+    # Group data by category, agent type, and training seed to get per-seed means (consistent with other figures)
+    grouped_reward = df.groupby(['movement_label', 'agent_type', 'train_seed'])['final_reward'].mean().reset_index()
+    grouped_episode = df.groupby(['movement_label', 'agent_type', 'train_seed'])['episode_length'].mean().reset_index()
+    grouped_infection = df.groupby(['movement_label', 'agent_type', 'train_seed'])['infection_rate'].mean().reset_index()
+
+    # Calculate and print summary statistics with bootstrap confidence intervals (matching figure 8)
+    print("\n" + "="*60)
+    print("BOOTSTRAP 95% CONFIDENCE INTERVALS (from per-seed means)")
+    print("="*60)
+
+    def bootstrap_ci_for_printing(data, n_resamples=10000, ci=95):
+        if len(data) < 2:
+            return (np.nan, np.nan)
+        boot_means = [np.mean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_resamples)]
+        return np.percentile(boot_means, (100-ci)/2), np.percentile(boot_means, 100-(100-ci)/2)
+
+    print("\nFinal Reward 95% Bootstrap Confidence Intervals:")
+    for mov_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_reward[(grouped_reward['movement_label'] == mov_label) &
+                                         (grouped_reward['agent_type'] == agent_type)]['final_reward'].values
+            if len(series_means) > 0:
+                ci_low, ci_high = bootstrap_ci_for_printing(series_means)
+                mean_val = np.mean(series_means)
+                ci_width = ci_high - ci_low
+                print(f"  {mov_label} - {agent_type}: Mean={mean_val:.3f}, CI=[{ci_low:.3f}, {ci_high:.3f}], Width={ci_width:.3f}")
+
+    print("\nEpisode Length 95% Bootstrap Confidence Intervals:")
+    for mov_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_episode[(grouped_episode['movement_label'] == mov_label) &
+                                          (grouped_episode['agent_type'] == agent_type)]['episode_length'].values
+            if len(series_means) > 0:
+                ci_low, ci_high = bootstrap_ci_for_printing(series_means)
+                mean_val = np.mean(series_means)
+                ci_width = ci_high - ci_low
+                print(f"  {mov_label} - {agent_type}: Mean={mean_val:.3f}, CI=[{ci_low:.3f}, {ci_high:.3f}], Width={ci_width:.3f}")
+
+    print("\nInfection Rate 95% Bootstrap Confidence Intervals:")
+    for mov_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_infection[(grouped_infection['movement_label'] == mov_label) &
+                                            (grouped_infection['agent_type'] == agent_type)]['infection_rate'].values
+            if len(series_means) > 0:
+                ci_low, ci_high = bootstrap_ci_for_printing(series_means)
+                mean_val = np.mean(series_means)
+                ci_width = ci_high - ci_low
+                print(f"  {mov_label} - {agent_type}: Mean={mean_val:.3f}, CI=[{ci_low:.3f}, {ci_high:.3f}], Width={ci_width:.3f}")
+
+    # Bootstrap CI function (matching figure 8)
+    def bootstrap_ci(data, n_resamples=10000, ci=95):
+        if len(data) < 2:
+            return (np.nan, np.nan)
+        boot_means = [np.mean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_resamples)]
+        return np.percentile(boot_means, (100-ci)/2), np.percentile(boot_means, 100-(100-ci)/2)
+
+    # Generate visualizations with avg reward and episode length on top, infection spread on bottom
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    
-    # Plot 1: Final Reward Comparison
+
+    # Plot 1: Final Reward Comparison with Bootstrap CI (matching figure 8 style)
     ax1 = axes[0, 0]
-    sns.barplot(
-        data=df, 
-        x='movement_label', 
-        y='final_reward', 
-        hue='agent_type',
-        order=PLOT_ORDER_X_AXIS,
-        hue_order=AGENT_ORDER,
-        ax=ax1,
-        errorbar='se'
-    )
-    ax1.set_title('Final Reward by Movement Pattern')
-    ax1.set_xlabel('Movement Pattern')
-    ax1.set_ylabel('Final Reward')
-    ax1.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax1.tick_params(axis='x', rotation=45)
-    
-    # Plot 2: Episode Length Comparison
+
+    # Prepare data for bar plot with bootstrap CI
+    bar_plot_data_reward = []
+    for mov_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_reward[(grouped_reward['movement_label'] == mov_label) &
+                                         (grouped_reward['agent_type'] == agent_type)]['final_reward'].values
+            if len(series_means) == 0:
+                continue
+            overall_mean = np.mean(series_means)
+            ci_low, ci_high = bootstrap_ci(series_means)
+            bar_plot_data_reward.append({
+                'movement_label': mov_label,
+                'agent_type': agent_type,
+                'mean_reward': overall_mean,
+                'ci_low': ci_low,
+                'ci_high': ci_high
+            })
+
+    bar_df_reward = pd.DataFrame(bar_plot_data_reward)
+
+    # Create bars with bootstrap CI (matching figure 8 implementation)
+    bar_width = 0.18
+    x_indices = np.arange(len(PLOT_ORDER_X_AXIS))
+    palette = sns.color_palette("Set2", n_colors=len(AGENT_ORDER))
+
+    for i, agent_type in enumerate(AGENT_ORDER):
+        agent_data = bar_df_reward[bar_df_reward['agent_type'] == agent_type]
+        means_ordered = [agent_data[agent_data['movement_label'] == label]['mean_reward'].values[0]
+                        if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                        for label in PLOT_ORDER_X_AXIS]
+        ci_lows_ordered = [agent_data[agent_data['movement_label'] == label]['ci_low'].values[0]
+                          if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                          for label in PLOT_ORDER_X_AXIS]
+        ci_highs_ordered = [agent_data[agent_data['movement_label'] == label]['ci_high'].values[0]
+                           if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                           for label in PLOT_ORDER_X_AXIS]
+
+        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+
+        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
+        ax1.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
+                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+
+    ax1.set_xticks(x_indices)
+    ax1.set_xticklabels(PLOT_ORDER_X_AXIS)
+    ax1.set_title('Average Reward by Movement Pattern')
+    ax1.set_xlabel('Movement Pattern', fontsize=13)
+    ax1.set_ylabel('Average Reward', fontsize=13)
+
+
+    # Plot 2: Episode Length Comparison with Bootstrap CI
     ax2 = axes[0, 1]
-    sns.barplot(
-        data=df, 
-        x='movement_label', 
-        y='episode_length', 
-        hue='agent_type',
-        order=PLOT_ORDER_X_AXIS,
-        hue_order=AGENT_ORDER,
-        ax=ax2,
-        errorbar='se'
-    )
-    ax2.set_title('Episode Length by Movement Pattern')
-    ax2.set_xlabel('Movement Pattern')
-    ax2.set_ylabel('Episode Length')
-    ax2.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax2.tick_params(axis='x', rotation=45)
-    
-    # Plot 3: Clustering Coefficient Analysis
-    ax3 = axes[1, 0]
-    sns.barplot(
-        data=df, 
-        x='movement_label', 
-        y='avg_clustering_coefficient', 
-        hue='agent_type',
-        order=PLOT_ORDER_X_AXIS,
-        hue_order=AGENT_ORDER,
-        ax=ax3,
-        errorbar='se'
-    )
-    ax3.set_title('Spatial Clustering by Movement Pattern')
-    ax3.set_xlabel('Movement Pattern')
-    ax3.set_ylabel('Average Clustering Coefficient')
-    ax3.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax3.tick_params(axis='x', rotation=45)
-    
-    # Plot 4: Infection Rate Comparison
-    ax4 = axes[1, 1]
-    sns.barplot(
-        data=df,
-        x='movement_label',
-        y='infection_rate',
-        hue='agent_type',
-        order=PLOT_ORDER_X_AXIS,
-        hue_order=AGENT_ORDER,
-        ax=ax4,
-        errorbar='se'
-    )
-    ax4.set_title('Infection Spread Rate by Movement Pattern')
-    ax4.set_xlabel('Movement Pattern')
-    ax4.set_ylabel('Infections per Timestep')
-    ax4.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax4.tick_params(axis='x', rotation=45)
-    
-    plt.tight_layout()
+
+    # Prepare data for episode length bar plot with bootstrap CI
+    bar_plot_data_episode = []
+    for mov_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_episode[(grouped_episode['movement_label'] == mov_label) &
+                                          (grouped_episode['agent_type'] == agent_type)]['episode_length'].values
+            if len(series_means) == 0:
+                continue
+            overall_mean = np.mean(series_means)
+            ci_low, ci_high = bootstrap_ci(series_means)
+            bar_plot_data_episode.append({
+                'movement_label': mov_label,
+                'agent_type': agent_type,
+                'mean_episode_length': overall_mean,
+                'ci_low': ci_low,
+                'ci_high': ci_high
+            })
+
+    bar_df_episode = pd.DataFrame(bar_plot_data_episode)
+
+    # Create bars with bootstrap CI for episode length
+    for i, agent_type in enumerate(AGENT_ORDER):
+        agent_data = bar_df_episode[bar_df_episode['agent_type'] == agent_type]
+        means_ordered = [agent_data[agent_data['movement_label'] == label]['mean_episode_length'].values[0]
+                        if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                        for label in PLOT_ORDER_X_AXIS]
+        ci_lows_ordered = [agent_data[agent_data['movement_label'] == label]['ci_low'].values[0]
+                          if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                          for label in PLOT_ORDER_X_AXIS]
+        ci_highs_ordered = [agent_data[agent_data['movement_label'] == label]['ci_high'].values[0]
+                           if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                           for label in PLOT_ORDER_X_AXIS]
+
+        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+
+        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
+        ax2.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
+                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+
+    ax2.set_xticks(x_indices)
+    ax2.set_xticklabels(PLOT_ORDER_X_AXIS)
+    ax2.set_title('Mean Episode Length by Movement Pattern')
+    ax2.set_xlabel('Movement Pattern', fontsize=13)
+    ax2.set_ylabel('Mean Episode Length', fontsize=13)
+
+
+    # Plot 3: Infection Rate Comparison (spans both columns on bottom row)
+    ax3 = plt.subplot2grid((2, 2), (1, 0), colspan=2)
+
+    # Prepare data for infection rate bar plot with bootstrap CI
+    bar_plot_data_infection = []
+    for mov_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_infection[(grouped_infection['movement_label'] == mov_label) &
+                                            (grouped_infection['agent_type'] == agent_type)]['infection_rate'].values
+            if len(series_means) == 0:
+                continue
+            overall_mean = np.mean(series_means)
+            ci_low, ci_high = bootstrap_ci(series_means)
+            bar_plot_data_infection.append({
+                'movement_label': mov_label,
+                'agent_type': agent_type,
+                'mean_infection_rate': overall_mean,
+                'ci_low': ci_low,
+                'ci_high': ci_high
+            })
+
+    bar_df_infection = pd.DataFrame(bar_plot_data_infection)
+
+    # Create bars with bootstrap CI for infection rate
+    for i, agent_type in enumerate(AGENT_ORDER):
+        agent_data = bar_df_infection[bar_df_infection['agent_type'] == agent_type]
+        means_ordered = [agent_data[agent_data['movement_label'] == label]['mean_infection_rate'].values[0]
+                        if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                        for label in PLOT_ORDER_X_AXIS]
+        ci_lows_ordered = [agent_data[agent_data['movement_label'] == label]['ci_low'].values[0]
+                          if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                          for label in PLOT_ORDER_X_AXIS]
+        ci_highs_ordered = [agent_data[agent_data['movement_label'] == label]['ci_high'].values[0]
+                           if not agent_data[agent_data['movement_label'] == label].empty else np.nan
+                           for label in PLOT_ORDER_X_AXIS]
+
+        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+
+        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
+        ax3.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
+                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+
+    ax3.set_xticks(x_indices)
+    ax3.set_xticklabels(PLOT_ORDER_X_AXIS)
+    ax3.set_title('Infection Spread Rate by Movement Pattern')
+    ax3.set_xlabel('Movement Pattern', fontsize=13)
+    ax3.set_ylabel('Infections per Timestep', fontsize=13)
+
+    # Create shared legend
+    handles, labels = ax1.get_legend_handles_labels()
+
+    # Position shared legend to the right of all plots
+    fig.legend(handles, labels, title='Agent Type', fontsize=11, title_fontsize=12,
+               bbox_to_anchor=(1.02, 0.5), loc='center left', borderaxespad=0)
+
+    # Remove the unused subplot
+    fig.delaxes(axes[1, 0])
+    fig.delaxes(axes[1, 1])
+
+    plt.tight_layout(pad=0.5, rect=[0, 0, 0.85, 1])
     
     # Save figure as PDF (following existing pattern)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
