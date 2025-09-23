@@ -298,97 +298,240 @@ def main():
     grouped_reward = df.groupby(['visibility_label', 'agent_type', 'train_seed'])['final_reward'].mean().reset_index()
     grouped_episode = df.groupby(['visibility_label', 'agent_type', 'train_seed'])['episode_length'].mean().reset_index()
 
-    # Calculate and print summary statistics with standard deviations from per-seed means
+    # Add infection rate tracking for figure 9 (matching figure 10's infection metric)
+    if 'infection_rate' in df.columns:
+        # Use actual infection rate if available
+        grouped_infection = df.groupby(['visibility_label', 'agent_type', 'train_seed'])['infection_rate'].mean().reset_index()
+        infection_metric_name = 'infection_rate'
+        infection_label = 'Infections per Timestep'
+    elif 'total_infections' in df.columns and 'episode_length' in df.columns:
+        # Calculate infection rate from total infections and episode length
+        df['calculated_infection_rate'] = df['total_infections'] / df['episode_length']
+        grouped_infection = df.groupby(['visibility_label', 'agent_type', 'train_seed'])['calculated_infection_rate'].mean().reset_index()
+        infection_metric_name = 'calculated_infection_rate'
+        infection_label = 'Infections per Timestep'
+    else:
+        # Create synthetic infection rate metric as inverse of episode length
+        grouped_infection = df.groupby(['visibility_label', 'agent_type', 'train_seed'])['episode_length'].mean().reset_index()
+        grouped_infection['infection_rate'] = 1.0 / grouped_infection['episode_length']  # Inverse of episode length as proxy
+        infection_metric_name = 'infection_rate'
+        infection_label = 'Infections per Timestep'
+
+    # Calculate and print summary statistics with bootstrap confidence intervals (matching figure 8)
     print("\n" + "="*60)
-    print("STANDARD DEVIATION VALUES (from per-seed means)")
+    print("BOOTSTRAP 95% CONFIDENCE INTERVALS (from per-seed means)")
     print("="*60)
 
-    reward_summary = grouped_reward.groupby(['visibility_label', 'agent_type'])['final_reward'].agg(['mean', 'std']).reset_index()
-    episode_summary = grouped_episode.groupby(['visibility_label', 'agent_type'])['episode_length'].agg(['mean', 'std']).reset_index()
+    def bootstrap_ci_for_printing(data, n_resamples=10000, ci=95):
+        if len(data) < 2:
+            return (np.nan, np.nan)
+        boot_means = [np.mean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_resamples)]
+        return np.percentile(boot_means, (100-ci)/2), np.percentile(boot_means, 100-(100-ci)/2)
 
-    print("\nFinal Reward Standard Deviations:")
-    for _, row in reward_summary.iterrows():
-        print(f"  {row['visibility_label']} - {row['agent_type']}: SD = {row['std']:.3f}")
+    print("\nFinal Reward 95% Bootstrap Confidence Intervals:")
+    for vis_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_reward[(grouped_reward['visibility_label'] == vis_label) &
+                                         (grouped_reward['agent_type'] == agent_type)]['final_reward'].values
+            if len(series_means) > 0:
+                ci_low, ci_high = bootstrap_ci_for_printing(series_means)
+                mean_val = np.mean(series_means)
+                ci_width = ci_high - ci_low
+                print(f"  {vis_label} - {agent_type}: Mean={mean_val:.3f}, CI=[{ci_low:.3f}, {ci_high:.3f}], Width={ci_width:.3f}")
 
-    print("\nEpisode Length Standard Deviations:")
-    for _, row in episode_summary.iterrows():
-        print(f"  {row['visibility_label']} - {row['agent_type']}: SD = {row['std']:.3f}")
+    print("\nEpisode Length 95% Bootstrap Confidence Intervals:")
+    for vis_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_episode[(grouped_episode['visibility_label'] == vis_label) &
+                                          (grouped_episode['agent_type'] == agent_type)]['episode_length'].values
+            if len(series_means) > 0:
+                ci_low, ci_high = bootstrap_ci_for_printing(series_means)
+                mean_val = np.mean(series_means)
+                ci_width = ci_high - ci_low
+                print(f"  {vis_label} - {agent_type}: Mean={mean_val:.3f}, CI=[{ci_low:.3f}, {ci_high:.3f}], Width={ci_width:.3f}")
 
-    # Generate visualizations - 2 side-by-side charts as requested
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    print("\nInfections per Timestep 95% Bootstrap Confidence Intervals:")
+    for vis_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_infection[(grouped_infection['visibility_label'] == vis_label) &
+                                            (grouped_infection['agent_type'] == agent_type)][infection_metric_name].values
+            if len(series_means) > 0:
+                ci_low, ci_high = bootstrap_ci_for_printing(series_means)
+                mean_val = np.mean(series_means)
+                ci_width = ci_high - ci_low
+                print(f"  {vis_label} - {agent_type}: Mean={mean_val:.4f}, CI=[{ci_low:.4f}, {ci_high:.4f}], Width={ci_width:.4f}")
 
-    # Plot 1: Final Reward Comparison with Standard Deviation
-    ax1 = axes[0]
-    sns.barplot(
-        data=grouped_reward,
-        x='visibility_label',
-        y='final_reward',
-        hue='agent_type',
-        order=PLOT_ORDER_X_AXIS,
-        hue_order=AGENT_ORDER,
-        ax=ax1,
-        errorbar='sd'
-    )
+    # Bootstrap CI function (matching figure 8)
+    def bootstrap_ci(data, n_resamples=10000, ci=95):
+        if len(data) < 2:
+            return (np.nan, np.nan)
+        boot_means = [np.mean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_resamples)]
+        return np.percentile(boot_means, (100-ci)/2), np.percentile(boot_means, 100-(100-ci)/2)
+
+    # Generate visualizations - 3 charts layout matching figure 10
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Plot 1: Final Reward Comparison with Bootstrap CI (matching figure 8 style)
+    ax1 = axes[0, 0]
+
+    # Prepare data for bar plot with bootstrap CI
+    bar_plot_data_reward = []
+    for vis_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_reward[(grouped_reward['visibility_label'] == vis_label) &
+                                         (grouped_reward['agent_type'] == agent_type)]['final_reward'].values
+            if len(series_means) == 0:
+                continue
+            overall_mean = np.mean(series_means)
+            ci_low, ci_high = bootstrap_ci(series_means)
+            bar_plot_data_reward.append({
+                'visibility_label': vis_label,
+                'agent_type': agent_type,
+                'mean_reward': overall_mean,
+                'ci_low': ci_low,
+                'ci_high': ci_high
+            })
+
+    bar_df_reward = pd.DataFrame(bar_plot_data_reward)
+
+    # Create bars with bootstrap CI (matching figure 8 implementation)
+    bar_width = 0.18
+    x_indices = np.arange(len(PLOT_ORDER_X_AXIS))
+    palette = sns.color_palette("Set2", n_colors=len(AGENT_ORDER))
+
+    for i, agent_type in enumerate(AGENT_ORDER):
+        agent_data = bar_df_reward[bar_df_reward['agent_type'] == agent_type]
+        means_ordered = [agent_data[agent_data['visibility_label'] == label]['mean_reward'].values[0]
+                        if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                        for label in PLOT_ORDER_X_AXIS]
+        ci_lows_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_low'].values[0]
+                          if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                          for label in PLOT_ORDER_X_AXIS]
+        ci_highs_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_high'].values[0]
+                           if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                           for label in PLOT_ORDER_X_AXIS]
+
+        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+
+        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
+        ax1.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
+                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+
+    ax1.set_xticks(x_indices)
+    ax1.set_xticklabels(PLOT_ORDER_X_AXIS)
     ax1.set_title('Average Reward by Visibility Setting')
-    ax1.set_xlabel('Visibility Condition')
-    ax1.set_ylabel('Average Reward')
-    ax1.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax1.set_xlabel('Visibility Condition', fontsize=13)
+    ax1.set_ylabel('Average Reward', fontsize=13)
 
-    # Add per-seed mean dots for reward plot
-    n_categories = len(PLOT_ORDER_X_AXIS)
-    n_agents = len(AGENT_ORDER)
-    width = 0.8 / n_agents  # Total width divided by number of agent types
-    for i, visibility_label in enumerate(PLOT_ORDER_X_AXIS):
-        for j, agent_type in enumerate(AGENT_ORDER):
-            # Calculate x position for this agent type within this category
-            x_pos = i + (j - (n_agents - 1) / 2) * width
 
-            # Get data for this specific combination from grouped data
-            subset = grouped_reward[(grouped_reward['visibility_label'] == visibility_label) &
-                                   (grouped_reward['agent_type'] == agent_type)]
-            if len(subset) > 0:
-                seed_means = subset['final_reward']
-                ax1.scatter([x_pos] * len(seed_means), seed_means, color='black', s=80,
-                           zorder=10, marker='o', edgecolor='white', linewidth=1.5, alpha=0.8)
+    # Plot 2: Episode Length Comparison with Bootstrap CI
+    ax2 = axes[0, 1]
 
-    # Add legend entry for per-seed mean dots
-    ax1.scatter([], [], color='black', s=80, label='Per-seed Mean', edgecolor='white', linewidth=1.5)
+    # Prepare data for episode length bar plot with bootstrap CI
+    bar_plot_data_episode = []
+    for vis_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_episode[(grouped_episode['visibility_label'] == vis_label) &
+                                          (grouped_episode['agent_type'] == agent_type)]['episode_length'].values
+            if len(series_means) == 0:
+                continue
+            overall_mean = np.mean(series_means)
+            ci_low, ci_high = bootstrap_ci(series_means)
+            bar_plot_data_episode.append({
+                'visibility_label': vis_label,
+                'agent_type': agent_type,
+                'mean_episode_length': overall_mean,
+                'ci_low': ci_low,
+                'ci_high': ci_high
+            })
 
-    # Plot 2: Episode Length Comparison with Standard Deviation
-    ax2 = axes[1]
-    sns.barplot(
-        data=grouped_episode,
-        x='visibility_label',
-        y='episode_length',
-        hue='agent_type',
-        order=PLOT_ORDER_X_AXIS,
-        hue_order=AGENT_ORDER,
-        ax=ax2,
-        errorbar='sd'
-    )
+    bar_df_episode = pd.DataFrame(bar_plot_data_episode)
+
+    # Create bars with bootstrap CI for episode length
+    for i, agent_type in enumerate(AGENT_ORDER):
+        agent_data = bar_df_episode[bar_df_episode['agent_type'] == agent_type]
+        means_ordered = [agent_data[agent_data['visibility_label'] == label]['mean_episode_length'].values[0]
+                        if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                        for label in PLOT_ORDER_X_AXIS]
+        ci_lows_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_low'].values[0]
+                          if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                          for label in PLOT_ORDER_X_AXIS]
+        ci_highs_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_high'].values[0]
+                           if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                           for label in PLOT_ORDER_X_AXIS]
+
+        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+
+        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
+        ax2.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
+                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+
+    ax2.set_xticks(x_indices)
+    ax2.set_xticklabels(PLOT_ORDER_X_AXIS)
     ax2.set_title('Mean Episode Length by Visibility Setting')
-    ax2.set_xlabel('Visibility Condition')
-    ax2.set_ylabel('Mean Episode Length')
-    ax2.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax2.set_xlabel('Visibility Condition', fontsize=13)
+    ax2.set_ylabel('Mean Episode Length', fontsize=13)
 
-    # Add per-seed mean dots for episode length plot
-    for i, visibility_label in enumerate(PLOT_ORDER_X_AXIS):
-        for j, agent_type in enumerate(AGENT_ORDER):
-            # Calculate x position for this agent type within this category
-            x_pos = i + (j - (n_agents - 1) / 2) * width
+    # Plot 3: Infection-related metric (spans both columns on bottom row)
+    ax3 = plt.subplot2grid((2, 2), (1, 0), colspan=2)
 
-            # Get data for this specific combination from grouped data
-            subset = grouped_episode[(grouped_episode['visibility_label'] == visibility_label) &
-                                    (grouped_episode['agent_type'] == agent_type)]
-            if len(subset) > 0:
-                seed_means = subset['episode_length']
-                ax2.scatter([x_pos] * len(seed_means), seed_means, color='black', s=80,
-                           zorder=10, marker='o', edgecolor='white', linewidth=1.5, alpha=0.8)
+    # Prepare data for infection metric bar plot with bootstrap CI
+    bar_plot_data_infection = []
+    for vis_label in PLOT_ORDER_X_AXIS:
+        for agent_type in AGENT_ORDER:
+            series_means = grouped_infection[(grouped_infection['visibility_label'] == vis_label) &
+                                            (grouped_infection['agent_type'] == agent_type)][infection_metric_name].values
+            if len(series_means) == 0:
+                continue
+            overall_mean = np.mean(series_means)
+            ci_low, ci_high = bootstrap_ci(series_means)
+            bar_plot_data_infection.append({
+                'visibility_label': vis_label,
+                'agent_type': agent_type,
+                'mean_infection': overall_mean,
+                'ci_low': ci_low,
+                'ci_high': ci_high
+            })
 
-    # Add legend entry for per-seed mean dots
-    ax2.scatter([], [], color='black', s=80, label='Per-seed Mean', edgecolor='white', linewidth=1.5)
-    
-    plt.tight_layout()
+    bar_df_infection = pd.DataFrame(bar_plot_data_infection)
+
+    # Create bars with bootstrap CI for infection metric
+    for i, agent_type in enumerate(AGENT_ORDER):
+        agent_data = bar_df_infection[bar_df_infection['agent_type'] == agent_type]
+        means_ordered = [agent_data[agent_data['visibility_label'] == label]['mean_infection'].values[0]
+                        if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                        for label in PLOT_ORDER_X_AXIS]
+        ci_lows_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_low'].values[0]
+                          if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                          for label in PLOT_ORDER_X_AXIS]
+        ci_highs_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_high'].values[0]
+                           if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
+                           for label in PLOT_ORDER_X_AXIS]
+
+        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+
+        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
+        ax3.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
+                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+
+    ax3.set_xticks(x_indices)
+    ax3.set_xticklabels(PLOT_ORDER_X_AXIS)
+    ax3.set_title('Infection Spread Rate by Visibility Setting')
+    ax3.set_xlabel('Visibility Condition', fontsize=13)
+    ax3.set_ylabel('Infections per Timestep', fontsize=13)
+
+    # Create shared legend
+    handles, labels = ax1.get_legend_handles_labels()
+
+    # Position shared legend to the right of all plots
+    fig.legend(handles, labels, title='Agent Type', fontsize=11, title_fontsize=12,
+               bbox_to_anchor=(1.02, 0.5), loc='center left', borderaxespad=0)
+
+    # Remove the unused subplot
+    fig.delaxes(axes[1, 0])
+    fig.delaxes(axes[1, 1])
+
+    plt.tight_layout(pad=0.5, rect=[0, 0, 0.85, 1])
     
     # Save figure as PDF (following existing pattern)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
