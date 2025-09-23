@@ -358,80 +358,143 @@ def main():
     print(f"Movement types: {df['movement_label'].unique()}")
     print(f"Agent types: {df['agent_type'].unique()}")
 
-    # Generate visualizations
+    # Group data by category, agent type, and training seed to get per-seed means (consistent with other figures)
+    grouped_reward = df.groupby(['movement_label', 'agent_type', 'train_seed'])['final_reward'].mean().reset_index()
+    grouped_episode = df.groupby(['movement_label', 'agent_type', 'train_seed'])['episode_length'].mean().reset_index()
+    grouped_infection = df.groupby(['movement_label', 'agent_type', 'train_seed'])['infection_rate'].mean().reset_index()
+
+    # Calculate and print summary statistics with standard deviations from per-seed means
+    print("\n" + "="*60)
+    print("STANDARD DEVIATION VALUES (from per-seed means)")
+    print("="*60)
+
+    reward_summary = grouped_reward.groupby(['movement_label', 'agent_type'])['final_reward'].agg(['mean', 'std']).reset_index()
+    episode_summary = grouped_episode.groupby(['movement_label', 'agent_type'])['episode_length'].agg(['mean', 'std']).reset_index()
+    infection_summary = grouped_infection.groupby(['movement_label', 'agent_type'])['infection_rate'].agg(['mean', 'std']).reset_index()
+
+    print("\nFinal Reward Standard Deviations:")
+    for _, row in reward_summary.iterrows():
+        print(f"  {row['movement_label']} - {row['agent_type']}: SD = {row['std']:.3f}")
+
+    print("\nEpisode Length Standard Deviations:")
+    for _, row in episode_summary.iterrows():
+        print(f"  {row['movement_label']} - {row['agent_type']}: SD = {row['std']:.3f}")
+
+    print("\nInfection Rate Standard Deviations:")
+    for _, row in infection_summary.iterrows():
+        print(f"  {row['movement_label']} - {row['agent_type']}: SD = {row['std']:.3f}")
+
+    # Generate visualizations with avg reward and episode length on top, infection spread on bottom
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    
-    # Plot 1: Final Reward Comparison
+
+    # Plot 1: Final Reward Comparison with Standard Deviation
     ax1 = axes[0, 0]
     sns.barplot(
-        data=df, 
-        x='movement_label', 
-        y='final_reward', 
+        data=grouped_reward,
+        x='movement_label',
+        y='final_reward',
         hue='agent_type',
         order=PLOT_ORDER_X_AXIS,
         hue_order=AGENT_ORDER,
         ax=ax1,
-        errorbar='se'
+        errorbar='sd'
     )
-    ax1.set_title('Final Reward by Movement Pattern')
+    ax1.set_title('Average Reward by Movement Pattern')
     ax1.set_xlabel('Movement Pattern')
-    ax1.set_ylabel('Final Reward')
+    ax1.set_ylabel('Average Reward')
     ax1.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax1.tick_params(axis='x', rotation=45)
-    
-    # Plot 2: Episode Length Comparison
+
+    # Add per-seed mean dots for reward plot
+    n_categories = len(PLOT_ORDER_X_AXIS)
+    n_agents = len(AGENT_ORDER)
+    width = 0.8 / n_agents  # Total width divided by number of agent types
+    for i, movement_label in enumerate(PLOT_ORDER_X_AXIS):
+        for j, agent_type in enumerate(AGENT_ORDER):
+            # Calculate x position for this agent type within this category
+            x_pos = i + (j - (n_agents - 1) / 2) * width
+
+            # Get data for this specific combination from grouped data
+            subset = grouped_reward[(grouped_reward['movement_label'] == movement_label) &
+                                   (grouped_reward['agent_type'] == agent_type)]
+            if len(subset) > 0:
+                seed_means = subset['final_reward']
+                ax1.scatter([x_pos] * len(seed_means), seed_means, color='black', s=80,
+                           zorder=10, marker='o', edgecolor='white', linewidth=1.5, alpha=0.8)
+
+    # Add legend entry for per-seed mean dots
+    ax1.scatter([], [], color='black', s=80, label='Per-seed Mean', edgecolor='white', linewidth=1.5)
+
+    # Plot 2: Episode Length Comparison with Standard Deviation
     ax2 = axes[0, 1]
     sns.barplot(
-        data=df, 
-        x='movement_label', 
-        y='episode_length', 
+        data=grouped_episode,
+        x='movement_label',
+        y='episode_length',
         hue='agent_type',
         order=PLOT_ORDER_X_AXIS,
         hue_order=AGENT_ORDER,
         ax=ax2,
-        errorbar='se'
+        errorbar='sd'
     )
-    ax2.set_title('Episode Length by Movement Pattern')
+    ax2.set_title('Mean Episode Length by Movement Pattern')
     ax2.set_xlabel('Movement Pattern')
-    ax2.set_ylabel('Episode Length')
+    ax2.set_ylabel('Mean Episode Length')
     ax2.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax2.tick_params(axis='x', rotation=45)
-    
-    # Plot 3: Clustering Coefficient Analysis
-    ax3 = axes[1, 0]
+
+    # Add per-seed mean dots for episode length plot
+    for i, movement_label in enumerate(PLOT_ORDER_X_AXIS):
+        for j, agent_type in enumerate(AGENT_ORDER):
+            # Calculate x position for this agent type within this category
+            x_pos = i + (j - (n_agents - 1) / 2) * width
+
+            # Get data for this specific combination from grouped data
+            subset = grouped_episode[(grouped_episode['movement_label'] == movement_label) &
+                                    (grouped_episode['agent_type'] == agent_type)]
+            if len(subset) > 0:
+                seed_means = subset['episode_length']
+                ax2.scatter([x_pos] * len(seed_means), seed_means, color='black', s=80,
+                           zorder=10, marker='o', edgecolor='white', linewidth=1.5, alpha=0.8)
+
+    # Add legend entry for per-seed mean dots
+    ax2.scatter([], [], color='black', s=80, label='Per-seed Mean', edgecolor='white', linewidth=1.5)
+
+    # Plot 3: Infection Rate Comparison (spans both columns on bottom row)
+    ax3 = plt.subplot2grid((2, 2), (1, 0), colspan=2)
     sns.barplot(
-        data=df, 
-        x='movement_label', 
-        y='avg_clustering_coefficient', 
-        hue='agent_type',
-        order=PLOT_ORDER_X_AXIS,
-        hue_order=AGENT_ORDER,
-        ax=ax3,
-        errorbar='se'
-    )
-    ax3.set_title('Spatial Clustering by Movement Pattern')
-    ax3.set_xlabel('Movement Pattern')
-    ax3.set_ylabel('Average Clustering Coefficient')
-    ax3.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax3.tick_params(axis='x', rotation=45)
-    
-    # Plot 4: Infection Rate Comparison
-    ax4 = axes[1, 1]
-    sns.barplot(
-        data=df,
+        data=grouped_infection,
         x='movement_label',
         y='infection_rate',
         hue='agent_type',
         order=PLOT_ORDER_X_AXIS,
         hue_order=AGENT_ORDER,
-        ax=ax4,
-        errorbar='se'
+        ax=ax3,
+        errorbar='sd'
     )
-    ax4.set_title('Infection Spread Rate by Movement Pattern')
-    ax4.set_xlabel('Movement Pattern')
-    ax4.set_ylabel('Infections per Timestep')
-    ax4.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax4.tick_params(axis='x', rotation=45)
+    ax3.set_title('Infection Spread Rate by Movement Pattern')
+    ax3.set_xlabel('Movement Pattern')
+    ax3.set_ylabel('Infections per Timestep')
+    ax3.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    # Add per-seed mean dots for infection rate plot
+    for i, movement_label in enumerate(PLOT_ORDER_X_AXIS):
+        for j, agent_type in enumerate(AGENT_ORDER):
+            # Calculate x position for this agent type within this category
+            x_pos = i + (j - (n_agents - 1) / 2) * width
+
+            # Get data for this specific combination from grouped data
+            subset = grouped_infection[(grouped_infection['movement_label'] == movement_label) &
+                                      (grouped_infection['agent_type'] == agent_type)]
+            if len(subset) > 0:
+                seed_means = subset['infection_rate']
+                ax3.scatter([x_pos] * len(seed_means), seed_means, color='black', s=80,
+                           zorder=10, marker='o', edgecolor='white', linewidth=1.5, alpha=0.8)
+
+    # Add legend entry for per-seed mean dots
+    ax3.scatter([], [], color='black', s=80, label='Per-seed Mean', edgecolor='white', linewidth=1.5)
+
+    # Remove the unused subplot
+    fig.delaxes(axes[1, 0])
+    fig.delaxes(axes[1, 1])
     
     plt.tight_layout()
     

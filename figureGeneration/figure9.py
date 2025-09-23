@@ -294,103 +294,99 @@ def main():
     print(f"Visibility settings: {df['visibility_label'].unique()}")
     print(f"Agent types: {df['agent_type'].unique()}")
 
-    # Generate visualizations
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    
-    # Plot 1: Final Reward Comparison
-    ax1 = axes[0, 0]
-    reward_summary = df.groupby(['visibility_label', 'agent_type'])['final_reward'].agg(['mean', 'std']).reset_index()
-    
+    # Group data by category, agent type, and training seed to get per-seed means (consistent with other figures)
+    grouped_reward = df.groupby(['visibility_label', 'agent_type', 'train_seed'])['final_reward'].mean().reset_index()
+    grouped_episode = df.groupby(['visibility_label', 'agent_type', 'train_seed'])['episode_length'].mean().reset_index()
+
+    # Calculate and print summary statistics with standard deviations from per-seed means
+    print("\n" + "="*60)
+    print("STANDARD DEVIATION VALUES (from per-seed means)")
+    print("="*60)
+
+    reward_summary = grouped_reward.groupby(['visibility_label', 'agent_type'])['final_reward'].agg(['mean', 'std']).reset_index()
+    episode_summary = grouped_episode.groupby(['visibility_label', 'agent_type'])['episode_length'].agg(['mean', 'std']).reset_index()
+
+    print("\nFinal Reward Standard Deviations:")
+    for _, row in reward_summary.iterrows():
+        print(f"  {row['visibility_label']} - {row['agent_type']}: SD = {row['std']:.3f}")
+
+    print("\nEpisode Length Standard Deviations:")
+    for _, row in episode_summary.iterrows():
+        print(f"  {row['visibility_label']} - {row['agent_type']}: SD = {row['std']:.3f}")
+
+    # Generate visualizations - 2 side-by-side charts as requested
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Plot 1: Final Reward Comparison with Standard Deviation
+    ax1 = axes[0]
     sns.barplot(
-        data=df, 
-        x='visibility_label', 
-        y='final_reward', 
+        data=grouped_reward,
+        x='visibility_label',
+        y='final_reward',
         hue='agent_type',
         order=PLOT_ORDER_X_AXIS,
         hue_order=AGENT_ORDER,
         ax=ax1,
-        errorbar='se'
+        errorbar='sd'
     )
-    ax1.set_title('Final Reward by Visibility Setting')
+    ax1.set_title('Average Reward by Visibility Setting')
     ax1.set_xlabel('Visibility Condition')
-    ax1.set_ylabel('Final Reward')
+    ax1.set_ylabel('Average Reward')
     ax1.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    
-    # Plot 2: Episode Length Comparison
-    ax2 = axes[0, 1]
+
+    # Add per-seed mean dots for reward plot
+    n_categories = len(PLOT_ORDER_X_AXIS)
+    n_agents = len(AGENT_ORDER)
+    width = 0.8 / n_agents  # Total width divided by number of agent types
+    for i, visibility_label in enumerate(PLOT_ORDER_X_AXIS):
+        for j, agent_type in enumerate(AGENT_ORDER):
+            # Calculate x position for this agent type within this category
+            x_pos = i + (j - (n_agents - 1) / 2) * width
+
+            # Get data for this specific combination from grouped data
+            subset = grouped_reward[(grouped_reward['visibility_label'] == visibility_label) &
+                                   (grouped_reward['agent_type'] == agent_type)]
+            if len(subset) > 0:
+                seed_means = subset['final_reward']
+                ax1.scatter([x_pos] * len(seed_means), seed_means, color='black', s=80,
+                           zorder=10, marker='o', edgecolor='white', linewidth=1.5, alpha=0.8)
+
+    # Add legend entry for per-seed mean dots
+    ax1.scatter([], [], color='black', s=80, label='Per-seed Mean', edgecolor='white', linewidth=1.5)
+
+    # Plot 2: Episode Length Comparison with Standard Deviation
+    ax2 = axes[1]
     sns.barplot(
-        data=df, 
-        x='visibility_label', 
-        y='episode_length', 
+        data=grouped_episode,
+        x='visibility_label',
+        y='episode_length',
         hue='agent_type',
         order=PLOT_ORDER_X_AXIS,
         hue_order=AGENT_ORDER,
         ax=ax2,
-        errorbar='se'
+        errorbar='sd'
     )
-    ax2.set_title('Episode Length by Visibility Setting')
+    ax2.set_title('Mean Episode Length by Visibility Setting')
     ax2.set_xlabel('Visibility Condition')
-    ax2.set_ylabel('Episode Length')
+    ax2.set_ylabel('Mean Episode Length')
     ax2.legend(title='Agent Type', bbox_to_anchor=(1.05, 1), loc='upper left')
-    
-    # Plot 3: Visibility Ratio (only for limited visibility)
-    ax3 = axes[1, 0]
-    limited_vis_df = df[df['visibility_radius'] == 15]
-    if not limited_vis_df.empty:
-        sns.barplot(
-            data=limited_vis_df, 
-            x='agent_type', 
-            y='avg_visibility_ratio',
-            order=AGENT_ORDER,
-            ax=ax3,
-            errorbar='se'
-        )
-        ax3.set_title('Average Visibility Ratio\n(Limited Visibility Only)')
-        ax3.set_xlabel('Agent Type')
-        ax3.set_ylabel('Avg. Fraction of Humans Visible')
-        ax3.tick_params(axis='x', rotation=45)
-    else:
-        ax3.text(0.5, 0.5, 'No limited visibility data', ha='center', va='center', transform=ax3.transAxes)
-        ax3.set_title('Average Visibility Ratio')
-    
-    # Plot 4: Performance Difference (Full vs Limited)
-    ax4 = axes[1, 1]
-    
-    # Calculate performance difference for each agent type
-    perf_diff_data = []
-    for agent_type in df['agent_type'].unique():
-        agent_df = df[df['agent_type'] == agent_type]
-        
-        full_vis_rewards = agent_df[agent_df['visibility_radius'] == -1]['final_reward']
-        limited_vis_rewards = agent_df[agent_df['visibility_radius'] == 15]['final_reward']
-        
-        if len(full_vis_rewards) > 0 and len(limited_vis_rewards) > 0:
-            full_mean = full_vis_rewards.mean()
-            limited_mean = limited_vis_rewards.mean()
-            performance_drop = full_mean - limited_mean
-            
-            perf_diff_data.append({
-                'agent_type': agent_type,
-                'performance_drop': performance_drop
-            })
-    
-    if perf_diff_data:
-        perf_df = pd.DataFrame(perf_diff_data)
-        sns.barplot(
-            data=perf_df,
-            x='agent_type',
-            y='performance_drop',
-            order=AGENT_ORDER,
-            ax=ax4
-        )
-        ax4.set_title('Performance Drop\n(Full Vis - Limited Vis)')
-        ax4.set_xlabel('Agent Type')
-        ax4.set_ylabel('Reward Difference')
-        ax4.tick_params(axis='x', rotation=45)
-        ax4.axhline(y=0, color='red', linestyle='--', alpha=0.7)
-    else:
-        ax4.text(0.5, 0.5, 'Insufficient data for comparison', ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('Performance Drop')
+
+    # Add per-seed mean dots for episode length plot
+    for i, visibility_label in enumerate(PLOT_ORDER_X_AXIS):
+        for j, agent_type in enumerate(AGENT_ORDER):
+            # Calculate x position for this agent type within this category
+            x_pos = i + (j - (n_agents - 1) / 2) * width
+
+            # Get data for this specific combination from grouped data
+            subset = grouped_episode[(grouped_episode['visibility_label'] == visibility_label) &
+                                    (grouped_episode['agent_type'] == agent_type)]
+            if len(subset) > 0:
+                seed_means = subset['episode_length']
+                ax2.scatter([x_pos] * len(seed_means), seed_means, color='black', s=80,
+                           zorder=10, marker='o', edgecolor='white', linewidth=1.5, alpha=0.8)
+
+    # Add legend entry for per-seed mean dots
+    ax2.scatter([], [], color='black', s=80, label='Per-seed Mean', edgecolor='white', linewidth=1.5)
     
     plt.tight_layout()
     
