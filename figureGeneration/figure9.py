@@ -561,22 +561,46 @@ def main():
     print("\n" + "-"*60)
     print("STATISTICAL SIGNIFICANCE TESTS")
     print("-"*60)
-    
+
+    # Collect all p-values for multiple comparison correction
+    raw_p_values = []
+    test_results = []
+
     for agent_type in AGENT_ORDER:
         agent_data = df[df['agent_type'] == agent_type]
-        
+
         full_vis_rewards = agent_data[agent_data['visibility_radius'] == -1]['final_reward']
         limited_vis_rewards = agent_data[agent_data['visibility_radius'] == 15]['final_reward']
-        
+
         if len(full_vis_rewards) > 0 and len(limited_vis_rewards) > 0:
             # Mann-Whitney U test
             statistic, p_value = mannwhitneyu(full_vis_rewards, limited_vis_rewards, alternative='two-sided')
-            
-            print(f"\n{agent_type} Agent:")
-            print(f"  Full Visibility:    Mean={full_vis_rewards.mean():.3f}, Std={full_vis_rewards.std():.3f}, N={len(full_vis_rewards)}")
-            print(f"  Limited Visibility: Mean={limited_vis_rewards.mean():.3f}, Std={limited_vis_rewards.std():.3f}, N={len(limited_vis_rewards)}")
-            print(f"  Mann-Whitney U test: U={statistic}, p={p_value:.6f}")
-            print(f"  Significant at α=0.05: {'Yes' if p_value < 0.05 else 'No'}")
+
+            raw_p_values.append(p_value)
+            test_results.append({
+                'agent_type': agent_type,
+                'statistic': statistic,
+                'p_value': p_value,
+                'full_vis_mean': full_vis_rewards.mean(),
+                'full_vis_std': full_vis_rewards.std(),
+                'full_vis_n': len(full_vis_rewards),
+                'limited_vis_mean': limited_vis_rewards.mean(),
+                'limited_vis_std': limited_vis_rewards.std(),
+                'limited_vis_n': len(limited_vis_rewards)
+            })
+
+    # Apply Bonferroni correction
+    if raw_p_values:
+        _, corrected_p_values, _, _ = multipletests(raw_p_values, alpha=0.05, method='bonferroni')
+
+        # Print results with corrected p-values
+        for i, result in enumerate(test_results):
+            print(f"\n{result['agent_type']} Agent:")
+            print(f"  Full Visibility:    Mean={result['full_vis_mean']:.3f}, Std={result['full_vis_std']:.3f}, N={result['full_vis_n']}")
+            print(f"  Limited Visibility: Mean={result['limited_vis_mean']:.3f}, Std={result['limited_vis_std']:.3f}, N={result['limited_vis_n']}")
+            print(f"  Mann-Whitney U test: U={result['statistic']}, p={result['p_value']:.6f}")
+            print(f"  Bonferroni-corrected p: {corrected_p_values[i]:.6f}")
+            print(f"  Significant at α=0.05 (corrected): {'Yes' if corrected_p_values[i] < 0.05 else 'No'}")
     
 
 if __name__ == "__main__":

@@ -609,40 +609,80 @@ def main():
     print("\n" + "-"*60)
     print("STATISTICAL SIGNIFICANCE TESTS")
     print("-"*60)
-    
+
+    # Collect all p-values for multiple comparison correction
+    raw_p_values = []
+    agent_test_results = []
+
     for agent_type in AGENT_ORDER:
         agent_data = df[df['agent_type'] == agent_type]
-        
+
         random_rewards = agent_data[agent_data['movement_type'] == 'continuous_random']['final_reward']
         workplace_rewards = agent_data[agent_data['movement_type'] == 'workplace_home_cycle']['final_reward']
-        
+
         if len(random_rewards) > 0 and len(workplace_rewards) > 0:
             # Mann-Whitney U test
             statistic, p_value = mannwhitneyu(random_rewards, workplace_rewards, alternative='two-sided')
-            
-            print(f"\n{agent_type} Agent:")
-            print(f"  Random Movement:     Mean={random_rewards.mean():.3f}, Std={random_rewards.std():.3f}, N={len(random_rewards)}")
-            print(f"  Workplace Movement:  Mean={workplace_rewards.mean():.3f}, Std={workplace_rewards.std():.3f}, N={len(workplace_rewards)}")
-            print(f"  Mann-Whitney U test: U={statistic}, p={p_value:.6f}")
-            print(f"  Significant at α=0.05: {'Yes' if p_value < 0.05 else 'No'}")
-    
+
+            raw_p_values.append(p_value)
+            agent_test_results.append({
+                'agent_type': agent_type,
+                'statistic': statistic,
+                'p_value': p_value,
+                'random_mean': random_rewards.mean(),
+                'random_std': random_rewards.std(),
+                'random_n': len(random_rewards),
+                'workplace_mean': workplace_rewards.mean(),
+                'workplace_std': workplace_rewards.std(),
+                'workplace_n': len(workplace_rewards)
+            })
+
     # Analysis of clustering differences
     print("\n" + "-"*60)
     print("MOVEMENT PATTERN IMPACT ANALYSIS")
     print("-"*60)
-    
+
     # Compare clustering coefficients
     random_clustering = df[df['movement_type'] == 'continuous_random']['avg_clustering_coefficient']
     workplace_clustering = df[df['movement_type'] == 'workplace_home_cycle']['avg_clustering_coefficient']
-    
+
     print(f"\nClustering Analysis:")
     print(f"  Random Movement Clustering:     Mean={random_clustering.mean():.4f}, Std={random_clustering.std():.4f}")
     print(f"  Workplace Movement Clustering:  Mean={workplace_clustering.mean():.4f}, Std={workplace_clustering.std():.4f}")
-    
+
+    clustering_test_result = None
     if len(random_clustering) > 0 and len(workplace_clustering) > 0:
         clustering_stat, clustering_p = mannwhitneyu(random_clustering, workplace_clustering, alternative='two-sided')
-        print(f"  Clustering Difference Test: U={clustering_stat}, p={clustering_p:.6f}")
-        print(f"  Significant clustering difference: {'Yes' if clustering_p < 0.05 else 'No'}")
+        raw_p_values.append(clustering_p)
+        clustering_test_result = {
+            'statistic': clustering_stat,
+            'p_value': clustering_p
+        }
+
+    # Apply Bonferroni correction to all tests
+    if raw_p_values:
+        _, corrected_p_values, _, _ = multipletests(raw_p_values, alpha=0.05, method='bonferroni')
+
+        # Print agent comparison results with corrected p-values
+        print("\n" + "-"*60)
+        print("CORRECTED STATISTICAL TEST RESULTS")
+        print("-"*60)
+
+        for i, result in enumerate(agent_test_results):
+            print(f"\n{result['agent_type']} Agent:")
+            print(f"  Random Movement:     Mean={result['random_mean']:.3f}, Std={result['random_std']:.3f}, N={result['random_n']}")
+            print(f"  Workplace Movement:  Mean={result['workplace_mean']:.3f}, Std={result['workplace_std']:.3f}, N={result['workplace_n']}")
+            print(f"  Mann-Whitney U test: U={result['statistic']}, p={result['p_value']:.6f}")
+            print(f"  Bonferroni-corrected p: {corrected_p_values[i]:.6f}")
+            print(f"  Significant at α=0.05 (corrected): {'Yes' if corrected_p_values[i] < 0.05 else 'No'}")
+
+        # Print clustering test result with correction
+        if clustering_test_result:
+            clustering_idx = len(agent_test_results)
+            print(f"\nClustering Difference Test:")
+            print(f"  U={clustering_test_result['statistic']}, p={clustering_test_result['p_value']:.6f}")
+            print(f"  Bonferroni-corrected p: {corrected_p_values[clustering_idx]:.6f}")
+            print(f"  Significant clustering difference (corrected): {'Yes' if corrected_p_values[clustering_idx] < 0.05 else 'No'}")
     
 
 if __name__ == "__main__":
