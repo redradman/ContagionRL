@@ -414,11 +414,11 @@ def main():
         boot_means = [np.mean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_resamples)]
         return np.percentile(boot_means, (100-ci)/2), np.percentile(boot_means, 100-(100-ci)/2)
 
-    # Generate visualizations with avg reward and episode length on top, infection spread on bottom
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    # Generate visualizations - 3 charts in one row
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
     # Plot 1: Final Reward Comparison with Bootstrap CI (matching figure 8 style)
-    ax1 = axes[0, 0]
+    ax1 = axes[0]
 
     # Prepare data for bar plot with bootstrap CI
     bar_plot_data_reward = []
@@ -464,14 +464,14 @@ def main():
                 yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
 
     ax1.set_xticks(x_indices)
-    ax1.set_xticklabels(PLOT_ORDER_X_AXIS)
-    ax1.set_title('Average Reward by Movement Pattern')
-    ax1.set_xlabel('Movement Pattern', fontsize=13)
-    ax1.set_ylabel('Average Reward', fontsize=13)
+    ax1.set_xticklabels(PLOT_ORDER_X_AXIS, fontsize=15)
+    ax1.tick_params(axis='y', labelsize=15)
+    ax1.set_xlabel('Movement Pattern', fontsize=21)
+    ax1.set_ylabel('Average Reward', fontsize=21)
 
 
     # Plot 2: Episode Length Comparison with Bootstrap CI
-    ax2 = axes[0, 1]
+    ax2 = axes[1]
 
     # Prepare data for episode length bar plot with bootstrap CI
     bar_plot_data_episode = []
@@ -513,14 +513,14 @@ def main():
                 yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
 
     ax2.set_xticks(x_indices)
-    ax2.set_xticklabels(PLOT_ORDER_X_AXIS)
-    ax2.set_title('Mean Episode Length by Movement Pattern')
-    ax2.set_xlabel('Movement Pattern', fontsize=13)
-    ax2.set_ylabel('Mean Episode Length', fontsize=13)
+    ax2.set_xticklabels(PLOT_ORDER_X_AXIS, fontsize=15)
+    ax2.tick_params(axis='y', labelsize=15)
+    ax2.set_xlabel('Movement Pattern', fontsize=21)
+    ax2.set_ylabel('Mean Episode Length', fontsize=21)
 
 
-    # Plot 3: Infection Rate Comparison (spans both columns on bottom row)
-    ax3 = plt.subplot2grid((2, 2), (1, 0), colspan=2)
+    # Plot 3: Infection Rate Comparison (third chart in same row)
+    ax3 = axes[2]
 
     # Prepare data for infection rate bar plot with bootstrap CI
     bar_plot_data_infection = []
@@ -562,21 +562,17 @@ def main():
                 yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
 
     ax3.set_xticks(x_indices)
-    ax3.set_xticklabels(PLOT_ORDER_X_AXIS)
-    ax3.set_title('Infection Spread Rate by Movement Pattern')
-    ax3.set_xlabel('Movement Pattern', fontsize=13)
-    ax3.set_ylabel('Infections per Timestep', fontsize=13)
+    ax3.set_xticklabels(PLOT_ORDER_X_AXIS, fontsize=15)
+    ax3.tick_params(axis='y', labelsize=15)
+    ax3.set_xlabel('Movement Pattern', fontsize=21)
+    ax3.set_ylabel('Infections per Timestep', fontsize=21)
 
     # Create shared legend
     handles, labels = ax1.get_legend_handles_labels()
 
     # Position shared legend to the right of all plots
-    fig.legend(handles, labels, title='Agent Type', fontsize=11, title_fontsize=12,
+    fig.legend(handles, labels, title='Agent Type', fontsize=22, title_fontsize=24,
                bbox_to_anchor=(1.02, 0.5), loc='center left', borderaxespad=0)
-
-    # Remove the unused subplot
-    fig.delaxes(axes[1, 0])
-    fig.delaxes(axes[1, 1])
 
     plt.tight_layout(pad=0.5, rect=[0, 0, 0.85, 1])
     
