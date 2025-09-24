@@ -191,7 +191,7 @@ def main():
     parser.add_argument(
         "--eval-seed-base",
         type=int,
-        default=1000, # A different base seed for evaluation runs
+        default=100000, # Figure 1 * 100000 - ensures no seed overlap
         help="Base seed for evaluation runs to ensure variety (default: 1000)."
     )
     args = parser.parse_args()

@@ -92,7 +92,7 @@ def main():
     parser.add_argument("--runs", type=int, default=30, help="Number of evaluation episodes per model (default: 30)")
     parser.add_argument("--seeds", type=str, default="1,2,3", help="Comma-separated list of seeds for trained models (e.g., '1,2,3')")
     parser.add_argument("--output-dir", type=str, default="figures/", help="Directory to save the generated figures (default: figures/)")
-    parser.add_argument("--eval-seed", type=int, default=3000, help="Base seed for evaluation runs (default: 3000)")
+    parser.add_argument("--eval-seed", type=int, default=400000, help="Base seed for evaluation runs - Figure 4 * 100000 ensures no overlap")
     args = parser.parse_args()
 
     try:
