@@ -605,37 +605,71 @@ def main():
     print("\nSummary Statistics:")
     print(summary_stats)
     
-    # Statistical significance tests between movement types
+    # Statistical significance tests: Trained vs Baselines for each movement type
     print("\n" + "-"*60)
-    print("STATISTICAL SIGNIFICANCE TESTS")
+    print("STATISTICAL SIGNIFICANCE TESTS: TRAINED VS BASELINES")
     print("-"*60)
 
     # Collect all p-values for multiple comparison correction
     raw_p_values = []
-    agent_test_results = []
+    test_results = []
 
-    for agent_type in AGENT_ORDER:
-        agent_data = df[df['agent_type'] == agent_type]
+    baseline_types = ['Stationary', 'Random', 'Greedy']
 
-        random_rewards = agent_data[agent_data['movement_type'] == 'continuous_random']['final_reward']
-        workplace_rewards = agent_data[agent_data['movement_type'] == 'workplace_home_cycle']['final_reward']
+    # Test for each movement type
+    for movement_type in MOVEMENT_TYPES:
+        movement_label = MOVEMENT_LABELS[movement_type]
 
-        if len(random_rewards) > 0 and len(workplace_rewards) > 0:
-            # Mann-Whitney U test
-            statistic, p_value = mannwhitneyu(random_rewards, workplace_rewards, alternative='two-sided')
+        # Get trained agent data for this movement type
+        trained_data = df[(df['agent_type'] == 'Trained') & (df['movement_type'] == movement_type)]['final_reward']
 
-            raw_p_values.append(p_value)
-            agent_test_results.append({
-                'agent_type': agent_type,
-                'statistic': statistic,
-                'p_value': p_value,
-                'random_mean': random_rewards.mean(),
-                'random_std': random_rewards.std(),
-                'random_n': len(random_rewards),
-                'workplace_mean': workplace_rewards.mean(),
-                'workplace_std': workplace_rewards.std(),
-                'workplace_n': len(workplace_rewards)
-            })
+        if len(trained_data) > 0:
+            # Compare against each baseline
+            for baseline_type in baseline_types:
+                baseline_data = df[(df['agent_type'] == baseline_type) & (df['movement_type'] == movement_type)]['final_reward']
+
+                if len(baseline_data) > 0:
+                    # Mann-Whitney U test (two-sided)
+                    statistic, p_value = mannwhitneyu(trained_data, baseline_data, alternative='two-sided')
+
+                    raw_p_values.append(p_value)
+                    test_results.append({
+                        'movement_condition': movement_label,
+                        'baseline_type': baseline_type,
+                        'statistic': statistic,
+                        'p_value': p_value,
+                        'trained_mean': trained_data.mean(),
+                        'trained_std': trained_data.std(),
+                        'trained_n': len(trained_data),
+                        'baseline_mean': baseline_data.mean(),
+                        'baseline_std': baseline_data.std(),
+                        'baseline_n': len(baseline_data),
+                        'trained_better': trained_data.mean() > baseline_data.mean()
+                    })
+
+    # Add comparison between trained agents across movement types
+    trained_random_movement = df[(df['agent_type'] == 'Trained') & (df['movement_type'] == 'continuous_random')]['final_reward']
+    trained_workplace_movement = df[(df['agent_type'] == 'Trained') & (df['movement_type'] == 'workplace_home_cycle')]['final_reward']
+
+    if len(trained_random_movement) > 0 and len(trained_workplace_movement) > 0:
+        # Mann-Whitney U test (two-sided)
+        statistic, p_value = mannwhitneyu(trained_random_movement, trained_workplace_movement, alternative='two-sided')
+
+        raw_p_values.append(p_value)
+        test_results.append({
+            'movement_condition': 'Cross-Condition',
+            'baseline_type': 'Trained (Workplace)',
+            'statistic': statistic,
+            'p_value': p_value,
+            'trained_mean': trained_random_movement.mean(),
+            'trained_std': trained_random_movement.std(),
+            'trained_n': len(trained_random_movement),
+            'baseline_mean': trained_workplace_movement.mean(),
+            'baseline_std': trained_workplace_movement.std(),
+            'baseline_n': len(trained_workplace_movement),
+            'trained_better': trained_random_movement.mean() > trained_workplace_movement.mean(),
+            'is_cross_condition': True
+        })
 
     # Analysis of clustering differences
     print("\n" + "-"*60)
@@ -663,23 +697,48 @@ def main():
     if raw_p_values:
         _, corrected_p_values, _, _ = multipletests(raw_p_values, alpha=0.05, method='bonferroni')
 
-        # Print agent comparison results with corrected p-values
-        print("\n" + "-"*60)
-        print("CORRECTED STATISTICAL TEST RESULTS")
-        print("-"*60)
+        # Print results with corrected p-values, grouped by movement type
+        current_movement_condition = None
+        baseline_test_count = len([r for r in test_results if not r.get('is_cross_condition', False)])
 
-        for i, result in enumerate(agent_test_results):
-            print(f"\n{result['agent_type']} Agent:")
-            print(f"  Random Movement:     Mean={result['random_mean']:.3f}, Std={result['random_std']:.3f}, N={result['random_n']}")
-            print(f"  Workplace Movement:  Mean={result['workplace_mean']:.3f}, Std={result['workplace_std']:.3f}, N={result['workplace_n']}")
-            print(f"  Mann-Whitney U test: U={result['statistic']}, p={result['p_value']:.6f}")
-            print(f"  Bonferroni-corrected p: {corrected_p_values[i]:.6f}")
-            print(f"  Significant at α=0.05 (corrected): {'Yes' if corrected_p_values[i] < 0.05 else 'No'}")
+        for i, result in enumerate(test_results):
+            if result['movement_condition'] != current_movement_condition:
+                current_movement_condition = result['movement_condition']
+                print(f"\n=== {current_movement_condition} ===")
+
+            # Handle cross-condition comparison differently
+            if result.get('is_cross_condition', False):
+                print(f"\nTrained (Random) vs Trained (Workplace):")
+                print(f"  Random:    Mean={result['trained_mean']:.3f}, Std={result['trained_std']:.3f}, N={result['trained_n']}")
+                print(f"  Workplace: Mean={result['baseline_mean']:.3f}, Std={result['baseline_std']:.3f}, N={result['baseline_n']}")
+                print(f"  Mann-Whitney U test: U={result['statistic']}, p={result['p_value']:.6f}")
+                print(f"  Bonferroni-corrected p: {corrected_p_values[i]:.6f}")
+
+                # Determine winner and significance
+                winner = "Random" if result['trained_better'] else "Workplace"
+                is_significant = corrected_p_values[i] < 0.05
+                significance_status = "Yes" if is_significant else "No"
+
+                print(f"  Winner: Trained ({winner}), Significant at α=0.05 (corrected): {significance_status}")
+            else:
+                print(f"\nTrained vs {result['baseline_type']}:")
+                print(f"  Trained:   Mean={result['trained_mean']:.3f}, Std={result['trained_std']:.3f}, N={result['trained_n']}")
+                print(f"  {result['baseline_type']:>9}: Mean={result['baseline_mean']:.3f}, Std={result['baseline_std']:.3f}, N={result['baseline_n']}")
+                print(f"  Mann-Whitney U test: U={result['statistic']}, p={result['p_value']:.6f}")
+                print(f"  Bonferroni-corrected p: {corrected_p_values[i]:.6f}")
+
+                # Determine winner and significance
+                winner = "Trained" if result['trained_better'] else result['baseline_type']
+                is_significant = corrected_p_values[i] < 0.05
+                significance_status = "Yes" if is_significant else "No"
+
+                print(f"  Winner: {winner}, Significant at α=0.05 (corrected): {significance_status}")
 
         # Print clustering test result with correction
         if clustering_test_result:
-            clustering_idx = len(agent_test_results)
-            print(f"\nClustering Difference Test:")
+            clustering_idx = len(test_results)  # Clustering test is always last
+            print(f"\n=== Clustering Analysis ===")
+            print(f"\nRandom vs Workplace Movement Clustering:")
             print(f"  U={clustering_test_result['statistic']}, p={clustering_test_result['p_value']:.6f}")
             print(f"  Bonferroni-corrected p: {corrected_p_values[clustering_idx]:.6f}")
             print(f"  Significant clustering difference (corrected): {'Yes' if corrected_p_values[clustering_idx] < 0.05 else 'No'}")
