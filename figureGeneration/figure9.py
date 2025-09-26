@@ -368,166 +368,165 @@ def main():
         boot_means = [np.mean(np.random.choice(data, size=len(data), replace=True)) for _ in range(n_resamples)]
         return np.percentile(boot_means, (100-ci)/2), np.percentile(boot_means, 100-(100-ci)/2)
 
-    # Generate visualizations - 3 charts in one row
+    # Generate 3-chart visualization with single-row bars showing visibility impact
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
-    # Plot 1: Final Reward Comparison with Bootstrap CI (matching figure 8 style)
+    # Define the 5 conditions we want to show
+    bar_conditions = [
+        ('Stationary', 'Full Visibility', 'Stationary'),
+        ('Random', 'Full Visibility', 'Random'),
+        ('Greedy', 'Full Visibility', 'Greedy'),
+        ('Trained', 'Full Visibility', 'Trained (Full)'),
+        ('Trained', 'Limited Visibility (r=15)', 'Trained (r=15)')
+    ]
+
+    # Define colors for consistency across all charts
+    palette = sns.color_palette("Set2", n_colors=4)
+    color_map = {'Stationary': palette[0], 'Random': palette[1], 'Trained': palette[2], 'Greedy': palette[3]}
+
+    # Chart 1: Final Reward
     ax1 = axes[0]
-
-    # Prepare data for bar plot with bootstrap CI
     bar_plot_data_reward = []
-    for vis_label in PLOT_ORDER_X_AXIS:
-        for agent_type in AGENT_ORDER:
-            series_means = grouped_reward[(grouped_reward['visibility_label'] == vis_label) &
-                                         (grouped_reward['agent_type'] == agent_type)]['final_reward'].values
-            if len(series_means) == 0:
-                continue
-            overall_mean = np.mean(series_means)
-            ci_low, ci_high = bootstrap_ci(series_means)
-            bar_plot_data_reward.append({
-                'visibility_label': vis_label,
-                'agent_type': agent_type,
-                'mean_reward': overall_mean,
-                'ci_low': ci_low,
-                'ci_high': ci_high
-            })
+    colors_reward = []
 
-    bar_df_reward = pd.DataFrame(bar_plot_data_reward)
+    for agent_type, vis_label, display_label in bar_conditions:
+        series_means = grouped_reward[(grouped_reward['visibility_label'] == vis_label) &
+                                     (grouped_reward['agent_type'] == agent_type)]['final_reward'].values
+        if len(series_means) == 0:
+            continue
 
-    # Create bars with bootstrap CI (matching figure 8 implementation)
-    bar_width = 0.18
-    x_indices = np.arange(len(PLOT_ORDER_X_AXIS))
-    palette = sns.color_palette("Set2", n_colors=len(AGENT_ORDER))
+        overall_mean = np.mean(series_means)
+        ci_low, ci_high = bootstrap_ci(series_means)
+        bar_plot_data_reward.append({
+            'display_label': display_label,
+            'mean_reward': overall_mean,
+            'error_low': overall_mean - ci_low,
+            'error_high': ci_high - overall_mean
+        })
 
-    for i, agent_type in enumerate(AGENT_ORDER):
-        agent_data = bar_df_reward[bar_df_reward['agent_type'] == agent_type]
-        means_ordered = [agent_data[agent_data['visibility_label'] == label]['mean_reward'].values[0]
-                        if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                        for label in PLOT_ORDER_X_AXIS]
-        ci_lows_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_low'].values[0]
-                          if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                          for label in PLOT_ORDER_X_AXIS]
-        ci_highs_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_high'].values[0]
-                           if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                           for label in PLOT_ORDER_X_AXIS]
+        if display_label == 'Trained (r=15)':
+            colors_reward.append(palette[2])
+        else:
+            colors_reward.append(color_map[agent_type])
 
-        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+    x_positions = np.arange(len(bar_plot_data_reward))
+    x_labels = [item['display_label'] for item in bar_plot_data_reward]
+    means = [item['mean_reward'] for item in bar_plot_data_reward]
+    error_lows = [item['error_low'] for item in bar_plot_data_reward]
+    error_highs = [item['error_high'] for item in bar_plot_data_reward]
 
-        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
-        ax1.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
-                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+    # Create individual bars with labels for legend
+    bars1 = []
+    for i, (pos, mean, err_low, err_high, color, label) in enumerate(zip(x_positions, means, error_lows, error_highs, colors_reward, x_labels)):
+        bar = ax1.bar(pos, mean, color=color, yerr=[[err_low], [err_high]], capsize=4,
+                     edgecolor='black', linewidth=0.7, alpha=0.8, label=label)
+        bars1.extend(bar)
+        if i == len(x_positions) - 1:  # Last bar (Trained r=15)
+            bar[0].set_hatch('///')
 
-    ax1.set_xticks(x_indices)
-    ax1.set_xticklabels(PLOT_ORDER_X_AXIS, fontsize=15)
+    ax1.set_xticks(x_positions)
+    ax1.set_xticklabels([])  # Remove x-axis labels
     ax1.tick_params(axis='y', labelsize=15)
-    ax1.set_xlabel('Visibility Condition', fontsize=21)
-    ax1.set_ylabel('Average Reward', fontsize=21)
+    ax1.set_ylabel('Final Reward', fontsize=18)
+    ax1.grid(True, axis='y', alpha=0.3, linestyle='--')
+    ax1.set_axisbelow(True)
 
-
-    # Plot 2: Episode Length Comparison with Bootstrap CI
+    # Chart 2: Episode Length
     ax2 = axes[1]
-
-    # Prepare data for episode length bar plot with bootstrap CI
     bar_plot_data_episode = []
-    for vis_label in PLOT_ORDER_X_AXIS:
-        for agent_type in AGENT_ORDER:
-            series_means = grouped_episode[(grouped_episode['visibility_label'] == vis_label) &
-                                          (grouped_episode['agent_type'] == agent_type)]['episode_length'].values
-            if len(series_means) == 0:
-                continue
-            overall_mean = np.mean(series_means)
-            ci_low, ci_high = bootstrap_ci(series_means)
-            bar_plot_data_episode.append({
-                'visibility_label': vis_label,
-                'agent_type': agent_type,
-                'mean_episode_length': overall_mean,
-                'ci_low': ci_low,
-                'ci_high': ci_high
-            })
+    colors_episode = []
 
-    bar_df_episode = pd.DataFrame(bar_plot_data_episode)
+    for agent_type, vis_label, display_label in bar_conditions:
+        series_means = grouped_episode[(grouped_episode['visibility_label'] == vis_label) &
+                                      (grouped_episode['agent_type'] == agent_type)]['episode_length'].values
+        if len(series_means) == 0:
+            continue
 
-    # Create bars with bootstrap CI for episode length
-    for i, agent_type in enumerate(AGENT_ORDER):
-        agent_data = bar_df_episode[bar_df_episode['agent_type'] == agent_type]
-        means_ordered = [agent_data[agent_data['visibility_label'] == label]['mean_episode_length'].values[0]
-                        if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                        for label in PLOT_ORDER_X_AXIS]
-        ci_lows_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_low'].values[0]
-                          if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                          for label in PLOT_ORDER_X_AXIS]
-        ci_highs_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_high'].values[0]
-                           if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                           for label in PLOT_ORDER_X_AXIS]
+        overall_mean = np.mean(series_means)
+        ci_low, ci_high = bootstrap_ci(series_means)
+        bar_plot_data_episode.append({
+            'display_label': display_label,
+            'mean_episode': overall_mean,
+            'error_low': overall_mean - ci_low,
+            'error_high': ci_high - overall_mean
+        })
 
-        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+        if display_label == 'Trained (r=15)':
+            colors_episode.append(palette[2])
+        else:
+            colors_episode.append(color_map[agent_type])
 
-        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
-        ax2.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
-                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+    means_ep = [item['mean_episode'] for item in bar_plot_data_episode]
+    error_lows_ep = [item['error_low'] for item in bar_plot_data_episode]
+    error_highs_ep = [item['error_high'] for item in bar_plot_data_episode]
 
-    ax2.set_xticks(x_indices)
-    ax2.set_xticklabels(PLOT_ORDER_X_AXIS, fontsize=15)
+    # Create individual bars (no labels needed for ax2 since ax1 has them)
+    bars2 = []
+    for i, (pos, mean, err_low, err_high, color) in enumerate(zip(x_positions, means_ep, error_lows_ep, error_highs_ep, colors_episode)):
+        bar = ax2.bar(pos, mean, color=color, yerr=[[err_low], [err_high]], capsize=4,
+                     edgecolor='black', linewidth=0.7, alpha=0.8)
+        bars2.extend(bar)
+        if i == len(x_positions) - 1:  # Last bar (Trained r=15)
+            bar[0].set_hatch('///')
+
+    ax2.set_xticks(x_positions)
+    ax2.set_xticklabels([])  # Remove x-axis labels
     ax2.tick_params(axis='y', labelsize=15)
-    ax2.set_xlabel('Visibility Condition', fontsize=21)
-    ax2.set_ylabel('Mean Episode Length', fontsize=21)
+    ax2.set_ylabel('Episode Length', fontsize=18)
+    ax2.grid(True, axis='y', alpha=0.3, linestyle='--')
+    ax2.set_axisbelow(True)
 
-    # Plot 3: Infection-related metric (third chart in same row)
+    # Chart 3: Infections per Timestep
     ax3 = axes[2]
-
-    # Prepare data for infection metric bar plot with bootstrap CI
     bar_plot_data_infection = []
-    for vis_label in PLOT_ORDER_X_AXIS:
-        for agent_type in AGENT_ORDER:
-            series_means = grouped_infection[(grouped_infection['visibility_label'] == vis_label) &
-                                            (grouped_infection['agent_type'] == agent_type)][infection_metric_name].values
-            if len(series_means) == 0:
-                continue
-            overall_mean = np.mean(series_means)
-            ci_low, ci_high = bootstrap_ci(series_means)
-            bar_plot_data_infection.append({
-                'visibility_label': vis_label,
-                'agent_type': agent_type,
-                'mean_infection': overall_mean,
-                'ci_low': ci_low,
-                'ci_high': ci_high
-            })
+    colors_infection = []
 
-    bar_df_infection = pd.DataFrame(bar_plot_data_infection)
+    for agent_type, vis_label, display_label in bar_conditions:
+        series_means = grouped_infection[(grouped_infection['visibility_label'] == vis_label) &
+                                        (grouped_infection['agent_type'] == agent_type)][infection_metric_name].values
+        if len(series_means) == 0:
+            continue
 
-    # Create bars with bootstrap CI for infection metric
-    for i, agent_type in enumerate(AGENT_ORDER):
-        agent_data = bar_df_infection[bar_df_infection['agent_type'] == agent_type]
-        means_ordered = [agent_data[agent_data['visibility_label'] == label]['mean_infection'].values[0]
-                        if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                        for label in PLOT_ORDER_X_AXIS]
-        ci_lows_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_low'].values[0]
-                          if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                          for label in PLOT_ORDER_X_AXIS]
-        ci_highs_ordered = [agent_data[agent_data['visibility_label'] == label]['ci_high'].values[0]
-                           if not agent_data[agent_data['visibility_label'] == label].empty else np.nan
-                           for label in PLOT_ORDER_X_AXIS]
+        overall_mean = np.mean(series_means)
+        ci_low, ci_high = bootstrap_ci(series_means)
+        bar_plot_data_infection.append({
+            'display_label': display_label,
+            'mean_infection': overall_mean,
+            'error_low': overall_mean - ci_low,
+            'error_high': ci_high - overall_mean
+        })
 
-        err_bars = [[m - l if not (np.isnan(m) or np.isnan(l)) else 0 for m,l in zip(means_ordered, ci_lows_ordered)], [h - m if not (np.isnan(m) or np.isnan(h)) else 0 for m,h in zip(means_ordered, ci_highs_ordered)]]
+        if display_label == 'Trained (r=15)':
+            colors_infection.append(palette[2])
+        else:
+            colors_infection.append(color_map[agent_type])
 
-        bar_positions = x_indices + (i - (len(AGENT_ORDER)-1)/2) * bar_width
-        ax3.bar(bar_positions, means_ordered, width=bar_width, label=agent_type, color=palette[i],
-                yerr=err_bars, capsize=4, edgecolor='black', linewidth=0.7)
+    means_inf = [item['mean_infection'] for item in bar_plot_data_infection]
+    error_lows_inf = [item['error_low'] for item in bar_plot_data_infection]
+    error_highs_inf = [item['error_high'] for item in bar_plot_data_infection]
 
-    ax3.set_xticks(x_indices)
-    ax3.set_xticklabels(PLOT_ORDER_X_AXIS, fontsize=15)
+    # Create individual bars (no labels needed for ax3 since ax1 has them)
+    bars3 = []
+    for i, (pos, mean, err_low, err_high, color) in enumerate(zip(x_positions, means_inf, error_lows_inf, error_highs_inf, colors_infection)):
+        bar = ax3.bar(pos, mean, color=color, yerr=[[err_low], [err_high]], capsize=4,
+                     edgecolor='black', linewidth=0.7, alpha=0.8)
+        bars3.extend(bar)
+        if i == len(x_positions) - 1:  # Last bar (Trained r=15)
+            bar[0].set_hatch('///')
+
+    ax3.set_xticks(x_positions)
+    ax3.set_xticklabels([])  # Remove x-axis labels
     ax3.tick_params(axis='y', labelsize=15)
-    ax3.set_xlabel('Visibility Condition', fontsize=21)
-    ax3.set_ylabel('Infections per Timestep', fontsize=21)
+    ax3.set_ylabel('Infections per Timestep', fontsize=18)
+    ax3.grid(True, axis='y', alpha=0.3, linestyle='--')
+    ax3.set_axisbelow(True)
 
-    # Create shared legend
+    # Create shared legend for all three subplots
     handles, labels = ax1.get_legend_handles_labels()
+    fig.legend(handles, labels, loc='center', bbox_to_anchor=(0.5, -0.05), ncol=5, fontsize=18)
 
-    # Position shared legend to the right of all plots
-    fig.legend(handles, labels, title='Agent Type', fontsize=22, title_fontsize=24,
-               bbox_to_anchor=(1.02, 0.5), loc='center left', borderaxespad=0)
-
-    plt.tight_layout(pad=0.5, rect=[0, 0, 0.85, 1])
+    plt.tight_layout()
+    plt.subplots_adjust(bottom=0.15)  # Make room for legend
     
     # Save figure as PDF (following existing pattern)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -557,26 +556,73 @@ def main():
     print("\nSummary Statistics:")
     print(summary_stats)
     
-    # Statistical significance tests between visibility conditions
+    # Statistical significance tests: Both Trained agents vs Baselines
     print("\n" + "-"*60)
-    print("STATISTICAL SIGNIFICANCE TESTS")
+    print("STATISTICAL SIGNIFICANCE TESTS: TRAINED AGENTS VS BASELINES")
     print("-"*60)
-    
-    for agent_type in AGENT_ORDER:
-        agent_data = df[df['agent_type'] == agent_type]
-        
-        full_vis_rewards = agent_data[agent_data['visibility_radius'] == -1]['final_reward']
-        limited_vis_rewards = agent_data[agent_data['visibility_radius'] == 15]['final_reward']
-        
-        if len(full_vis_rewards) > 0 and len(limited_vis_rewards) > 0:
-            # Mann-Whitney U test
-            statistic, p_value = mannwhitneyu(full_vis_rewards, limited_vis_rewards, alternative='two-sided')
-            
-            print(f"\n{agent_type} Agent:")
-            print(f"  Full Visibility:    Mean={full_vis_rewards.mean():.3f}, Std={full_vis_rewards.std():.3f}, N={len(full_vis_rewards)}")
-            print(f"  Limited Visibility: Mean={limited_vis_rewards.mean():.3f}, Std={limited_vis_rewards.std():.3f}, N={len(limited_vis_rewards)}")
-            print(f"  Mann-Whitney U test: U={statistic}, p={p_value:.6f}")
-            print(f"  Significant at α=0.05: {'Yes' if p_value < 0.05 else 'No'}")
+
+    # Collect all p-values for multiple comparison correction
+    raw_p_values = []
+    test_results = []
+
+    baseline_types = ['Stationary', 'Random', 'Greedy']
+    trained_conditions = [
+        ('Full', -1, 'Full Visibility'),
+        ('Limited', 15, 'Limited Visibility (r=15)')
+    ]
+
+    # Compare each trained condition against all baselines
+    for trained_label, vis_radius, vis_display in trained_conditions:
+        # Get trained agent data for this visibility condition
+        trained_data = df[(df['agent_type'] == 'Trained') & (df['visibility_radius'] == vis_radius)]['final_reward']
+
+        if len(trained_data) > 0:
+            # Compare against each baseline (baselines always use full visibility data)
+            for baseline_type in baseline_types:
+                baseline_data = df[(df['agent_type'] == baseline_type) & (df['visibility_radius'] == -1)]['final_reward']
+
+                if len(baseline_data) > 0:
+                    # Mann-Whitney U test (two-sided)
+                    statistic, p_value = mannwhitneyu(trained_data, baseline_data, alternative='two-sided')
+
+                    raw_p_values.append(p_value)
+                    test_results.append({
+                        'trained_condition': f'Trained ({trained_label})',
+                        'baseline_type': baseline_type,
+                        'statistic': statistic,
+                        'p_value': p_value,
+                        'trained_mean': trained_data.mean(),
+                        'trained_std': trained_data.std(),
+                        'trained_n': len(trained_data),
+                        'baseline_mean': baseline_data.mean(),
+                        'baseline_std': baseline_data.std(),
+                        'baseline_n': len(baseline_data),
+                        'trained_better': trained_data.mean() > baseline_data.mean()
+                    })
+
+    # Apply Bonferroni correction
+    if raw_p_values:
+        _, corrected_p_values, _, _ = multipletests(raw_p_values, alpha=0.05, method='bonferroni')
+
+        # Print results with corrected p-values, grouped by trained condition
+        current_trained_condition = None
+        for i, result in enumerate(test_results):
+            if result['trained_condition'] != current_trained_condition:
+                current_trained_condition = result['trained_condition']
+                print(f"\n=== {current_trained_condition} vs Baselines ===")
+
+            print(f"\n{result['trained_condition']} vs {result['baseline_type']}:")
+            print(f"  Trained:   Mean={result['trained_mean']:.3f}, Std={result['trained_std']:.3f}, N={result['trained_n']}")
+            print(f"  {result['baseline_type']:>9}: Mean={result['baseline_mean']:.3f}, Std={result['baseline_std']:.3f}, N={result['baseline_n']}")
+            print(f"  Mann-Whitney U test: U={result['statistic']}, p={result['p_value']:.6f}")
+            print(f"  Bonferroni-corrected p: {corrected_p_values[i]:.6f}")
+
+            # Determine winner and significance
+            winner = result['trained_condition'] if result['trained_better'] else result['baseline_type']
+            is_significant = corrected_p_values[i] < 0.05
+            significance_status = "Yes" if is_significant else "No"
+
+            print(f"  Winner: {winner}, Significant at α=0.05 (corrected): {significance_status}")
     
 
 if __name__ == "__main__":
