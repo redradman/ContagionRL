@@ -29,10 +29,12 @@ plt.rcParams["figure.dpi"] = 300
 sns.set_style("whitegrid")
 
 # Define Visibility Radius values and their labels for plotting
-VISIBILITY_RADIUS_VALUES = [-1, 15]
+VISIBILITY_RADIUS_VALUES = [-1, 10, 15, 20]
 VISIBILITY_RADIUS_LABELS = {
     -1: r"Full Visibility",
+    10: r"Limited Visibility (r=10)",
     15: r"Limited Visibility (r=15)",
+    20: r"Limited Visibility (r=20)",
 }
 # Order for plotting on the x-axis for the bar plot
 PLOT_ORDER_X_AXIS = [VISIBILITY_RADIUS_LABELS[vr] for vr in VISIBILITY_RADIUS_VALUES]
@@ -369,15 +371,17 @@ def main():
         return np.percentile(boot_means, (100-ci)/2), np.percentile(boot_means, 100-(100-ci)/2)
 
     # Generate 3-chart visualization with single-row bars showing visibility impact
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(21, 7))  # Increased size for 7 bars
 
-    # Define the 5 conditions we want to show
+    # Define the 7 conditions we want to show
     bar_conditions = [
         ('Stationary', 'Full Visibility', 'Stationary'),
         ('Random', 'Full Visibility', 'Random'),
         ('Greedy', 'Full Visibility', 'Greedy'),
         ('Trained', 'Full Visibility', 'Trained (Full)'),
-        ('Trained', 'Limited Visibility (r=15)', 'Trained (r=15)')
+        ('Trained', 'Limited Visibility (r=10)', 'Trained (r=10)'),
+        ('Trained', 'Limited Visibility (r=15)', 'Trained (r=15)'),
+        ('Trained', 'Limited Visibility (r=20)', 'Trained (r=20)')
     ]
 
     # Define colors for consistency across all charts
@@ -404,7 +408,7 @@ def main():
             'error_high': ci_high - overall_mean
         })
 
-        if display_label == 'Trained (r=15)':
+        if display_label.startswith('Trained'):
             colors_reward.append(palette[2])
         else:
             colors_reward.append(color_map[agent_type])
@@ -417,17 +421,20 @@ def main():
 
     # Create individual bars with labels for legend
     bars1 = []
+    pattern_map = {'Trained (r=10)': '...', 'Trained (r=15)': '///', 'Trained (r=20)': 'xxx'}
+
     for i, (pos, mean, err_low, err_high, color, label) in enumerate(zip(x_positions, means, error_lows, error_highs, colors_reward, x_labels)):
         bar = ax1.bar(pos, mean, color=color, yerr=[[err_low], [err_high]], capsize=4,
                      edgecolor='black', linewidth=0.7, alpha=0.8, label=label)
         bars1.extend(bar)
-        if i == len(x_positions) - 1:  # Last bar (Trained r=15)
-            bar[0].set_hatch('///')
+        # Add patterns to distinguish trained variants
+        if label in pattern_map:
+            bar[0].set_hatch(pattern_map[label])
 
     ax1.set_xticks(x_positions)
     ax1.set_xticklabels([])  # Remove x-axis labels
     ax1.tick_params(axis='y', labelsize=15)
-    ax1.set_ylabel('Final Reward', fontsize=18)
+    ax1.set_ylabel('Average Reward', fontsize=18)
     ax1.grid(True, axis='y', alpha=0.3, linestyle='--')
     ax1.set_axisbelow(True)
 
@@ -451,7 +458,7 @@ def main():
             'error_high': ci_high - overall_mean
         })
 
-        if display_label == 'Trained (r=15)':
+        if display_label.startswith('Trained'):
             colors_episode.append(palette[2])
         else:
             colors_episode.append(color_map[agent_type])
@@ -462,12 +469,13 @@ def main():
 
     # Create individual bars (no labels needed for ax2 since ax1 has them)
     bars2 = []
-    for i, (pos, mean, err_low, err_high, color) in enumerate(zip(x_positions, means_ep, error_lows_ep, error_highs_ep, colors_episode)):
+    for i, (pos, mean, err_low, err_high, color, label) in enumerate(zip(x_positions, means_ep, error_lows_ep, error_highs_ep, colors_episode, x_labels)):
         bar = ax2.bar(pos, mean, color=color, yerr=[[err_low], [err_high]], capsize=4,
                      edgecolor='black', linewidth=0.7, alpha=0.8)
         bars2.extend(bar)
-        if i == len(x_positions) - 1:  # Last bar (Trained r=15)
-            bar[0].set_hatch('///')
+        # Add patterns to distinguish trained variants
+        if label in pattern_map:
+            bar[0].set_hatch(pattern_map[label])
 
     ax2.set_xticks(x_positions)
     ax2.set_xticklabels([])  # Remove x-axis labels
@@ -496,7 +504,7 @@ def main():
             'error_high': ci_high - overall_mean
         })
 
-        if display_label == 'Trained (r=15)':
+        if display_label.startswith('Trained'):
             colors_infection.append(palette[2])
         else:
             colors_infection.append(color_map[agent_type])
@@ -507,12 +515,13 @@ def main():
 
     # Create individual bars (no labels needed for ax3 since ax1 has them)
     bars3 = []
-    for i, (pos, mean, err_low, err_high, color) in enumerate(zip(x_positions, means_inf, error_lows_inf, error_highs_inf, colors_infection)):
+    for i, (pos, mean, err_low, err_high, color, label) in enumerate(zip(x_positions, means_inf, error_lows_inf, error_highs_inf, colors_infection, x_labels)):
         bar = ax3.bar(pos, mean, color=color, yerr=[[err_low], [err_high]], capsize=4,
                      edgecolor='black', linewidth=0.7, alpha=0.8)
         bars3.extend(bar)
-        if i == len(x_positions) - 1:  # Last bar (Trained r=15)
-            bar[0].set_hatch('///')
+        # Add patterns to distinguish trained variants
+        if label in pattern_map:
+            bar[0].set_hatch(pattern_map[label])
 
     ax3.set_xticks(x_positions)
     ax3.set_xticklabels([])  # Remove x-axis labels
@@ -523,7 +532,7 @@ def main():
 
     # Create shared legend for all three subplots
     handles, labels = ax1.get_legend_handles_labels()
-    fig.legend(handles, labels, loc='center', bbox_to_anchor=(0.5, -0.05), ncol=5, fontsize=18)
+    fig.legend(handles, labels, loc='center', bbox_to_anchor=(0.5, -0.05), ncol=7, fontsize=16)
 
     plt.tight_layout()
     plt.subplots_adjust(bottom=0.15)  # Make room for legend
@@ -556,9 +565,9 @@ def main():
     print("\nSummary Statistics:")
     print(summary_stats)
     
-    # Statistical significance tests: Both Trained agents vs Baselines
+    # Statistical significance tests: Trained agents vs Baselines + Trained vs Trained
     print("\n" + "-"*60)
-    print("STATISTICAL SIGNIFICANCE TESTS: TRAINED AGENTS VS BASELINES")
+    print("STATISTICAL SIGNIFICANCE TESTS")
     print("-"*60)
 
     # Collect all p-values for multiple comparison correction
@@ -567,12 +576,15 @@ def main():
 
     baseline_types = ['Stationary', 'Random', 'Greedy']
     trained_conditions = [
-        ('Full', -1, 'Full Visibility'),
-        ('Limited', 15, 'Limited Visibility (r=15)')
+        ('Full', -1),
+        ('r=10', 10),
+        ('r=15', 15),
+        ('r=20', 20)
     ]
 
-    # Compare each trained condition against all baselines
-    for trained_label, vis_radius, vis_display in trained_conditions:
+    # Part 1: Compare each trained condition against all baselines
+    print("\n=== TRAINED MODELS VS BASELINES ===")
+    for trained_label, vis_radius in trained_conditions:
         # Get trained agent data for this visibility condition
         trained_data = df[(df['agent_type'] == 'Trained') & (df['visibility_radius'] == vis_radius)]['final_reward']
 
@@ -587,42 +599,74 @@ def main():
 
                     raw_p_values.append(p_value)
                     test_results.append({
-                        'trained_condition': f'Trained ({trained_label})',
-                        'baseline_type': baseline_type,
+                        'comparison_type': 'Trained vs Baseline',
+                        'group1': f'Trained ({trained_label})',
+                        'group2': baseline_type,
                         'statistic': statistic,
                         'p_value': p_value,
-                        'trained_mean': trained_data.mean(),
-                        'trained_std': trained_data.std(),
-                        'trained_n': len(trained_data),
-                        'baseline_mean': baseline_data.mean(),
-                        'baseline_std': baseline_data.std(),
-                        'baseline_n': len(baseline_data),
-                        'trained_better': trained_data.mean() > baseline_data.mean()
+                        'group1_mean': trained_data.mean(),
+                        'group1_std': trained_data.std(),
+                        'group1_n': len(trained_data),
+                        'group2_mean': baseline_data.mean(),
+                        'group2_std': baseline_data.std(),
+                        'group2_n': len(baseline_data),
+                        'group1_better': trained_data.mean() > baseline_data.mean()
                     })
 
-    # Apply Bonferroni correction
+    # Part 2: Compare trained models against each other (pairwise)
+    print("\n=== TRAINED MODELS VS EACH OTHER ===")
+    for i, (label1, vis1) in enumerate(trained_conditions):
+        for j, (label2, vis2) in enumerate(trained_conditions):
+            if i < j:  # Only compare each pair once
+                trained_data1 = df[(df['agent_type'] == 'Trained') & (df['visibility_radius'] == vis1)]['final_reward']
+                trained_data2 = df[(df['agent_type'] == 'Trained') & (df['visibility_radius'] == vis2)]['final_reward']
+
+                if len(trained_data1) > 0 and len(trained_data2) > 0:
+                    # Mann-Whitney U test (two-sided)
+                    statistic, p_value = mannwhitneyu(trained_data1, trained_data2, alternative='two-sided')
+
+                    raw_p_values.append(p_value)
+                    test_results.append({
+                        'comparison_type': 'Trained vs Trained',
+                        'group1': f'Trained ({label1})',
+                        'group2': f'Trained ({label2})',
+                        'statistic': statistic,
+                        'p_value': p_value,
+                        'group1_mean': trained_data1.mean(),
+                        'group1_std': trained_data1.std(),
+                        'group1_n': len(trained_data1),
+                        'group2_mean': trained_data2.mean(),
+                        'group2_std': trained_data2.std(),
+                        'group2_n': len(trained_data2),
+                        'group1_better': trained_data1.mean() > trained_data2.mean()
+                    })
+
+    # Apply Bonferroni correction to all tests
     if raw_p_values:
         _, corrected_p_values, _, _ = multipletests(raw_p_values, alpha=0.05, method='bonferroni')
 
-        # Print results with corrected p-values, grouped by trained condition
-        current_trained_condition = None
+        # Print results with corrected p-values, grouped by comparison type
+        current_comparison_type = None
         for i, result in enumerate(test_results):
-            if result['trained_condition'] != current_trained_condition:
-                current_trained_condition = result['trained_condition']
-                print(f"\n=== {current_trained_condition} vs Baselines ===")
+            if result['comparison_type'] != current_comparison_type:
+                current_comparison_type = result['comparison_type']
+                print(f"\n=== {current_comparison_type.upper()} RESULTS ===")
 
-            print(f"\n{result['trained_condition']} vs {result['baseline_type']}:")
-            print(f"  Trained:   Mean={result['trained_mean']:.3f}, Std={result['trained_std']:.3f}, N={result['trained_n']}")
-            print(f"  {result['baseline_type']:>9}: Mean={result['baseline_mean']:.3f}, Std={result['baseline_std']:.3f}, N={result['baseline_n']}")
+            print(f"\n{result['group1']} vs {result['group2']}:")
+            print(f"  Group 1: Mean={result['group1_mean']:.3f}, Std={result['group1_std']:.3f}, N={result['group1_n']}")
+            print(f"  Group 2: Mean={result['group2_mean']:.3f}, Std={result['group2_std']:.3f}, N={result['group2_n']}")
             print(f"  Mann-Whitney U test: U={result['statistic']}, p={result['p_value']:.6f}")
             print(f"  Bonferroni-corrected p: {corrected_p_values[i]:.6f}")
 
             # Determine winner and significance
-            winner = result['trained_condition'] if result['trained_better'] else result['baseline_type']
+            winner = result['group1'] if result['group1_better'] else result['group2']
             is_significant = corrected_p_values[i] < 0.05
             significance_status = "Yes" if is_significant else "No"
 
             print(f"  Winner: {winner}, Significant at α=0.05 (corrected): {significance_status}")
+
+        print(f"\nTotal comparisons: {len(raw_p_values)} (Bonferroni correction applied)")
+        print(f"Corrected α = {0.05/len(raw_p_values):.6f}")
     
 
 if __name__ == "__main__":
