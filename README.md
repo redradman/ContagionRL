@@ -112,16 +112,18 @@ The `registerSIRSD.py` script registers our environment with `gymnasium` under t
 # Results
 To regenerate our data, figures and tables in the results or additional experiments follow the instructions here. The table below shows a grouping of the figures and tables in our paper. The figures are grouped by topic (and the script `figureX.py` where `X` is an integer) that produces them. 
 
-| Group Name                                                            | Supporting Figures and Tables | Figure Training Script    | Figure Generation Script |
-| :-------------------------------------------------------------------- | :---------------------------- | :------------------------ | :----------------------- |
-| **Comparison of Reinforcement Learning Algorithms Performance**       | Figure 1, Figure 6, Table 2   | `train_figure4_models.py` | `figure4.py`             |
-| **Comparison of Reward Functions**                                    | Figure 2, Figure 7, Table 7   | `train_figure2_models.py` | `figure2.py`             |
-| **Potential Field Reward Function Ablation Study**                    | Figure 3, Figure 8, Table 8   | `train_figure5_models.py` | `figure5.py`             |
-| **Environmental Parameter Variation: Infection Rate**                 | Figure 9, Table 9             | `train_figure3_models.py` | `figure3.py`             |
-| **Environmental Parameter Variation: Population density (Grid Size)** | Figure 10, Table 10           | `train_figure6_models.py` | `figure6.py`             |
-| **Environmental Parameter Variation: Adherence Effectiveness**        | Figure 11, Table 11           | `train_figure7_models.py` | `figure7.py`             |
-| **Environmental Parameter Variation: Distance Decay**                 | Figure 12, Table 12           | `train_figure8_models.py` | `figure8.py`             |
-| **Static render of a single environment step**                 | Figure 5           | _no training needed_ | `figure_render.py`             |
+| Group Name                                                            | Supporting Figures and Tables | Figure Training Script     | Figure Generation Script |
+| :-------------------------------------------------------------------- | :---------------------------- | :------------------------- | :----------------------- |
+| **Comparison of Reinforcement Learning Algorithms Performance**       | Figure 2, Figure 9, Table 1   | `train_figure4_models.py`  | `figure4.py`             |
+| **Comparison of Reward Functions**                                    | Figure 3, Figure 10, Table 8  | `train_figure2_models.py`  | `figure2.py`             |
+| **Potential Field Reward Function Ablation Study**                    | Figure 4, Figure 11, Table 9  | `train_figure5_models.py`  | `figure5.py`             |
+| **Impact of Visibility Radius Constraints**                           | Figure 5                      | `train_figure9_models.py`  | `figure9.py`             |
+| **Performance Comparison Across Movement Patterns**                   | Figure 6, Table 2             | `train_figure10_models.py` | `figure10.py`            |
+| **Static Render of Environment**                                      | Figure 8                      | _no training needed_       | `figure_render.py`       |
+| **Environmental Parameter Variation: Infection Rate**                 | Figure 12, Table 11           | `train_figure3_models.py`  | `figure3.py`             |
+| **Environmental Parameter Variation: Population Density (Grid Size)** | Figure 13, Table 12           | `train_figure6_models.py`  | `figure6.py`             |
+| **Environmental Parameter Variation: Adherence Effectiveness**        | Figure 14, Table 13           | `train_figure7_models.py`  | `figure7.py`             |
+| **Environmental Parameter Variation: Distance Decay**                 | Figure 15, Table 14           | `train_figure8_models.py`  | `figure8.py`             |
 
 
 The results section is divided into two parts: 
